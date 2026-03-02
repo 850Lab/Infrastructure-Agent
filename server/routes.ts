@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { webhookPayloadSchema } from "@shared/schema";
@@ -6,87 +6,103 @@ import { fetchAirtableRecord, extractAudioAttachment, downloadAudio, updateAirta
 import { transcribeAudio, analyzeContainment } from "./openai";
 import { log } from "./index";
 
+async function handleWebhook(req: Request, res: Response) {
+  const startTime = Date.now();
+
+  const parsed = webhookPayloadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Invalid payload",
+      details: parsed.error.flatten(),
+    });
+  }
+
+  const { recordId } = parsed.data;
+  log(`Webhook received for record: ${recordId}`, "webhook");
+
+  const logEntry = await storage.createWebhookLog({
+    airtableRecordId: recordId,
+    status: "processing",
+  });
+
+  res.status(202).json({
+    message: "Processing started",
+    logId: logEntry.id,
+    recordId,
+  });
+
+  try {
+    const record = await fetchAirtableRecord(recordId);
+    log(`Fetched record: ${JSON.stringify(Object.keys(record.fields))}`, "webhook");
+
+    const attachment = extractAudioAttachment(record);
+    if (!attachment) {
+      throw new Error("No audio attachment found in record");
+    }
+
+    await storage.updateWebhookLog(logEntry.id, {
+      audioFileName: attachment.filename,
+      status: "downloading",
+    });
+
+    const audioBuffer = await downloadAudio(attachment.url);
+    log(`Downloaded audio: ${attachment.filename} (${audioBuffer.length} bytes)`, "webhook");
+
+    await storage.updateWebhookLog(logEntry.id, { status: "transcribing" });
+    const transcription = await transcribeAudio(audioBuffer, attachment.filename);
+
+    await storage.updateWebhookLog(logEntry.id, {
+      status: "analyzing",
+      transcription,
+    });
+    const analysis = await analyzeContainment(transcription);
+
+    await updateAirtableRecord(recordId, {
+      Transcription: transcription,
+      Analysis: analysis,
+    });
+
+    const processingTimeMs = Date.now() - startTime;
+    await storage.updateWebhookLog(logEntry.id, {
+      status: "completed",
+      transcription,
+      analysis,
+      processingTimeMs,
+    });
+
+    log(`Completed processing record ${recordId} in ${processingTimeMs}ms`, "webhook");
+  } catch (error: any) {
+    const processingTimeMs = Date.now() - startTime;
+    log(`Error processing record ${recordId}: ${error.message}`, "webhook");
+
+    await storage.updateWebhookLog(logEntry.id, {
+      status: "error",
+      errorMessage: error.message,
+      processingTimeMs,
+    });
+  }
+}
+
+function handleHealth(_req: Request, res: Response) {
+  res.json({
+    ok: true,
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    airtable: !!(process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID),
+    openai: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
+  });
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
-  app.post("/api/airtable-webhook", async (req, res) => {
-    const startTime = Date.now();
+  app.post("/api/airtable-webhook", handleWebhook);
+  app.post("/airtable-webhook", handleWebhook);
 
-    const parsed = webhookPayloadSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "Invalid payload",
-        details: parsed.error.flatten(),
-      });
-    }
-
-    const { recordId } = parsed.data;
-    log(`Webhook received for record: ${recordId}`, "webhook");
-
-    const logEntry = await storage.createWebhookLog({
-      airtableRecordId: recordId,
-      status: "processing",
-    });
-
-    res.status(202).json({
-      message: "Processing started",
-      logId: logEntry.id,
-      recordId,
-    });
-
-    try {
-      const record = await fetchAirtableRecord(recordId);
-      log(`Fetched record: ${JSON.stringify(Object.keys(record.fields))}`, "webhook");
-
-      const attachment = extractAudioAttachment(record);
-      if (!attachment) {
-        throw new Error("No audio attachment found in record");
-      }
-
-      await storage.updateWebhookLog(logEntry.id, {
-        audioFileName: attachment.filename,
-        status: "downloading",
-      });
-
-      const audioBuffer = await downloadAudio(attachment.url);
-      log(`Downloaded audio: ${attachment.filename} (${audioBuffer.length} bytes)`, "webhook");
-
-      await storage.updateWebhookLog(logEntry.id, { status: "transcribing" });
-      const transcription = await transcribeAudio(audioBuffer, attachment.filename);
-
-      await storage.updateWebhookLog(logEntry.id, {
-        status: "analyzing",
-        transcription,
-      });
-      const analysis = await analyzeContainment(transcription);
-
-      await updateAirtableRecord(recordId, {
-        Transcription: transcription,
-        Analysis: analysis,
-      });
-
-      const processingTimeMs = Date.now() - startTime;
-      await storage.updateWebhookLog(logEntry.id, {
-        status: "completed",
-        transcription,
-        analysis,
-        processingTimeMs,
-      });
-
-      log(`Completed processing record ${recordId} in ${processingTimeMs}ms`, "webhook");
-    } catch (error: any) {
-      const processingTimeMs = Date.now() - startTime;
-      log(`Error processing record ${recordId}: ${error.message}`, "webhook");
-
-      await storage.updateWebhookLog(logEntry.id, {
-        status: "error",
-        errorMessage: error.message,
-        processingTimeMs,
-      });
-    }
-  });
+  app.get("/api/health", handleHealth);
+  app.get("/health", handleHealth);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);
@@ -122,15 +138,6 @@ export async function registerRoutes(
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
-  });
-
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-      airtable: !!(process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID),
-      openai: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
-    });
   });
 
   return httpServer;
