@@ -1,0 +1,70 @@
+GOAL:
+Add a “Routing Mode Rule” to Script_Config and upgrade the transcript analysis engine to detect when the caller accepts containment language (“send it / pass it / email it”) without doing an authority redirect within the next 2 lines. If detected, output a high-confidence patch proposal: add_gatekeeper_redirect_line.
+
+REQUIREMENTS:
+1) Add to Script_Config:
+- field: routing_behavior_rule (string)
+- field: routing_redirect_primary (string)
+- field: routing_redirect_backup (string)
+
+Set defaults:
+routing_behavior_rule =
+"When containment language is detected (send info, pass along, email it), respond with an efficiency-based redirect. No apology. No justification. One calm sentence followed by silence."
+
+routing_redirect_primary =
+"Totally understand — I just don’t want it getting buried if it’s not the right desk. Who handles that internally?"
+
+routing_redirect_backup =
+"Is that something you oversee, or is that handled by someone else?"
+
+2) Script Generator Injection:
+Wherever the live call script is generated, ensure the generated script includes a section:
+- Title: ROUTING MODE
+- Rule: {{routing_behavior_rule}}
+- Primary line: {{routing_redirect_primary}}
+- Backup line: {{routing_redirect_backup}}
+This must appear near the opening / gatekeeper handling portion of the script.
+
+3) Transcript Engine Upgrade:
+Implement detection logic:
+
+Inputs:
+- transcript_lines: array of strings in chronological order (line-by-line; each line includes speaker label if available)
+- output: structured object
+
+Definitions:
+containment_phrases = ["send it", "send info", "pass it", "pass along", "email it", "shoot it over", "forward it"]
+authority_redirect_phrases = [
+ "who handles that", "who oversees", "who is responsible", "who do i speak with",
+ "who owns that", "right desk", "handled by someone else", "best person", "point person"
+]
+
+Algorithm:
+- Normalize each line to lowercase for matching.
+- If any line i contains any containment_phrase
+  AND within the next 2 lines (i+1, i+2) there is NOT any authority_redirect_phrase
+  THEN flag a problem event:
+    problem_detected = "Authority containment accepted"
+    proposed_patch_type = "add_gatekeeper_redirect_line"
+    confidence = "high"
+    evidence = { containment_line: original transcript_lines[i], next_lines: [i+1, i+2 if exist] }
+
+Output format:
+{
+  "problem_detected": <string or null>,
+  "proposed_patch_type": <string or null>,
+  "confidence": <"low"|"medium"|"high" or null>,
+  "evidence": { ... } or null
+}
+
+4) Wiring:
+- The transcript analysis function should run after each call transcript is saved.
+- If a problem is detected, store it on the call record AND also append it to a “Script_Patches” log/table with timestamp, call_id, and proposed_patch_type.
+
+CONSTRAINTS:
+- Keep it minimal and deterministic. No LLM needed for this detection step.
+- Add tests or a small inline test harness (3 example transcripts: one triggers, one does not, one edge case with only 1 next line).
+- Do NOT break existing flows. If tables are missing, create them. If Script_Config is a JSON file instead of a table, update the schema accordingly.
+
+DELIVERABLE:
+Commit code changes + show me where to edit the text defaults later (single source of truth).

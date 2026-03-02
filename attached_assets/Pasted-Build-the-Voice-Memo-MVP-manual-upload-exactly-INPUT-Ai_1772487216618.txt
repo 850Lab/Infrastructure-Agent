@@ -1,0 +1,67 @@
+Build the Voice Memo MVP (manual upload) exactly:
+
+INPUT:
+Airtable table "Calls" where each record may contain an audio attachment in field "audio".
+
+OUTPUT:
+Write back to the same record:
+transcript, analysis_json, problem_detected, proposed_patch_type, confidence, analyzed=true, analyzed_at=now
+
+STACK:
+Node + TypeScript + Express.
+
+ENV VARS:
+AIRTABLE_API_KEY
+AIRTABLE_BASE_ID
+CALLS_TABLE=Calls
+OPENAI_API_KEY
+
+SERVER:
+1) POST /airtable-webhook
+Body: { "recordId": "recXXXX" }
+
+Behavior:
+- Fetch Airtable record by recordId.
+- If analyzed=true -> return 200 (no-op).
+- If audio is empty -> return 200 (no-op).
+- Else process audio.
+
+2) Fallback poller (cron inside app):
+Every 15 minutes:
+- List records where analyzed is not checked AND audio is not empty
+- Process up to 10 records per run.
+
+PROCESSING:
+A) Download audio file from Airtable attachment URL.
+B) Transcribe using OpenAI Speech-to-Text (Whisper / current endpoint).
+C) Run deterministic analyzer:
+
+containment_phrases = ["send it","send info","pass it","pass along","email it","shoot it over","forward it"]
+authority_redirect_phrases = ["who handles that","who oversees","who is responsible","who do i speak with","right desk","handled by someone else","best person","point person"]
+
+Split transcript into lines:
+- if transcript has newlines -> split("\n")
+- else split into sentences.
+
+Rule:
+If a containment phrase appears on line i AND none of authority_redirect_phrases appear within lines i+1 or i+2:
+problem_detected="Authority containment accepted"
+proposed_patch_type="add_gatekeeper_redirect_line"
+confidence="high"
+Else all null and confidence null.
+
+analysis_json should store:
+{ containment_hit: <line>, next_lines: [...], redirect_found: <bool> }
+
+WRITEBACK:
+Update Airtable record fields accordingly and set analyzed + analyzed_at.
+
+TEST HARNESS:
+Add npm run test:harness that runs 3 example transcripts through analyzer and prints JSON outputs.
+
+README:
+- how to set env vars
+- how to run server
+- how to test: upload voice memo to Calls.audio, then trigger webhook with curl
+- include a sample curl command
+No Make.com. No Airtable table auto-creation.
