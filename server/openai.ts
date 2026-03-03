@@ -16,34 +16,31 @@ export async function transcribeAudio(
 ): Promise<string> {
   log(`Transcribing audio file: ${filename} (${audioBuffer.length} bytes)`, "openai");
 
-  const base64Audio = audioBuffer.toString("base64");
+  const file = new File([audioBuffer], filename, { type: getMimeType(filename) });
 
-  const response = await directClient.chat.completions.create({
-    model: "gpt-4o-audio-preview",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Please transcribe the following audio recording exactly as spoken. Output only the transcription text, nothing else. If the audio is unclear or silent, say '[inaudible]'.",
-          },
-          {
-            type: "input_audio",
-            input_audio: {
-              data: base64Audio,
-              format: getAudioFormat(filename),
-            },
-          },
-        ],
-      },
-    ],
-    max_tokens: 4000,
+  const response = await directClient.audio.transcriptions.create({
+    file,
+    model: "whisper-1",
   });
 
-  const transcription = response.choices[0]?.message?.content || "[No speech detected]";
+  const transcription = response.text || "[No speech detected]";
   log(`Transcription complete: ${transcription.length} chars`, "openai");
   return transcription;
+}
+
+function getMimeType(filename: string): string {
+  const ext = filename.toLowerCase().split(".").pop();
+  const mimeTypes: Record<string, string> = {
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    m4a: "audio/m4a",
+    ogg: "audio/ogg",
+    webm: "audio/webm",
+    mp4: "video/mp4",
+    mpeg: "audio/mpeg",
+    mpga: "audio/mpeg",
+  };
+  return mimeTypes[ext || ""] || "audio/mpeg";
 }
 
 export async function analyzeContainment(transcription: string): Promise<string> {
@@ -92,8 +89,3 @@ Be specific and actionable. If no containment language is found, say so clearly.
   return analysis;
 }
 
-function getAudioFormat(filename: string): "wav" | "mp3" {
-  const ext = filename.toLowerCase().split(".").pop();
-  if (ext === "wav") return "wav";
-  return "mp3";
-}
