@@ -90,7 +90,7 @@ function handleHealth(_req: Request, res: Response) {
     status: "ok",
     timestamp: new Date().toISOString(),
     airtable: !!(process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID),
-    openai: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
+    openai: !!(process.env.OPENAI_API_KEY && process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
     make: !!(process.env.MAKE_API_TOKEN),
   });
 }

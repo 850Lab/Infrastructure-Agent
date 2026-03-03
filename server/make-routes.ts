@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { getMakeHealth, listScenarios, getScenarioBlueprint, getScenarioRuns, discoverMakeRegion, formatSchedule, parseBlueprintJson } from "./make";
 import { generateFindings, rankScenarios } from "./make-audit";
-import { syncScenariosToAirtable, syncModulesToAirtable, syncRunsToAirtable, syncFindingsToAirtable } from "./make-airtable";
+import { syncScenariosToAirtable, syncModulesToAirtable, clearModulesTable, syncRunsToAirtable, clearRunsTable, syncFindingsToAirtable } from "./make-airtable";
 import type { MakeScenario, MakeModule, MakeRun } from "./make";
 import type { AuditFinding } from "./make-audit";
 import { log } from "./index";
@@ -29,6 +29,11 @@ export function registerMakeRoutes(app: Express) {
       const modulesByScenario = new Map<number, MakeModule[]>();
       const runsByScenario = new Map<number, MakeRun[]>();
       const allRuns: MakeRun[] = [];
+
+      if (!dryRun) {
+        await clearModulesTable();
+        await clearRunsTable();
+      }
 
       for (const scenario of scenarios) {
         const { modules, graphSummary } = await getScenarioBlueprint(scenario.id);

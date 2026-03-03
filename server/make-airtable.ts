@@ -6,7 +6,7 @@ import { formatSchedule } from "./make";
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
-async function upsertAirtableRecords(tableName: string, records: Array<{ fields: Record<string, any> }>): Promise<void> {
+async function writeAirtableRecords(tableName: string, records: Array<{ fields: Record<string, any> }>): Promise<void> {
   if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) {
     throw new Error("Airtable credentials not configured");
   }
@@ -35,28 +35,43 @@ async function upsertAirtableRecords(tableName: string, records: Array<{ fields:
 async function clearAirtableTable(tableName: string): Promise<void> {
   if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) return;
 
-  const listUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?pageSize=100`;
-  const listRes = await fetch(listUrl, {
-    headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
-  });
+  let totalCleared = 0;
+  let hasMore = true;
 
-  if (!listRes.ok) return;
-
-  const data = await listRes.json();
-  const ids: string[] = (data.records || []).map((r: any) => r.id);
-  if (ids.length === 0) return;
-
-  const batchSize = 10;
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const batch = ids.slice(i, i + batchSize);
-    const params = batch.map(id => `records[]=${id}`).join("&");
-    const deleteUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
-    await fetch(deleteUrl, {
-      method: "DELETE",
+  while (hasMore) {
+    const listUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?pageSize=100`;
+    const listRes = await fetch(listUrl, {
       headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
     });
+
+    if (!listRes.ok) return;
+
+    const data = await listRes.json();
+    const ids: string[] = (data.records || []).map((r: any) => r.id);
+
+    if (ids.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    const batchSize = 10;
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize);
+      const params = batch.map(id => `records[]=${id}`).join("&");
+      const deleteUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${params}`;
+      await fetch(deleteUrl, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
+      });
+    }
+
+    totalCleared += ids.length;
+    if (ids.length < 100) hasMore = false;
   }
-  log(`Cleared ${ids.length} records from ${tableName}`, "make-airtable");
+
+  if (totalCleared > 0) {
+    log(`Cleared ${totalCleared} records from ${tableName}`, "make-airtable");
+  }
 }
 
 export async function syncScenariosToAirtable(scenarios: MakeScenario[]): Promise<void> {
@@ -73,7 +88,7 @@ export async function syncScenariosToAirtable(scenarios: MakeScenario[]): Promis
       updated_at: s.updatedAt || null,
     },
   }));
-  await upsertAirtableRecords("Make_Scenarios", records);
+  await writeAirtableRecords("Make_Scenarios", records);
 }
 
 export async function syncModulesToAirtable(
@@ -92,8 +107,12 @@ export async function syncModulesToAirtable(
     },
   }));
   if (records.length > 0) {
-    await upsertAirtableRecords("Make_Modules", records);
+    await writeAirtableRecords("Make_Modules", records);
   }
+}
+
+export async function clearModulesTable(): Promise<void> {
+  await clearAirtableTable("Make_Modules");
 }
 
 export async function syncRunsToAirtable(runs: MakeRun[]): Promise<void> {
@@ -108,8 +127,12 @@ export async function syncRunsToAirtable(runs: MakeRun[]): Promise<void> {
     },
   }));
   if (records.length > 0) {
-    await upsertAirtableRecords("Make_Runs", records);
+    await writeAirtableRecords("Make_Runs", records);
   }
+}
+
+export async function clearRunsTable(): Promise<void> {
+  await clearAirtableTable("Make_Runs");
 }
 
 export async function syncFindingsToAirtable(findings: AuditFinding[]): Promise<void> {
@@ -124,6 +147,6 @@ export async function syncFindingsToAirtable(findings: AuditFinding[]): Promise<
     },
   }));
   if (records.length > 0) {
-    await upsertAirtableRecords("Make_Audit_Findings", records);
+    await writeAirtableRecords("Make_Audit_Findings", records);
   }
 }
