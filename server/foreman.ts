@@ -309,10 +309,19 @@ export async function pushToCallCenter(callPack: CallPack): Promise<{ ok: boolea
   try {
     body = JSON.parse(rawText);
   } catch {
-    body = { raw: rawText };
+    body = { raw: rawText.slice(0, 500) };
   }
-  log(`CallCenter response: ${res.status}`, "foreman");
 
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+  const isHtml = contentType.includes("text/html") || rawText.trim().startsWith("<!DOCTYPE") || rawText.trim().startsWith("<html");
+
+  if (isHtml) {
+    log(`CallCenter returned HTML instead of JSON — endpoint likely doesn't exist`, "foreman");
+    return { ok: false, status: res.status, body: { error: "CallCenter returned HTML — /api/call-packs/upsert-today endpoint not found" } };
+  }
+
+  log(`CallCenter response: ${res.status} (json: ${isJson})`, "foreman");
   return { ok: res.ok, status: res.status, body };
 }
 
