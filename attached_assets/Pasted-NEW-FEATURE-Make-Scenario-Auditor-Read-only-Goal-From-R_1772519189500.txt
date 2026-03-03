@@ -1,0 +1,73 @@
+NEW FEATURE: Make Scenario Auditor (Read-only)
+
+Goal:
+From Replit, I want to pull what Make.com can expose about my scenarios and write a summarized “Machine Map” back into Airtable.
+
+Constraints:
+- READ ONLY. Do not change, enable/disable, or run scenarios.
+- If Make API access is not available, build a fallback that accepts a pasted JSON blueprint export.
+- Store everything in Airtable tables: Make_Scenarios, Make_Modules, Make_Runs, Make_Audit_Findings.
+
+Step 1 — Discover Make API Access
+1) Ask me for Make credentials/connection method supported by Make:
+   - Make API token (preferred) OR
+   - OAuth (if supported) OR
+   - Webhook-only (fallback)
+2) Implement /api/make/health:
+   - validates token
+   - returns Make org/team/workspace metadata if available
+
+Step 2 — Scenario Inventory (Minimal but useful)
+Implement /api/make/scenarios/sync:
+- fetch list of scenarios
+- store in Airtable Make_Scenarios:
+  fields:
+    make_scenario_id (text)
+    name (text)
+    is_active (checkbox)
+    schedule_summary (text)
+    folder (text optional)
+    last_run_status (text optional)
+    last_run_at (datetime optional)
+    updated_at (datetime optional)
+
+Step 3 — Scenario Detail + Module Graph (If API supports it)
+For each scenario, fetch blueprint/module graph if possible and store:
+- Make_Modules:
+  make_scenario_id
+  module_id
+  module_type
+  module_name
+  connections (json)
+  key_mappings_summary (text)
+- Also store a “Graph Summary” string:
+  Trigger → Module → Module → Router → …
+
+Step 4 — Run/Failure Audit (If API supports run history)
+Implement /api/make/runs/sync:
+- fetch last N runs per scenario
+- store in Make_Runs:
+  make_scenario_id
+  run_id
+  status
+  started_at
+  finished_at
+  error_summary
+
+Step 5 — Findings (Rules-based)
+Create Make_Audit_Findings records for:
+- scenario disabled but referenced by pipeline
+- repeated failures (>=3 in last 24 runs)
+- missing error handlers (if detectable)
+- missing “idempotency” / dedupe steps in critical flows (heuristic)
+
+Output:
+Create an Airtable “Machine_Map” view:
+- scenarios ranked by importance (enabled + frequent runs + error rate)
+- top 10 findings
+
+Deliverables:
+- working endpoints
+- Airtable table schema instructions
+- README for setup (token, baseId, table names)
+- a dry-run mode that doesn’t write, only prints discovered data
