@@ -10,19 +10,37 @@ export async function transcribeAudio(
   audioBuffer: Buffer,
   filename: string
 ): Promise<string> {
-  log(`Transcribing audio file: ${filename}`, "openai");
+  log(`Transcribing audio file: ${filename} (${audioBuffer.length} bytes)`, "openai");
 
-  const file = new File([audioBuffer], filename, {
-    type: getMimeType(filename),
+  const base64Audio = audioBuffer.toString("base64");
+  const mimeType = getMimeType(filename);
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-audio-preview",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Please transcribe the following audio recording exactly as spoken. Output only the transcription text, nothing else. If the audio is unclear or silent, say '[inaudible]'.",
+          },
+          {
+            type: "input_audio",
+            input_audio: {
+              data: base64Audio,
+              format: getAudioFormat(filename),
+            },
+          },
+        ],
+      },
+    ],
+    max_tokens: 4000,
   });
 
-  const response = await openai.audio.transcriptions.create({
-    file,
-    model: "whisper-1",
-  });
-
-  log(`Transcription complete: ${response.text.length} chars`, "openai");
-  return response.text;
+  const transcription = response.choices[0]?.message?.content || "[No speech detected]";
+  log(`Transcription complete: ${transcription.length} chars`, "openai");
+  return transcription;
 }
 
 export async function analyzeContainment(transcription: string): Promise<string> {
@@ -84,4 +102,10 @@ function getMimeType(filename: string): string {
     mpga: "audio/mpeg",
   };
   return mimeTypes[ext || ""] || "audio/mpeg";
+}
+
+function getAudioFormat(filename: string): "wav" | "mp3" {
+  const ext = filename.toLowerCase().split(".").pop();
+  if (ext === "wav") return "wav";
+  return "mp3";
 }
