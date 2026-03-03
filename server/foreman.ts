@@ -6,17 +6,21 @@ const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const FIELDS: Record<string, string> = {
   companyName: "company_name",
   phone: "phone",
-  employeeCount: "employee_count",
   city: "city",
   state: "state",
   website: "website",
+  isRefineryRelated: "is_refinery_related",
+  industrialRelevanceScore: "industrial_relevance_score",
+  heatExposureScore: "heat_exposure_score",
+  decisionMakerProbability: "decision_maker_probability",
+  industryType: "industry_type",
+  pipelineStage: "pipeline_stage",
   lastContactedAt: "last_contacted_at",
-  mobilizedInPlant: "mobilized_in_plant",
-  priorOutcome: "prior_outcome",
   callToday: "call_today",
   callRank: "call_rank",
   callPackDate: "call_pack_date",
   activeWorkScore: "Active_Work_Score",
+  createdAt: "created_at",
 };
 
 const GULF_COAST_CITIES = new Set([
@@ -42,12 +46,10 @@ export interface ForemanCandidate {
   phone: string;
   city: string;
   state: string;
-  employeeCount: number;
   website: string;
+  isRefineryRelated: string;
   score: number;
   scoreBreakdown: string[];
-  mobilizedInPlant: boolean;
-  priorOutcome: string;
   lastContactedAt: string | null;
 }
 
@@ -96,18 +98,21 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
   let score = 0;
   const breakdown: string[] = [];
 
-  const empCount = parseInt(getField(fields, "employeeCount") || "0", 10);
-  if (empCount >= 50) {
+  // is_refinery_related = "YES" → strongest signal (+30)
+  const isRefinery = String(getField(fields, "isRefineryRelated") || "").toUpperCase();
+  if (isRefinery === "YES") {
     score += 30;
-    breakdown.push(`50+ emp (${empCount})`);
+    breakdown.push("refinery-related");
   }
 
+  // has phone → callable (+20)
   const phone = getField(fields, "phone");
   if (phone && String(phone).trim().length > 5) {
     score += 20;
     breakdown.push("has phone");
   }
 
+  // Gulf Coast geo match (+15)
   const city = String(getField(fields, "city") || "").toLowerCase().trim();
   const state = String(getField(fields, "state") || "").toLowerCase().trim();
   if (GULF_COAST_CITIES.has(city) || GULF_COAST_STATES.has(state)) {
@@ -115,6 +120,7 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
     breakdown.push("Gulf Coast");
   }
 
+  // Website keyword signals or Active_Work_Score (+20)
   const website = String(getField(fields, "website") || "").toLowerCase();
   const activeWorkScore = parseInt(getField(fields, "activeWorkScore") || "0", 10);
   if (activeWorkScore >= 60) {
@@ -131,6 +137,24 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
     }
   }
 
+  // decision_maker_probability > 50 → likely has a reachable DM (+10)
+  const dmProb = parseInt(getField(fields, "decisionMakerProbability") || "0", 10);
+  if (dmProb > 50) {
+    score += 10;
+    breakdown.push(`DM prob ${dmProb}%`);
+  }
+
+  // industry_type signals (+5)
+  const industryType = String(getField(fields, "industryType") || "").toLowerCase();
+  if (industryType && industryType !== "unknown" && industryType !== "") {
+    const industrialTypes = ["refinery", "chemical", "petrochemical", "industrial", "energy", "oil", "gas", "manufacturing", "construction"];
+    if (industrialTypes.some(t => industryType.includes(t))) {
+      score += 5;
+      breakdown.push(`industry: ${industryType}`);
+    }
+  }
+
+  // not contacted in 7+ days or never contacted (+10)
   const lastContacted = getField(fields, "lastContactedAt");
   if (lastContacted) {
     const lastDate = new Date(lastContacted);
@@ -144,16 +168,10 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
     breakdown.push("never contacted");
   }
 
-  const mobilized = getField(fields, "mobilizedInPlant");
-  if (mobilized === true || mobilized === "true" || mobilized === 1) {
-    score += 30;
-    breakdown.push("mobilized in plant");
-  }
-
-  const outcome = String(getField(fields, "priorOutcome") || "").toLowerCase();
-  if (outcome.includes("transferred to ops") || outcome.includes("transfer")) {
-    score += 10;
-    breakdown.push("prior transfer to ops");
+  // has website at all (+5)
+  if (website && website.length > 5) {
+    score += 5;
+    breakdown.push("has website");
   }
 
   return { score, breakdown };
@@ -203,12 +221,10 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
         phone,
         city: String(getField(fields, "city") || ""),
         state: String(getField(fields, "state") || ""),
-        employeeCount: parseInt(getField(fields, "employeeCount") || "0", 10),
         website: String(getField(fields, "website") || ""),
+        isRefineryRelated: String(getField(fields, "isRefineryRelated") || ""),
         score,
         scoreBreakdown: breakdown,
-        mobilizedInPlant: !!(getField(fields, "mobilizedInPlant")),
-        priorOutcome: String(getField(fields, "priorOutcome") || ""),
         lastContactedAt: getField(fields, "lastContactedAt") || null,
       });
     }
@@ -223,25 +239,20 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
 export function rankAndSelect(
   candidates: ForemanCandidate[],
   count: number,
-  minEmployee: number,
+  _minEmployee: number,
   geo: string,
 ): { selected: ForemanCandidate[]; filtered: number } {
   let filtered = candidates;
 
-  if (minEmployee > 0) {
-    filtered = filtered.filter(c => c.employeeCount >= minEmployee || c.employeeCount === 0);
-  }
+  // Must have a phone number to be callable
+  filtered = filtered.filter(c => c.phone.length > 5);
 
   if (geo === "gulf_coast") {
-    // Don't hard-filter by geo — the scoring already rewards Gulf Coast.
-    // But log how many match.
     const geoMatches = filtered.filter(c =>
       GULF_COAST_CITIES.has(c.city.toLowerCase()) || GULF_COAST_STATES.has(c.state.toLowerCase())
     );
     log(`Gulf Coast matches: ${geoMatches.length}/${filtered.length}`, "foreman");
   }
-
-  filtered = filtered.filter(c => c.phone.length > 5);
 
   filtered.sort((a, b) => b.score - a.score);
 
