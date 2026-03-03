@@ -1,9 +1,13 @@
 import OpenAI from "openai";
 import { log } from "./index";
 
-const openai = new OpenAI({
+const proxyClient = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
+
+const directClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function transcribeAudio(
@@ -13,9 +17,8 @@ export async function transcribeAudio(
   log(`Transcribing audio file: ${filename} (${audioBuffer.length} bytes)`, "openai");
 
   const base64Audio = audioBuffer.toString("base64");
-  const mimeType = getMimeType(filename);
 
-  const response = await openai.chat.completions.create({
+  const response = await directClient.chat.completions.create({
     model: "gpt-4o-audio-preview",
     messages: [
       {
@@ -46,7 +49,7 @@ export async function transcribeAudio(
 export async function analyzeContainment(transcription: string): Promise<string> {
   log("Analyzing containment language...", "openai");
 
-  const response = await openai.chat.completions.create({
+  const response = await proxyClient.chat.completions.create({
     model: "gpt-4o",
     messages: [
       {
@@ -87,21 +90,6 @@ Be specific and actionable. If no containment language is found, say so clearly.
   const analysis = response.choices[0]?.message?.content || "No analysis generated";
   log(`Analysis complete: ${analysis.length} chars`, "openai");
   return analysis;
-}
-
-function getMimeType(filename: string): string {
-  const ext = filename.toLowerCase().split(".").pop();
-  const mimeTypes: Record<string, string> = {
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    m4a: "audio/m4a",
-    ogg: "audio/ogg",
-    webm: "audio/webm",
-    mp4: "video/mp4",
-    mpeg: "audio/mpeg",
-    mpga: "audio/mpeg",
-  };
-  return mimeTypes[ext || ""] || "audio/mpeg";
 }
 
 function getAudioFormat(filename: string): "wav" | "mp3" {
