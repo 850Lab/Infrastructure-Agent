@@ -5,6 +5,7 @@ import { webhookPayloadSchema } from "@shared/schema";
 import { fetchAirtableRecord, extractAudioAttachment, downloadAudio, updateAirtableRecord } from "./airtable";
 import { transcribeAudio, analyzeContainment } from "./openai";
 import { registerMakeRoutes } from "./make-routes";
+import { registerActiveWorkRoutes } from "./active-work-routes";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -107,6 +108,7 @@ export async function registerRoutes(
   app.get("/health", handleHealth);
 
   registerMakeRoutes(app);
+  registerActiveWorkRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);
