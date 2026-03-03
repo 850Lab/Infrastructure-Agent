@@ -1,0 +1,83 @@
+BUILD: Foreman dispatch -> CallCenter "Call These 20" (Hub already has VoiceMemo analyzer)
+
+CONTEXT:
+This HUB app already includes:
+- VoiceMemo Analyzer pipeline (upload -> Whisper -> transcript -> analysis -> writeback)
+- Make Scenario Auditor routes
+- Airtable integration
+
+GOAL:
+Add a Foreman module in HUB that generates a ranked "Call These 20" list and pushes it to the separate CallCenter app.
+
+ENV VARS (HUB):
+- CALLCENTER_BASE_URL
+- INTERNAL_API_KEY (shared secret between HUB and CallCenter)
+
+NEW HUB ROUTES:
+1) POST /api/foreman/call-pack/generate
+   body: { "count": 20, "min_employee": 50, "geo": "gulf_coast", "mode": "blind_mobilization" }
+
+   Behavior:
+   - Pull candidates from Airtable (TheClipboard). Prefer Companies table (or whatever the leads table is in this system).
+   - Use Airtable pagination for >100 records.
+   - Rank deterministically (no heavy LLM needed) using these signals:
+     + employee_count >= 50 (or size signal) -> +30
+     + has phone -> +20
+     + gulf_coast_geo match -> +15
+     + website keywords (turnaround, outage, refinery, plant services, scaffolding, insulation, hydroblasting, industrial cleaning) -> +20
+     + not contacted in last 7 days -> +10
+     + transcript-derived flags from last call analysis (if stored in Airtable): mobilized_in_plant true -> +30
+     + prior outcome "Transferred to Ops" -> +10
+   - For missing fields, score 0 for that component.
+   - Select top N.
+
+   - Build payload:
+     {
+       "date":"YYYY-MM-DD",
+       "title":"Foreman: Call These 20",
+       "mode":"blind_mobilization",
+       "leads":[
+         {
+           "external_id":"<airtable_record_id>",
+           "company_name":"...",
+           "phone":"...",
+           "city":"...",
+           "state":"...",
+           "rank":1,
+           "score":88,
+           "reason":"50+ emp + Gulf Coast + turnaround signals",
+           "opener":"Hey, quick question — are you guys currently mobilized inside any refineries or chemical plants right now?"
+         }
+       ]
+     }
+
+   - Push to CallCenter:
+     POST ${CALLCENTER_BASE_URL}/api/call-packs/upsert-today
+     Headers:
+       Authorization: Bearer ${INTERNAL_API_KEY}
+       Content-Type: application/json
+
+   - Return { ok:true, pushed:true, count, preview:[top3] }
+
+2) GET /api/foreman/call-pack/preview?count=20
+   - Same as generate, but does not push.
+
+3) (Optional but recommended) POST /api/foreman/call-pack/generate-and-tag
+   - In addition to pushing, tag the selected Airtable records:
+     call_today = true
+     call_rank = 1..N
+     call_pack_date = YYYY-MM-DD
+   - Also clear yesterday’s call_today flags.
+
+IMPLEMENTATION DETAILS:
+- Put ranking logic in server/foreman.ts
+- Put routes in server/foreman-routes.ts and mount under /api/foreman
+- Add a small mapping object at top for Airtable field names:
+  const FIELDS = { companyName:"...", phone:"...", employeeCount:"...", city:"...", state:"...", website:"...", lastContactedAt:"...", mobilizedInPlant:"..." }
+- If HUB already has Airtable utility, reuse it.
+- Use console logs for: candidates_count, selected_count, push_status.
+
+DELIVERABLES (HUB):
+- server/foreman.ts
+- server/foreman-routes.ts
+- server/index.ts (or main router) updated to include foreman routes
