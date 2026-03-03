@@ -24,10 +24,19 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/make-audit.ts` - Audit rules engine (findings generation, scenario ranking)
 - `server/make-airtable.ts` - Airtable write functions for Make tables
 
+### Foreman (Call Pack Generator)
+- `server/foreman.ts` - Candidate fetching, deterministic scoring, ranking, CallCenter push, Airtable tagging
+- `server/foreman-routes.ts` - API endpoints (preview, generate, generate-and-tag)
+
+### Active Work Finder
+- `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
+- `server/active-work-routes.ts` - API endpoints (config, generate-queries, score, batch, high-score, rotate)
+
 ### Frontend
-- `client/src/App.tsx` - App router (/, /make)
+- `client/src/App.tsx` - App router (/, /make, /active-work)
 - `client/src/pages/dashboard.tsx` - Voice Memo monitoring dashboard
 - `client/src/pages/make-auditor.tsx` - Make Scenario Auditor dashboard
+- `client/src/pages/active-work.tsx` - Active Work Finder dashboard
 
 ## API Endpoints
 
@@ -44,6 +53,19 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `GET /api/make/sync-result` - Get cached sync result
 - `POST /api/make/blueprint/import` - Import and analyze a pasted JSON blueprint
 
+### Foreman (Call Pack)
+- `GET /api/foreman/call-pack/preview?count=20` - Preview ranked call pack (no push)
+- `POST /api/foreman/call-pack/generate` - Generate and push call pack to CallCenter
+- `POST /api/foreman/call-pack/generate-and-tag` - Generate, push, and tag Airtable records
+
+### Active Work
+- `GET /api/active-work/config` - Get geos, keywords, query count
+- `POST /api/active-work/generate-queries` - Generate search queries (supports `?dryRun=true`)
+- `POST /api/active-work/score-company` - Score a single company website
+- `POST /api/active-work/score-batch` - Batch score unscored companies
+- `GET /api/active-work/high-score` - List companies with Active_Work_Score > 70
+- `POST /api/active-work/rotate-queries` - Daily query rotation
+
 ## Environment Secrets
 - `AIRTABLE_API_KEY` - Airtable Personal Access Token
 - `AIRTABLE_BASE_ID` - Airtable Base ID
@@ -51,6 +73,8 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` - OpenAI base URL (via Replit AI Integrations)
 - `OPENAI_API_KEY` - Direct OpenAI API key (used for Whisper transcription)
 - `MAKE_API_TOKEN` - Make.com API token
+- `CALLCENTER_BASE_URL` - CallCenter app URL (for Foreman push)
+- `INTERNAL_API_KEY` - Shared secret between HUB and CallCenter
 - `DATABASE_URL` - PostgreSQL connection string
 
 ## Airtable Configuration

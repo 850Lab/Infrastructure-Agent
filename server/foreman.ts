@@ -117,14 +117,12 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
 
   const website = String(getField(fields, "website") || "").toLowerCase();
   const activeWorkScore = parseInt(getField(fields, "activeWorkScore") || "0", 10);
-  if (activeWorkScore > 0) {
-    if (activeWorkScore >= 60) {
-      score += 20;
-      breakdown.push(`website signals (AWS=${activeWorkScore})`);
-    } else if (activeWorkScore >= 40) {
-      score += 10;
-      breakdown.push(`partial website signals (AWS=${activeWorkScore})`);
-    }
+  if (activeWorkScore >= 60) {
+    score += 20;
+    breakdown.push(`website signals (AWS=${activeWorkScore})`);
+  } else if (activeWorkScore >= 40) {
+    score += 10;
+    breakdown.push(`partial website signals (AWS=${activeWorkScore})`);
   } else {
     const matchedKeywords = WEBSITE_KEYWORDS.filter(kw => website.includes(kw));
     if (matchedKeywords.length > 0) {
@@ -295,11 +293,12 @@ export async function pushToCallCenter(callPack: CallPack): Promise<{ ok: boolea
     body: JSON.stringify(callPack),
   });
 
+  const rawText = await res.text();
   let body: any;
   try {
-    body = await res.json();
+    body = JSON.parse(rawText);
   } catch {
-    body = { raw: await res.text() };
+    body = { raw: rawText };
   }
   log(`CallCenter response: ${res.status}`, "foreman");
 
@@ -310,27 +309,41 @@ export async function tagAirtableRecords(selected: ForemanCandidate[], tableName
   const encoded = encodeURIComponent(tableName);
   const today = new Date().toISOString().split("T")[0];
 
-  const clearFormula = encodeURIComponent(`AND({${FIELDS.callToday}} = TRUE(), {${FIELDS.callPackDate}} != '${today}')`);
-  const oldRecords = await airtableRequest(`${encoded}?filterByFormula=${clearFormula}&pageSize=100`);
+  let clearOffset: string | undefined;
+  let totalCleared = 0;
 
-  if (oldRecords.records?.length > 0) {
-    const batchSize = 10;
-    for (let i = 0; i < oldRecords.records.length; i += batchSize) {
-      const batch = oldRecords.records.slice(i, i + batchSize);
-      await airtableRequest(encoded, {
-        method: "PATCH",
-        body: JSON.stringify({
-          records: batch.map((r: any) => ({
-            id: r.id,
-            fields: {
-              [FIELDS.callToday]: false,
-              [FIELDS.callRank]: null,
-            },
-          })),
-        }),
-      });
+  do {
+    const params = new URLSearchParams({ pageSize: "100" });
+    params.set("filterByFormula", `AND({${FIELDS.callToday}} = TRUE(), {${FIELDS.callPackDate}} != '${today}')`);
+    if (clearOffset) params.set("offset", clearOffset);
+
+    const oldRecords = await airtableRequest(`${encoded}?${params.toString()}`);
+
+    if (oldRecords.records?.length > 0) {
+      const batchSize = 10;
+      for (let i = 0; i < oldRecords.records.length; i += batchSize) {
+        const batch = oldRecords.records.slice(i, i + batchSize);
+        await airtableRequest(encoded, {
+          method: "PATCH",
+          body: JSON.stringify({
+            records: batch.map((r: any) => ({
+              id: r.id,
+              fields: {
+                [FIELDS.callToday]: false,
+                [FIELDS.callRank]: null,
+              },
+            })),
+          }),
+        });
+      }
+      totalCleared += oldRecords.records.length;
     }
-    log(`Cleared ${oldRecords.records.length} old call_today flags`, "foreman");
+
+    clearOffset = oldRecords.offset;
+  } while (clearOffset);
+
+  if (totalCleared > 0) {
+    log(`Cleared ${totalCleared} old call_today flags`, "foreman");
   }
 
   const batchSize = 10;

@@ -1,6 +1,25 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { fetchCandidates, rankAndSelect, buildCallPack, pushToCallCenter, tagAirtableRecords } from "./foreman";
 import { log } from "./index";
+
+function requireInternalAuth(req: Request, res: Response, next: NextFunction) {
+  const apiKey = process.env.INTERNAL_API_KEY;
+  if (!apiKey) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ ok: false, error: "Authorization header required" });
+  }
+
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (token !== apiKey) {
+    return res.status(403).json({ ok: false, error: "Invalid API key" });
+  }
+
+  next();
+}
 
 export function registerForemanRoutes(app: Express) {
   app.get("/api/foreman/call-pack/preview", async (req: Request, res: Response) => {
@@ -28,7 +47,7 @@ export function registerForemanRoutes(app: Express) {
     }
   });
 
-  app.post("/api/foreman/call-pack/generate", async (req: Request, res: Response) => {
+  app.post("/api/foreman/call-pack/generate", requireInternalAuth, async (req: Request, res: Response) => {
     const { count = 20, min_employee = 0, geo = "gulf_coast", mode = "blind_mobilization" } = req.body || {};
 
     try {
@@ -68,7 +87,7 @@ export function registerForemanRoutes(app: Express) {
     }
   });
 
-  app.post("/api/foreman/call-pack/generate-and-tag", async (req: Request, res: Response) => {
+  app.post("/api/foreman/call-pack/generate-and-tag", requireInternalAuth, async (req: Request, res: Response) => {
     const { count = 20, min_employee = 0, geo = "gulf_coast", mode = "blind_mobilization" } = req.body || {};
 
     try {
@@ -92,7 +111,12 @@ export function registerForemanRoutes(app: Express) {
         log(`Push error: ${e.message}`, "foreman");
       }
 
-      const tagged = await tagAirtableRecords(selected);
+      let tagged = 0;
+      if (pushed) {
+        tagged = await tagAirtableRecords(selected);
+      } else {
+        log("Skipping Airtable tagging because push failed", "foreman");
+      }
 
       res.json({
         ok: true,
