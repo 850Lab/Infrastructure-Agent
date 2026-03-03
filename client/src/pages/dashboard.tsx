@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import type { WebhookLog } from "@shared/schema";
+import { Link } from "wouter";
 import {
   Activity,
   Send,
@@ -23,6 +24,8 @@ import {
   Zap,
   BarChart3,
   RefreshCw,
+  Cpu,
+  ArrowRight,
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: string }) {
@@ -169,6 +172,7 @@ export default function Dashboard() {
     timestamp: string;
     airtable: boolean;
     openai: boolean;
+    make: boolean;
   }>({
     queryKey: ["/api/health"],
     refetchInterval: 30000,
@@ -378,6 +382,25 @@ export default function Dashboard() {
                     <span className="text-xs text-muted-foreground">
                       {health.openai ? "Connected" : "Not configured"}
                     </span>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2.5 w-2.5 rounded-full ${health.make ? "bg-green-500" : "bg-red-500"}`} />
+                      <span className="text-sm font-medium" data-testid="text-make-status">Make.com</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {health.make ? "Connected" : "Not configured"}
+                      </span>
+                      <Link href="/make">
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" data-testid="link-make-auditor">
+                          <Cpu className="mr-1 h-3 w-3" />
+                          Auditor
+                          <ArrowRight className="ml-1 h-3 w-3" />
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between py-2">

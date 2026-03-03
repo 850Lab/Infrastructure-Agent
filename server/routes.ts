@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { webhookPayloadSchema } from "@shared/schema";
 import { fetchAirtableRecord, extractAudioAttachment, downloadAudio, updateAirtableRecord } from "./airtable";
 import { transcribeAudio, analyzeContainment } from "./openai";
+import { registerMakeRoutes } from "./make-routes";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -90,6 +91,7 @@ function handleHealth(_req: Request, res: Response) {
     timestamp: new Date().toISOString(),
     airtable: !!(process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID),
     openai: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
+    make: !!(process.env.MAKE_API_TOKEN),
   });
 }
 
@@ -103,6 +105,8 @@ export async function registerRoutes(
 
   app.get("/api/health", handleHealth);
   app.get("/health", handleHealth);
+
+  registerMakeRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);
