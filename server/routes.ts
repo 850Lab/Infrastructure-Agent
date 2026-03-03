@@ -84,7 +84,13 @@ async function handleWebhook(req: Request, res: Response) {
 }
 
 function handleHealth(_req: Request, res: Response) {
-  res.status(200).json({ ok: true });
+  res.status(200).json({
+    ok: true,
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    airtable: !!(process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID),
+    openai: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
+  });
 }
 
 export async function registerRoutes(
