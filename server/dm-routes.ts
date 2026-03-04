@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { enrichCompany, writeDMsToAirtable, fetchCompaniesForEnrichment, batchEnrich, getEnrichmentStats } from "./dm-enrichment";
+import { enrichCompany, writeDMsToAirtable, fetchCompaniesForEnrichment, batchEnrich, getEnrichmentStats, backfillDMContacts } from "./dm-enrichment";
 import { isApolloAvailable } from "./apollo";
 import { log } from "./index";
 
@@ -59,6 +59,17 @@ export function registerDMRoutes(app: Express) {
       });
     } catch (e: any) {
       log(`Enrich one failed: ${e.message}`, "dm-enrich");
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.post("/api/enrichment/backfill-contacts", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(Number(req.body?.limit) || 50, 100);
+      const result = await backfillDMContacts(limit);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      log(`Backfill failed: ${e.message}`, "dm-enrich");
       res.status(500).json({ ok: false, error: e.message });
     }
   });

@@ -65,6 +65,37 @@ function extractDomain(website: string): string {
   }
 }
 
+function extractContactSignals(html: string): string {
+  const signals: string[] = [];
+
+  const emailMatches = html.match(/mailto:([^"'\s<>]+)/gi) || [];
+  for (const m of emailMatches) {
+    const email = m.replace(/^mailto:/i, "").split("?")[0];
+    if (email.includes("@")) signals.push(`[EMAIL: ${email}]`);
+  }
+
+  const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+  const textEmails = html.replace(/<[^>]+>/g, " ").match(emailPattern) || [];
+  for (const e of textEmails) {
+    if (!e.includes("@sentry") && !e.includes("@example") && !e.includes(".png") && !e.includes(".jpg")) {
+      signals.push(`[EMAIL: ${e}]`);
+    }
+  }
+
+  const linkedinMatches = html.match(/https?:\/\/(www\.)?linkedin\.com\/in\/[^\s"'<>]+/gi) || [];
+  for (const l of linkedinMatches) {
+    signals.push(`[LINKEDIN: ${l.replace(/["']/g, "")}]`);
+  }
+
+  const phoneMatches = html.match(/(?:tel:|href="tel:)([^"'\s<>]+)/gi) || [];
+  for (const p of phoneMatches) {
+    const phone = p.replace(/^(?:tel:|href="tel:)/i, "").replace(/"/g, "");
+    if (phone.length >= 10) signals.push(`[PHONE: ${phone}]`);
+  }
+
+  return [...new Set(signals)].join("\n");
+}
+
 async function fetchPage(url: string): Promise<string> {
   try {
     const controller = new AbortController();
@@ -76,13 +107,18 @@ async function fetchPage(url: string): Promise<string> {
     clearTimeout(timeout);
     if (!res.ok) return "";
     const html = await res.text();
-    return html
+
+    const contactSignals = extractContactSignals(html);
+
+    const text = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 12000);
+      .slice(0, 11000);
+
+    return contactSignals ? `${contactSignals}\n${text}` : text;
   } catch {
     return "";
   }
@@ -156,13 +192,15 @@ async function extractDMsWithGPT(content: string, companyName: string, domain: s
 - Safety / HSE
 - Operations
 
+The content includes extracted contact signals marked as [EMAIL: ...], [LINKEDIN: ...], [PHONE: ...]. Match these to the people you find.
+
 Return a JSON array of people found. For each person include:
 {
   "full_name": "First Last",
   "title": "Their actual title from the website",
-  "email": "email if found, empty string if not",
-  "phone": "direct phone if found, empty string if not",
-  "linkedin_url": "LinkedIn URL if found, empty string if not",
+  "email": "their email if found or can be matched from [EMAIL:] signals, empty string if not",
+  "phone": "their direct phone if found or matched from [PHONE:] signals, empty string if not",
+  "linkedin_url": "their LinkedIn URL if found or matched from [LINKEDIN:] signals, empty string if not",
   "seniority": "c_suite|vp|director|manager|other",
   "department": "operations|safety|maintenance|executive|sales|other"
 }
@@ -172,6 +210,9 @@ Rules:
 - Only include people whose names actually appear on the website
 - Do NOT make up names or guess
 - If no real names are found, return an empty array []
+- Match [EMAIL:] signals to people by name pattern (e.g. john.smith@ matches John Smith)
+- Match [LINKEDIN:] URLs to people by name in the URL slug
+- If the company domain is known, generate probable emails as firstname.lastname@domain for people without explicit emails
 - Prioritize: President/CEO, VP Operations, Safety Director, Maintenance Manager, Plant Manager
 
 Return ONLY the JSON array, no other text.`,
@@ -207,6 +248,21 @@ Return ONLY the JSON array, no other text.`,
     log(`Failed to parse GPT DM response: ${raw.slice(0, 200)}`, "dm-enrich");
     return [];
   }
+}
+
+function generateProbableEmail(fullName: string, domain: string): string | null {
+  if (!domain || !domain.includes(".")) return null;
+  const cleaned = fullName.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/['']/g, "")
+    .replace(/[^a-z\s-]/g, "")
+    .trim();
+  const parts = cleaned.split(/\s+/).filter(p => p.length >= 2);
+  if (parts.length < 2) return null;
+  const first = parts[0].replace(/-/g, "");
+  const last = parts[parts.length - 1].replace(/-/g, "");
+  if (!first || !last) return null;
+  return `${first}.${last}@${domain}`;
 }
 
 export async function enrichCompany(recordId: string): Promise<EnrichmentResult> {
@@ -250,6 +306,18 @@ export async function enrichCompany(recordId: string): Promise<EnrichmentResult>
 
   const { content, pagesScanned } = await crawlForTeamPages(domain);
   const decisionMakers = await extractDMsWithGPT(content, companyName, domain);
+
+  for (const dm of decisionMakers) {
+    if (!dm.email && dm.full_name.includes(" ") && domain && domain.includes(".")) {
+      const generated = generateProbableEmail(dm.full_name, domain);
+      if (generated) {
+        dm.email = generated;
+        if (!dm.source.includes("email_generated")) {
+          dm.source = dm.source ? `${dm.source}+email_generated` : "email_generated";
+        }
+      }
+    }
+  }
 
   log(`Found ${decisionMakers.length} decision makers for ${companyName} (scanned ${pagesScanned} pages)`, "dm-enrich");
 
@@ -447,4 +515,78 @@ export async function getEnrichmentStats(): Promise<{
     totalDMs,
     coveragePercent: totalCompanies > 0 ? Math.round((enrichedCompanies / totalCompanies) * 100) : 0,
   };
+}
+
+export async function backfillDMContacts(limit = 50): Promise<{
+  processed: number;
+  updated: number;
+  results: Array<{ companyName: string; dmsUpdated: number; dmsTotal: number }>;
+}> {
+  const dmTable = encodeURIComponent("Decision_Makers");
+  const compTable = encodeURIComponent("Companies");
+
+  const formula = encodeURIComponent("AND({company_name_text} != '', OR({email} = BLANK(), {email} = ''))");
+  const dmData = await airtableRequest(`${dmTable}?filterByFormula=${formula}&pageSize=${limit}`);
+  const records = dmData.records || [];
+
+  const byCompany = new Map<string, Array<{ id: string; full_name: string; title: string }>>();
+  for (const rec of records) {
+    const comp = rec.fields.company_name_text || "";
+    if (!comp) continue;
+    if (!byCompany.has(comp)) byCompany.set(comp, []);
+    byCompany.get(comp)!.push({
+      id: rec.id,
+      full_name: rec.fields.full_name || "",
+      title: rec.fields.title || "",
+    });
+  }
+
+  let totalUpdated = 0;
+  const results: Array<{ companyName: string; dmsUpdated: number; dmsTotal: number }> = [];
+
+  for (const [companyName, dms] of byCompany) {
+    const compFormula = encodeURIComponent(`{company_name} = '${companyName.replace(/'/g, "\\'")}'`);
+    let domain = "";
+    try {
+      const compData = await airtableRequest(`${compTable}?filterByFormula=${compFormula}&pageSize=1&fields[]=website`);
+      const website = compData.records?.[0]?.fields?.website || "";
+      if (website) {
+        domain = extractDomain(website);
+      }
+    } catch { }
+
+    if (!domain) {
+      results.push({ companyName, dmsUpdated: 0, dmsTotal: dms.length });
+      continue;
+    }
+
+    let companyUpdated = 0;
+    for (const dm of dms) {
+      const updateFields: Record<string, string> = {};
+
+      const generated = generateProbableEmail(dm.full_name, domain);
+      if (generated) {
+        updateFields.email = generated;
+      }
+
+      if (Object.keys(updateFields).length > 0) {
+        try {
+          await airtableRequest(`${dmTable}/${dm.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ fields: { ...updateFields, source: "website_crawl+email_generated" } }),
+          });
+          companyUpdated++;
+          totalUpdated++;
+        } catch (e: any) {
+          log(`Failed to update DM ${dm.full_name}: ${e.message}`, "dm-enrich");
+        }
+      }
+    }
+
+    results.push({ companyName, dmsUpdated: companyUpdated, dmsTotal: dms.length });
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  log(`Backfill complete: ${totalUpdated}/${records.length} DMs updated`, "dm-enrich");
+  return { processed: records.length, updated: totalUpdated, results };
 }

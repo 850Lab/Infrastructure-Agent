@@ -30,8 +30,12 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 
 ### Decision Maker Enrichment
 - `server/apollo.ts` - Apollo.io API client (org enrichment: employees, industry, description)
-- `server/dm-enrichment.ts` - Website crawling, GPT-4o DM extraction, Airtable sync, batch enrichment
-- `server/dm-routes.ts` - API endpoints (stats, preview, enrich-one, enrich-batch)
+- `server/dm-enrichment.ts` - Website crawling, GPT-4o DM extraction, email generation, Airtable sync, batch enrichment, backfill
+- `server/dm-routes.ts` - API endpoints (stats, preview, enrich-one, enrich-batch, backfill-contacts)
+
+### Outscraper (Website Lookup)
+- `server/outscraper.ts` - Google Maps search via Outscraper API to find missing company websites
+- `server/outscraper-routes.ts` - API endpoints (status, lookup-one, lookup-batch, lookup-then-enrich)
 
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
@@ -68,6 +72,13 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `GET /api/enrichment/preview?limit=10` - Preview next companies to enrich
 - `POST /api/enrichment/enrich-one` - Enrich a single company (auth required)
 - `POST /api/enrichment/enrich-batch` - Batch enrich N companies (auth required)
+- `POST /api/enrichment/backfill-contacts` - Generate emails for existing DMs without them (auth required)
+
+### Outscraper
+- `GET /api/outscraper/status` - List companies without websites
+- `POST /api/outscraper/lookup-one` - Look up a single company on Google Maps (auth required)
+- `POST /api/outscraper/lookup-batch` - Batch lookup up to N companies (auth required)
+- `POST /api/outscraper/lookup-then-enrich` - Find websites then run DM enrichment (auth required)
 
 ### Active Work
 - `GET /api/active-work/config` - Get geos, keywords, query count
@@ -86,6 +97,8 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `MAKE_API_TOKEN` - Make.com API token
 - `CALLCENTER_BASE_URL` - CallCenter app URL (for Foreman push)
 - `INTERNAL_API_KEY` - Shared secret between HUB and CallCenter
+- `OUTSCRAPER_API_KEY` - Outscraper API key (Google Maps website lookup)
+- `APOLLO_API_KEY` - Apollo.io API key (org enrichment, free tier)
 - `DATABASE_URL` - PostgreSQL connection string
 
 ## Airtable Configuration
