@@ -386,9 +386,8 @@ export async function writeDMsToAirtable(result: EnrichmentResult): Promise<numb
     }
   }
 
-  const hasDMs = written > 0 || result.decisionMakers.length > 0;
   const updateFields: Record<string, any> = {
-    enrichment_status: hasDMs ? "done" : "pending",
+    enrichment_status: "done",
   };
 
   if (result.apolloData) {
@@ -490,22 +489,37 @@ export async function getEnrichmentStats(): Promise<{
   let enrichedCompanies = 0;
   try {
     const formula = encodeURIComponent("{enrichment_status} = 'done'");
-    const data = await airtableRequest(`${encoded}?filterByFormula=${formula}&pageSize=100&fields[]=company_name`);
-    enrichedCompanies = (data.records || []).length;
+    let eOffset: string | undefined;
+    do {
+      const params = eOffset ? `&offset=${eOffset}` : "";
+      const data = await airtableRequest(`${encoded}?filterByFormula=${formula}&pageSize=100&fields[]=company_name${params}`);
+      enrichedCompanies += (data.records || []).length;
+      eOffset = data.offset;
+    } while (eOffset);
   } catch { }
 
   let unenrichedWithWebsite = 0;
   try {
     const formula = encodeURIComponent("AND({website} != '', {enrichment_status} != 'done')");
-    const data = await airtableRequest(`${encoded}?filterByFormula=${formula}&pageSize=100&fields[]=company_name`);
-    unenrichedWithWebsite = (data.records || []).length;
+    let uOffset: string | undefined;
+    do {
+      const params = uOffset ? `&offset=${uOffset}` : "";
+      const data = await airtableRequest(`${encoded}?filterByFormula=${formula}&pageSize=100&fields[]=company_name${params}`);
+      unenrichedWithWebsite += (data.records || []).length;
+      uOffset = data.offset;
+    } while (uOffset);
   } catch { }
 
   let totalDMs = 0;
   try {
     const dmEncoded = encodeURIComponent("Decision_Makers");
-    const data = await airtableRequest(`${dmEncoded}?pageSize=100&fields[]=full_name`);
-    totalDMs = (data.records || []).length;
+    let dmOffset: string | undefined;
+    do {
+      const params = dmOffset ? `&offset=${dmOffset}` : "";
+      const data = await airtableRequest(`${dmEncoded}?pageSize=100&fields[]=full_name${params}`);
+      totalDMs += (data.records || []).length;
+      dmOffset = data.offset;
+    } while (dmOffset);
   } catch { }
 
   return {

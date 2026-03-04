@@ -180,13 +180,6 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
     breakdown.push("has website");
   }
 
-  // enrichment_status = "done" means we have DM data (+15)
-  const enrichStatus = String(getField(fields, "enrichmentStatus") || "").toLowerCase();
-  if (enrichStatus === "done") {
-    score += 15;
-    breakdown.push("DM enriched");
-  }
-
   return { score, breakdown };
 }
 
@@ -295,6 +288,8 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
         if (dm) {
           c.dmName = dm.name;
           c.dmTitle = dm.title;
+          c.score += 15;
+          c.scoreBreakdown.push("has DM contact");
         }
       }
 
