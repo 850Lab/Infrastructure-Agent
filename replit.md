@@ -28,6 +28,11 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/foreman.ts` - Candidate fetching, deterministic scoring, ranking, CallCenter push, Airtable tagging
 - `server/foreman-routes.ts` - API endpoints (preview, generate, generate-and-tag)
 
+### Decision Maker Enrichment
+- `server/apollo.ts` - Apollo.io API client (org enrichment: employees, industry, description)
+- `server/dm-enrichment.ts` - Website crawling, GPT-4o DM extraction, Airtable sync, batch enrichment
+- `server/dm-routes.ts` - API endpoints (stats, preview, enrich-one, enrich-batch)
+
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
 - `server/active-work-routes.ts` - API endpoints (config, generate-queries, score, batch, high-score, rotate)
@@ -57,6 +62,12 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `GET /api/foreman/call-pack/preview?count=20` - Preview ranked call pack (no push)
 - `POST /api/foreman/call-pack/generate` - Generate and push call pack to CallCenter
 - `POST /api/foreman/call-pack/generate-and-tag` - Generate, push, and tag Airtable records
+
+### DM Enrichment
+- `GET /api/enrichment/stats` - Enrichment coverage stats
+- `GET /api/enrichment/preview?limit=10` - Preview next companies to enrich
+- `POST /api/enrichment/enrich-one` - Enrich a single company (auth required)
+- `POST /api/enrichment/enrich-batch` - Batch enrich N companies (auth required)
 
 ### Active Work
 - `GET /api/active-work/config` - Get geos, keywords, query count

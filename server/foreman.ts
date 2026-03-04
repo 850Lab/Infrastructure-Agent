@@ -20,6 +20,7 @@ const FIELDS: Record<string, string> = {
   callRank: "call_rank",
   callPackDate: "call_pack_date",
   activeWorkScore: "Active_Work_Score",
+  enrichmentStatus: "enrichment_status",
   createdAt: "created_at",
 };
 
@@ -48,9 +49,12 @@ export interface ForemanCandidate {
   state: string;
   website: string;
   isRefineryRelated: string;
+  enrichmentStatus: string;
   score: number;
   scoreBreakdown: string[];
   lastContactedAt: string | null;
+  dmName?: string;
+  dmTitle?: string;
 }
 
 export interface CallPackLead {
@@ -63,6 +67,8 @@ export interface CallPackLead {
   score: number;
   reason: string;
   opener: string;
+  dm_name?: string;
+  dm_title?: string;
 }
 
 export interface CallPack {
@@ -174,6 +180,13 @@ function scoreCandidate(fields: Record<string, any>): { score: number; breakdown
     breakdown.push("has website");
   }
 
+  // enrichment_status = "done" means we have DM data (+15)
+  const enrichStatus = String(getField(fields, "enrichmentStatus") || "").toLowerCase();
+  if (enrichStatus === "done") {
+    score += 15;
+    breakdown.push("DM enriched");
+  }
+
   return { score, breakdown };
 }
 
@@ -223,6 +236,7 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
         state: String(getField(fields, "state") || ""),
         website: String(getField(fields, "website") || ""),
         isRefineryRelated: String(getField(fields, "isRefineryRelated") || ""),
+        enrichmentStatus: String(getField(fields, "enrichmentStatus") || ""),
         score,
         scoreBreakdown: breakdown,
         lastContactedAt: getField(fields, "lastContactedAt") || null,
@@ -233,6 +247,63 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
   } while (offset);
 
   log(`Total candidates fetched: ${candidates.length}`, "foreman");
+
+  const enriched = candidates.filter(c => c.enrichmentStatus === "done");
+  if (enriched.length > 0) {
+    try {
+      const dmTable = encodeURIComponent("Decision_Makers");
+      const dmByCompany = new Map<string, { name: string; title: string; priority: number }>();
+
+      const DEPT_PRIORITY: Record<string, number> = {
+        operations: 1, maintenance: 2, safety: 3, executive: 4, sales: 5, finance: 6, other: 7,
+      };
+      const SENIORITY_PRIORITY: Record<string, number> = {
+        vp: 1, director: 2, c_suite: 3, manager: 4, other: 5,
+      };
+
+      let dmOffset: string | undefined;
+      do {
+        const url = dmOffset
+          ? `${dmTable}?pageSize=100&offset=${dmOffset}`
+          : `${dmTable}?pageSize=100`;
+        const dmData = await airtableRequest(url);
+
+        for (const rec of dmData.records || []) {
+          const compName = String(rec.fields.company_name_text || "").trim().toLowerCase();
+          if (!compName) continue;
+
+          const dept = String(rec.fields.department || "other").toLowerCase();
+          const seniority = String(rec.fields.seniority || "other").toLowerCase();
+          const priority = (DEPT_PRIORITY[dept] || 7) * 10 + (SENIORITY_PRIORITY[seniority] || 5);
+
+          const existing = dmByCompany.get(compName);
+          if (!existing || priority < existing.priority) {
+            dmByCompany.set(compName, {
+              name: rec.fields.full_name || "",
+              title: rec.fields.title || "",
+              priority,
+            });
+          }
+        }
+
+        dmOffset = dmData.offset;
+      } while (dmOffset);
+
+      for (const c of candidates) {
+        const key = c.companyName.trim().toLowerCase();
+        const dm = dmByCompany.get(key);
+        if (dm) {
+          c.dmName = dm.name;
+          c.dmTitle = dm.title;
+        }
+      }
+
+      log(`Matched DM names for ${dmByCompany.size} companies`, "foreman");
+    } catch (e: any) {
+      log(`Failed to fetch DM data: ${e.message}`, "foreman");
+    }
+  }
+
   return candidates;
 }
 
@@ -265,17 +336,26 @@ export function rankAndSelect(
 export function buildCallPack(selected: ForemanCandidate[], mode: string): CallPack {
   const today = new Date().toISOString().split("T")[0];
 
-  const leads: CallPackLead[] = selected.map((c, i) => ({
-    external_id: c.recordId,
-    company_name: c.companyName,
-    phone: c.phone,
-    city: c.city,
-    state: c.state,
-    rank: i + 1,
-    score: c.score,
-    reason: c.scoreBreakdown.join(" + "),
-    opener: "Hey, quick question — are you guys currently mobilized inside any refineries or chemical plants right now?",
-  }));
+  const leads: CallPackLead[] = selected.map((c, i) => {
+    let opener = "Hey, quick question — are you guys currently mobilized inside any refineries or chemical plants right now?";
+    if (c.dmName) {
+      opener = `Hi, may I speak with ${c.dmName}? Quick question about whether you're currently mobilized inside any refineries or chemical plants right now.`;
+    }
+
+    return {
+      external_id: c.recordId,
+      company_name: c.companyName,
+      phone: c.phone,
+      city: c.city,
+      state: c.state,
+      rank: i + 1,
+      score: c.score,
+      reason: c.scoreBreakdown.join(" + "),
+      opener,
+      dm_name: c.dmName,
+      dm_title: c.dmTitle,
+    };
+  });
 
   return {
     date: today,

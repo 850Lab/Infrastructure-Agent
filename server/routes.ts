@@ -7,6 +7,7 @@ import { transcribeAudio, analyzeContainment } from "./openai";
 import { registerMakeRoutes } from "./make-routes";
 import { registerActiveWorkRoutes } from "./active-work-routes";
 import { registerForemanRoutes } from "./foreman-routes";
+import { registerDMRoutes } from "./dm-routes";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -111,6 +112,7 @@ export async function registerRoutes(
   registerMakeRoutes(app);
   registerActiveWorkRoutes(app);
   registerForemanRoutes(app);
+  registerDMRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);
