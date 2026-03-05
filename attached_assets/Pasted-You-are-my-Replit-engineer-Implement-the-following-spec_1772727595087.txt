@@ -1,0 +1,227 @@
+You are my Replit engineer. Implement the following spec exactly. Do not make assumptions about file locations—inspect the repo and follow existing patterns. If a referenced file already exists, modify it rather than duplicating. If a field/name differs, use the actual project conventions. Do not break existing CLI runners. Avoid starting Express server from module imports (use existing logger.ts pattern). Use TypeScript everywhere.
+
+OBJECTIVE
+Build a 7-page React app with real-time "Motherboard" dashboard, SSE event streaming, dark theme with neon accents, parallax page transitions, simple auth, and a "Run Now" button that triggers the daily orchestrator and shows live progress on the motherboard visualization.
+
+TASKS
+T001: Backend — SSE Event Bus + Run History + New Routes
+- Create server/events.ts:
+  - In-memory EventBus class:
+    - subscribe(res): registers SSE response
+    - publish(type, payload): pushes to subscribers
+    - getRecentEvents(): returns last 200
+  - Ring buffer of last 200 events
+  - Event types:
+    STEP_STARTED, STEP_DONE, TRIGGER_FIRED, ERROR, HEARTBEAT, RUN_STARTED, RUN_DONE
+  - SSE formatting: "event: <type>\ndata: <json>\n\n"
+  - Also send an initial "HEARTBEAT" or "RUN_STARTED" replay so UI immediately knows status
+
+- Create server/run-history.ts:
+  - In-memory store (max 20 runs)
+  - Each run:
+    run_id, started_at, finished_at, steps[], summary, errors[]
+  - Functions:
+    startRun(), completeRun(), getHistory(), getRunById()
+  - Steps contain: {step, started_at, finished_at, duration_ms, stats?, status}
+
+- Create server/run-daily-web.ts:
+  - Instrumented daily orchestrator wrapper that publishes events and records run history.
+  - Must wrap existing orchestrator functions (the codebase already has server/run-daily.ts for CLI).
+  - Requirements:
+    - publish("RUN_STARTED", {run_id, ts})
+    - At step start: publish("STEP_STARTED", {step, run_id, ts})
+    - At step end: publish("STEP_DONE", {step, run_id, duration_ms, ts, stats})
+    - On per-company work: publish("TRIGGER_FIRED", {trigger, company, ts})
+    - On error: publish("ERROR", {step, message, ts})
+    - publish("RUN_DONE", {run_id, ts, status})
+  - Must prevent concurrent runs: if running, throw a typed error for routes to return 409.
+  - Must NOT block the HTTP response when starting run. The POST route returns run_id immediately and run continues async.
+  - Use existing logger.ts for console output.
+
+- Update/register routes in server/routes.ts (or wherever routes are defined; find the current route registration file and update):
+  - GET /api/events
+    - SSE endpoint
+    - On connect: replay recent events (last 50 is fine) then stream new
+    - Heartbeat every 15s: publish HEARTBEAT and also write to SSE
+    - On client disconnect: remove subscriber
+  - POST /api/run-daily
+    - Starts orchestrator asynchronously
+    - Returns {run_id}
+    - If already running: return 409 with {error:"RUN_ALREADY_ACTIVE"}
+  - GET /api/run-history
+    - Returns latest 20 run objects (summary list)
+  - GET /api/run-history/:run_id
+    - Returns full run detail or 404
+  - GET /api/dashboard/stats
+    - Return summary stats used by UI:
+      today_list_count
+      fresh_pool_count
+      dm_resolved_count (Offer_DM present on today list)
+      playbooks_ready_count (Playbook_Version present on today list)
+      last_run_status + last_run_id + last_run_time (from run-history)
+    - Pull from Airtable using existing Airtable client in repo. If a stat cannot be computed, return null for that field but do not crash.
+  - POST /api/auth/login
+    - Validate email + password against env ADMIN_EMAIL + ADMIN_PASSWORD
+    - On success: return {token, expires_in}
+    - Token can be a simple signed token using a server secret OR a random UUID stored in memory with expiry.
+    - On failure: 401
+  - Also add auth middleware for protected API routes (/api/run-daily, /api/run-history*, /api/dashboard/stats, /api/events OPTIONAL).
+    - Keep /api/auth/login public.
+    - For simplicity, require Authorization: Bearer <token> header.
+
+Acceptance (Backend):
+- GET /api/events streams heartbeats every 15s.
+- POST /api/run-daily starts a run; events stream through SSE.
+- Auth endpoint works; protected endpoints require token.
+
+FILES (Backend):
+server/events.ts, server/run-history.ts, server/run-daily-web.ts, server/routes.ts (or project equivalent)
+
+------------------------------------------------------------
+T002: Frontend — Dark Theme, Auth, Layout & Routing Shell
+- Update client/src/index.css:
+  - dark slate background
+  - neon cyan/teal accent
+  - subtle glow utilities (card glow, text glow)
+  - keep it minimal and consistent
+
+- Create client/src/lib/auth.ts:
+  - AuthContext + provider
+  - login(email,password) calls POST /api/auth/login
+  - store token in localStorage
+  - attach token in fetch wrappers (Authorization header)
+  - logout clears token
+
+- Create ProtectedRoute component:
+  - redirects to /login if not authenticated
+  - use react-router navigate
+
+- Create client/src/components/app-layout.tsx:
+  - top nav: Dashboard, Today, Follow-ups, Lead Engine, Contacts, Analytics
+  - status indicator (Standby/Running/Error) derived from SSE state
+  - uses Framer Motion AnimatePresence for parallax slide transitions between routes
+  - keep layout responsive
+
+- Update client/src/App.tsx:
+  - 7 routes:
+    /login
+    /dashboard (default)
+    /today
+    /followups
+    /lead-engine
+    /contacts
+    /analytics
+  - all except /login are protected
+  - implement default redirect from / to /dashboard
+
+- Create client/src/pages/login.tsx:
+  - clean dark themed login card
+  - neon accent button
+  - error display on failed login
+
+Acceptance (Frontend Shell):
+- Login works (token stored)
+- nav works
+- parallax transitions work
+- dark theme applies
+
+FILES:
+client/src/index.css, client/src/lib/auth.ts, client/src/components/app-layout.tsx, client/src/App.tsx, client/src/pages/login.tsx
+
+------------------------------------------------------------
+T003: Frontend — Motherboard Dashboard
+Blocked by T001 + T002
+
+- Create client/src/lib/use-sse.ts:
+  - Connects to GET /api/events using EventSource
+  - Auto-reconnect on disconnect (exponential backoff)
+  - Maintains:
+    recentEvents[] (max 200)
+    activeNodes Set<string>
+    runStatus: "standby" | "running" | "error"
+    eventRate (events/sec rolling window)
+    lastRunId
+  - Parse events by type
+  - HEARTBEAT keeps connection status fresh
+  - RUN_STARTED/RUN_DONE updates runStatus
+
+- Create/replace client/src/pages/dashboard.tsx:
+  - Motherboard SVG with 8 nodes:
+    lead_feed, opportunity_engine, dm_coverage, dm_fit, playbooks, call_engine, query_intel, bootstrap
+  - Standby: nodes pulse/breathe slowly (CSS keyframes or Framer)
+  - Active:
+    STEP_STARTED → node glows bright cyan
+    STEP_DONE → node returns to normal
+    TRIGGER_FIRED → pulse travels along an edge (simple animated circle along SVG path or CSS stroke-dashoffset)
+    ERROR → red glow on relevant node + status badge error
+  - Run Now button:
+    - calls POST /api/run-daily
+    - disabled while running
+    - uses auth token
+  - Status badge: Standby (dim), Running (pulsing cyan), Error (red glow)
+  - Event log panel right: latest 30 events, readable format
+  - Brainwave strip bottom: simple animated bars that spike based on eventRate (no charts library required)
+  - Clicking a node navigates to corresponding page:
+    opportunity_engine -> /today
+    dm_coverage/dm_fit -> /contacts
+    query_intel/lead_feed -> /lead-engine
+    call_engine -> /followups
+    bootstrap -> /analytics (or /dashboard no-op)
+
+Acceptance:
+- Dashboard shows pulsing standby
+- Run Now triggers live spikes + event log updates
+- Brainwave spikes with activity
+
+FILES:
+client/src/lib/use-sse.ts, client/src/pages/dashboard.tsx
+
+------------------------------------------------------------
+T004: Frontend — 5 Placeholder Pages
+Blocked by T002
+
+Create pages with dark theme + neon accent, metric cards + table placeholders, add data-testid.
+- client/src/pages/today.tsx — "Today's Call List": cards for Companies, DMs Resolved, Playbooks Ready
+- client/src/pages/followups.tsx — "Follow-ups": cards for Overdue, Due Today, Due This Week
+- client/src/pages/lead-engine.tsx — "Lead Engine": cards for Fresh Pool, Queries Active, Leads Added
+- client/src/pages/contacts.tsx — "Contacts": cards for Total DMs, With Email, With Phone
+- client/src/pages/analytics.tsx — "Analytics": cards for Calls This Week, Win Rate, Avg Engagement
+All pages should share a simple Card component style (optional reusable component).
+
+Acceptance:
+- all pages render and look consistent
+- transitions work
+
+FILES:
+client/src/pages/today.tsx, followups.tsx, lead-engine.tsx, contacts.tsx, analytics.tsx
+
+------------------------------------------------------------
+T005: Integration, Polish & Documentation
+- End-to-end verify:
+  a) Login → dashboard
+  b) dashboard standby pulse
+  c) Run Now → SSE events, spikes, brainwave spikes
+  d) navigate all 7 pages with parallax transitions
+  e) status indicator reflects Standby/Running/Error
+
+- Add required env vars to docs:
+  ADMIN_EMAIL, ADMIN_PASSWORD
+  plus existing vars (AIRTABLE_API_KEY, AIRTABLE_BASE_ID, OPENAI_API_KEY)
+
+- Update replit.md:
+  - frontend architecture
+  - SSE event types
+  - how to run locally in Replit
+  - troubleshooting (SSE reconnect, auth issues)
+
+DELIVERABLE:
+Commit/print the list of changed files and exact commands to run/test.
+Also provide a short manual test checklist.
+
+IMPLEMENTATION NOTES (Non-negotiable):
+- Do not use websockets; use SSE exactly.
+- Do not break existing CLI runners.
+- Do not spawn child processes for orchestrator; reuse exported functions.
+- Ensure CORS/headers allow EventSource.
+- Ensure SSE endpoint does not require auth OR if it does, implement token query param (?token=) since EventSource can’t set headers easily (choose one approach and document it).
+- Keep token expiry simple (e.g., 24h) and enforce it.

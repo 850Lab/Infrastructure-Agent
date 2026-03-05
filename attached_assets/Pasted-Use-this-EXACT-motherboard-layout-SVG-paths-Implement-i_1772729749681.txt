@@ -1,0 +1,138 @@
+Use this EXACT motherboard layout + SVG paths. Implement it as a single source of truth in client/src/pages/dashboard.tsx (or a small helper in the same file). No external graph libs. SVG viewBox must be 0 0 1200 700. Right panel is event log, bottom strip is brainwave. Nodes pulse in standby, glow on STEP_STARTED, calm on STEP_DONE, turn red on ERROR. TRIGGER_FIRED animates a traveling dot along the mapped edge path.
+
+=== CANVAS ===
+SVG viewBox: "0 0 1200 700"
+Main board region: x=40..820
+Event log panel: x=850..1180, y=60..610
+Brainwave strip: x=40..1180, y=630..690
+
+=== NODE IDS (must match backend step names as closely as possible) ===
+bootstrap
+lead_feed
+opportunity_engine
+dm_coverage
+dm_fit
+playbooks
+call_engine
+query_intel
+
+=== NODE RECT STYLE ===
+Default node: rounded rect w=160..180, h=56, r=14
+Standby: slow “breathing” pulse (opacity 0.70→0.92→0.70, scale 1.00→1.02→1.00, duration 3s, slight per-node delay)
+Active glow (STEP_STARTED): cyan/teal drop-shadow + brighter border
+Done (STEP_DONE): returns to standby pulse
+Error: red glow + status badge red
+
+=== NODE POSITIONS (x,y,w,h) ===
+Use these EXACT coordinates:
+
+bootstrap:          x=90,  y=70,  w=160, h=56
+lead_feed:          x=90,  y=200, w=160, h=56
+opportunity_engine: x=310, y=200, w=180, h=56
+dm_coverage:        x=530, y=200, w=160, h=56
+dm_fit:             x=710, y=200, w=160, h=56
+playbooks:          x=710, y=320, w=160, h=56
+call_engine:        x=310, y=460, w=180, h=56
+query_intel:        x=90,  y=460, w=160, h=56
+
+=== PORT HELPERS (compute in code) ===
+right port:  (x+w, y+h/2)
+left port:   (x,   y+h/2)
+top port:    (x+w/2, y)
+bottom port: (x+w/2, y+h)
+
+=== EDGE IDS + SVG PATH D STRINGS (use EXACT d strings) ===
+Render each as <path id="edge-<EDGE_ID>" d="..." .../>
+
+EDGE_ID: bootstrap->lead_feed
+d: M 170 126 C 170 150, 130 150, 130 200
+
+EDGE_ID: lead_feed->opportunity_engine
+d: M 250 228 C 290 228, 270 228, 310 228
+
+EDGE_ID: opportunity_engine->dm_coverage
+d: M 490 228 C 520 228, 510 228, 530 228
+
+EDGE_ID: dm_coverage->dm_fit
+d: M 690 228 C 705 228, 695 228, 710 228
+
+EDGE_ID: dm_fit->playbooks
+d: M 790 256 C 790 285, 790 295, 790 320
+
+EDGE_ID: playbooks->call_engine
+d: M 790 376 C 720 410, 560 420, 400 460
+
+EDGE_ID: call_engine->query_intel
+d: M 310 488 L 250 488
+
+EDGE_ID: query_intel->lead_feed
+d: M 170 516 C 170 580, 80 580, 80 256 C 80 240, 120 240, 170 256
+
+=== TRIGGER_FIRED EDGE MAPPING ===
+When TRIGGER_FIRED arrives with payload.trigger or payload.step, map it to an edge pulse:
+- "lead_feed" -> edge query_intel->lead_feed (loop back feeding)
+- "opportunity_engine" -> edge lead_feed->opportunity_engine
+- "dm_coverage" -> edge opportunity_engine->dm_coverage
+- "dm_fit" -> edge dm_coverage->dm_fit
+- "playbooks" -> edge dm_fit->playbooks
+- "call_engine" -> edge playbooks->call_engine (or call_engine node flash if you prefer)
+- "query_intel" -> edge call_engine->query_intel
+- "bootstrap" -> edge bootstrap->lead_feed
+
+If the trigger is unknown, do not animate an edge.
+
+=== TRAVELING DOT PULSE (RECOMMENDED IMPLEMENTATION) ===
+Implement a “pulseDot” that moves along a path using getTotalLength/getPointAtLength:
+- When an edge pulse is triggered, start an animation for 800ms:
+  t = elapsed/800
+  len = path.getTotalLength()
+  pt = path.getPointAtLength(t*len)
+  Render <circle cx={pt.x} cy={pt.y} r={5} ...> with cyan glow
+- Allow at most 2 simultaneous pulses; queue or replace oldest.
+
+=== STATUS TEXT (EEG VIBE) ===
+Below the page title:
+- Standby: "Neural Net: idle — listening for triggers"
+- Running: "Neural Net: firing — step: <active step name>"
+- Error: "Neural Net: fault detected — check event log"
+
+=== EVENT LOG PANEL (RIGHT) ===
+Panel bounds: x=850..1180, y=60..610
+Show latest 30 events from SSE with:
+- icon + type + time (HH:MM:SS) + short message
+Icons:
+RUN_STARTED: ⏵
+RUN_DONE: ⏹
+STEP_STARTED: ▶
+STEP_DONE: ✓
+TRIGGER_FIRED: ⚡
+ERROR: ⛔
+HEARTBEAT: ·
+
+=== BRAINWAVE STRIP (BOTTOM) ===
+Bounds: x=40..1180, y=630..690
+40 bars (rects) spaced evenly
+Bar height scales with rolling 10s eventRate
+- Standby: dim bars
+- Running: cyan bars with subtle glow
+- Error: red tint
+
+=== NODE CLICK NAVIGATION ===
+Click node to navigate:
+opportunity_engine -> /today
+dm_coverage -> /contacts
+dm_fit -> /contacts
+playbooks -> /today
+call_engine -> /followups
+query_intel -> /lead-engine
+lead_feed -> /lead-engine
+bootstrap -> /analytics
+
+=== IMPORTANT UX ===
+Motherboard is MAIN USER DASHBOARD. It must look premium:
+- dark slate background
+- neon cyan/teal accent
+- subtle noise/particle optional but not required
+- no clutter on the board: nodes + traces + soft glows
+
+Build it exactly to these coordinates/paths and confirm in output that the motherboard looks like a circuit board with a feedback loop.

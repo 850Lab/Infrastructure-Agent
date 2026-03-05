@@ -1,0 +1,100 @@
+You are my Replit React + Node engineer. Build the 7-page app with a real-time Motherboard dashboard.
+
+GOAL:
+- 7 pages with routing
+- Login page first
+- Main dashboard is a realtime “Motherboard” visualization
+- Motherboard pulses in standby mode
+- Motherboard spikes/fires in real time when backend triggers run
+- Parallax transitions between pages
+
+STACK:
+- React + TypeScript
+- Framer Motion for animations/transitions
+- Backend Node/Express (existing) emits real-time events via SSE
+- No heavy graph libraries required; SVG is fine
+
+PAGES (Routes):
+1) /login
+2) /dashboard (Motherboard)
+3) /today
+4) /followups
+5) /lead-engine
+6) /contacts
+7) /analytics
+
+AUTH (simple v1):
+- Login page asks for email + password
+- If valid (env ADMIN_EMAIL / ADMIN_PASSWORD), store session token in localStorage
+- Protect other routes (redirect to /login if not authenticated)
+(We can swap to Supabase later.)
+
+BACKEND REALTIME:
+1) Create server/events.ts:
+- In-memory EventBus with:
+  - subscribe(res): SSE subscription
+  - publish(type, payload)
+- Keep last 200 events in a ring buffer so new subscribers can receive recent history.
+
+2) Create endpoint GET /api/events:
+- Sets SSE headers
+- Registers subscriber
+- Immediately replays last N events
+- Sends heartbeat every 15s
+
+3) Instrument the Daily Orchestrator and key engines:
+- At step start: publish("STEP_STARTED", {step, run_id, ts})
+- At step end: publish("STEP_DONE", {step, run_id, duration_ms, ts, stats})
+- On per-company work (dm enrichment, playbooks, etc): publish("TRIGGER_FIRED", {trigger, company, ts})
+- On error: publish("ERROR", {step, message, ts})
+
+4) Add a POST /api/run-daily endpoint that kicks off the run (async) and streams events while running:
+- Returns {run_id} immediately
+- The SSE stream carries progress
+- Prevent concurrent runs (if a run is active, return 409)
+
+RUN HISTORY:
+- Create a simple Run_History storage module:
+  - store run_id, started_at, finished_at, steps[], summary counts, errors[]
+  - For v1: store in Airtable table Run_History if possible; otherwise store JSON locally in /data/run_history.json
+- Create endpoint GET /api/run-history (latest 20)
+- Create endpoint GET /api/run-history/:run_id
+
+MOTHERBOARD UI (Dashboard):
+- Build an SVG “network map” (nodes + edges):
+  Nodes:
+   bootstrap, lead_feed, opportunity_engine, dm_coverage, dm_fit, playbooks, call_engine, query_intel
+  Edges:
+   lead_feed→opportunity_engine→dm_coverage→dm_fit→playbooks
+   calls→call_engine→(engagement)→query_intel→lead_feed
+- Standby animation:
+  - all nodes slowly pulse (breathing)
+- Active animation:
+  - when STEP_STARTED(step): that node glows and “spikes”
+  - when TRIGGER_FIRED(trigger): draw a traveling pulse along relevant edge
+  - show realtime event log panel on right (latest 30)
+  - show “brainwave strip” at bottom: spikes proportional to events per second
+
+INTERACTION:
+- Clicking a node navigates to the relevant page with a parallax transition
+- Add a “Run Now” button on dashboard that calls POST /api/run-daily
+- Show current status: Standby / Running / Error
+
+PARALLAX TRANSITIONS:
+- Use Framer Motion page transitions:
+  - slide + slight depth parallax
+  - keep consistent top nav
+- Top nav links to: Dashboard, Today, Follow-ups, Lead Engine, Contacts, Analytics
+
+TODAY / FOLLOWUPS / LEAD ENGINE / CONTACTS / ANALYTICS PAGES:
+- For now, each page can be clean placeholders with:
+  - title
+  - 2–3 metric cards
+  - a table component that will later render Airtable data
+- Keep layout premium: dark theme, neon accent, soft glow.
+
+DELIVERABLES:
+- Full code changes
+- How to run
+- Confirm SSE stream works (open dashboard and see heartbeat/events)
+- Confirm Run Now triggers events and motherboard spikes in real time
