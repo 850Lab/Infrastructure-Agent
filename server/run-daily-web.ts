@@ -10,6 +10,7 @@ import { getIndustryConfig } from "./config";
 import { eventBus } from "./events";
 import { startRun, addStep, completeRun } from "./run-history";
 import { takeSnapshot, computeDiff } from "./run-diff";
+import { snapshotTodayListFields, computeChangeset, type ChangesetEntry } from "./run-changeset";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -108,6 +109,9 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
     log(`Before snapshot failed: ${e.message}`, "run-diff");
   }
 
+  let changesetBefore: Awaited<ReturnType<typeof snapshotTodayListFields>> | null = null;
+  let changesetEntries: ChangesetEntry[] = [];
+
   try {
     if (config.bootstrap) {
       try {
@@ -118,6 +122,13 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       } catch (e: any) {
         errors.push(`Bootstrap: ${e.message}`);
       }
+    }
+
+    try {
+      changesetBefore = await snapshotTodayListFields();
+      log(`Changeset: before-snapshot captured ${changesetBefore.size} records`, "changeset");
+    } catch (e: any) {
+      log(`Changeset before-snapshot failed: ${e.message}`, "changeset");
     }
 
     try {
@@ -179,6 +190,16 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }
     }
 
+    if (changesetBefore) {
+      try {
+        const changesetAfter = await snapshotTodayListFields();
+        changesetEntries = computeChangeset(changesetBefore, changesetAfter);
+        log(`Changeset: ${changesetEntries.length} field changes detected`, "changeset");
+      } catch (e: any) {
+        log(`Changeset after-snapshot failed: ${e.message}`, "changeset");
+      }
+    }
+
     try {
       await timedStep(run_id, "call_engine", async () => {
         const r = await runCallEngine();
@@ -222,12 +243,16 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }
     }
 
+    const changeset = changesetEntries.length > 0
+      ? { entries: changesetEntries, reverted: false }
+      : null;
+
     const status = errors.length > 0 ? "error" as const : "completed" as const;
     completeRun(run_id, {
       finished_at: Date.now(),
       errors,
       status,
-      summary: { errors_count: errors.length, warnings_count: 0, diff },
+      summary: { errors_count: errors.length, warnings_count: 0, diff, changeset },
     });
     eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status });
     log(`Web run ${run_id} finished: ${status} (${errors.length} errors)`, "daily-web");
@@ -239,11 +264,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
         diff = computeDiff(beforeSnapshot, afterSnapshot);
       } catch {}
     }
+    const changeset = changesetEntries.length > 0
+      ? { entries: changesetEntries, reverted: false }
+      : null;
     completeRun(run_id, {
       finished_at: Date.now(),
       errors: [...errors, e.message],
       status: "error",
-      summary: { errors_count: errors.length + 1, diff },
+      summary: { errors_count: errors.length + 1, diff, changeset },
     });
     eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status: "error" });
     log(`Web run ${run_id} crashed: ${e.message}`, "daily-web");

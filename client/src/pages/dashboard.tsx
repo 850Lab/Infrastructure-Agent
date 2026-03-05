@@ -3,11 +3,12 @@ import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { useSSE } from "@/lib/use-sse";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import AppLayout from "@/components/app-layout";
 import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2 } from "lucide-react";
 
 const STEP_ORDER = [
   "bootstrap",
@@ -103,6 +104,7 @@ export default function DashboardPage() {
   const [shockwave, setShockwave] = useState(0);
   const [burst, setBurst] = useState(0);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [revertCatsMap, setRevertCatsMap] = useState<Record<string, Set<string>>>({});
   const [eventRate, setEventRate] = useState(0);
   const lastEventCount = useRef(0);
   const eventTimestamps = useRef<number[]>([]);
@@ -230,6 +232,32 @@ export default function DashboardPage() {
       setRunLoading(false);
     }
   }, [runStatus, runLoading, token]);
+
+  const revertMutation = useMutation({
+    mutationFn: ({ runId, categories }: { runId: string; categories: string[] }) =>
+      apiRequest("POST", `/api/run-history/${runId}/revert`, { categories }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/run-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/run-latest-diff"] });
+    },
+  });
+
+  const getRevertCats = (runId: string, availableCats: string[]) => {
+    if (!revertCatsMap[runId]) {
+      return new Set(availableCats);
+    }
+    return revertCatsMap[runId];
+  };
+
+  const toggleRevertCat = (runId: string, cat: string) => {
+    setRevertCatsMap(prev => {
+      const current = prev[runId] || new Set(["rank", "offer_dm", "playbooks"]);
+      const next = new Set(current);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return { ...prev, [runId]: next };
+    });
+  };
 
   const statusLabel = runStatus === "running" ? "RUNNING" : runStatus === "error" ? "ERROR" : "STANDBY";
   const statusSub = runStatus === "running"
@@ -580,6 +608,76 @@ export default function DashboardPage() {
                                           </span>
                                         </div>
                                       ))}
+                                    </div>
+                                  );
+                                })()}
+                                {run.summary?.changeset && (() => {
+                                  const cs = run.summary.changeset;
+                                  const revertedCatsSet = new Set(cs.reverted_categories || []);
+                                  const catCounts: Record<string, number> = {};
+                                  for (const e of cs.entries || []) {
+                                    if (!revertedCatsSet.has(e.category)) {
+                                      catCounts[e.category] = (catCounts[e.category] || 0) + 1;
+                                    }
+                                  }
+                                  const unrevertedCats = Object.keys(catCounts);
+                                  const CAT_LABELS: Record<string, string> = { rank: "Rank", offer_dm: "Offer DM", playbooks: "Playbooks" };
+                                  const runRevertCats = getRevertCats(run.run_id, unrevertedCats);
+
+                                  return (
+                                    <div className="pt-2 mt-1" style={{ borderTop: "1px solid #F1F5F9" }} data-testid={`revert-panel-${run.run_id}`}>
+                                      {revertedCatsSet.size > 0 && (
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                          <RotateCcw className="w-3 h-3" style={{ color: "#94A3B8" }} />
+                                          <span className="text-xs font-mono" style={{ color: "#94A3B8" }}>
+                                            Reverted: {Array.from(revertedCatsSet).map((c: string) => CAT_LABELS[c] || c).join(", ")}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {unrevertedCats.length > 0 && (
+                                        <div>
+                                          <span className="text-xs font-mono block mb-1.5" style={{ color: "#94A3B8" }}>Revert categories:</span>
+                                          <div className="flex flex-wrap gap-1.5 mb-2">
+                                            {unrevertedCats.map((cat) => (
+                                              <button
+                                                key={cat}
+                                                onClick={(e) => { e.stopPropagation(); toggleRevertCat(run.run_id, cat); }}
+                                                className="px-2 py-0.5 rounded text-xs font-mono transition-colors"
+                                                style={{
+                                                  background: runRevertCats.has(cat) ? "rgba(239,68,68,0.08)" : "#F8FAFC",
+                                                  color: runRevertCats.has(cat) ? ERROR_RED : "#94A3B8",
+                                                  border: `1px solid ${runRevertCats.has(cat) ? "rgba(239,68,68,0.25)" : "#E2E8F0"}`,
+                                                }}
+                                                data-testid={`revert-toggle-${cat}`}
+                                              >
+                                                {CAT_LABELS[cat] || cat} ({catCounts[cat]})
+                                              </button>
+                                            ))}
+                                          </div>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (runRevertCats.size === 0) return;
+                                              revertMutation.mutate({ runId: run.run_id, categories: Array.from(runRevertCats) });
+                                            }}
+                                            disabled={revertMutation.isPending || runRevertCats.size === 0}
+                                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-colors"
+                                            style={{
+                                              background: revertMutation.isPending ? "#F8FAFC" : "rgba(239,68,68,0.08)",
+                                              color: revertMutation.isPending ? "#94A3B8" : ERROR_RED,
+                                              border: `1px solid ${revertMutation.isPending ? "#E2E8F0" : "rgba(239,68,68,0.25)"}`,
+                                            }}
+                                            data-testid={`button-revert-${run.run_id}`}
+                                          >
+                                            {revertMutation.isPending ? (
+                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                              <RotateCcw className="w-3 h-3" />
+                                            )}
+                                            {revertMutation.isPending ? "Reverting..." : "Revert Selected"}
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })()}

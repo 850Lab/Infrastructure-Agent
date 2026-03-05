@@ -2,8 +2,9 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { eventBus } from "./events";
 import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
-import { getHistory, getRunById, getRunStatus, loadHistory } from "./run-history";
+import { getHistory, getRunById, getRunStatus, loadHistory, completeRun } from "./run-history";
 import { computeMachineMetrics } from "./machine-metrics";
+import { revertChangeset } from "./run-changeset";
 import { getUserConfig, saveUserConfig, suggestMachineName, mapToIndustryConfig } from "./user-config";
 import type { MachineConfig } from "./user-config";
 import { computeDailyBriefing } from "./briefing";
@@ -191,6 +192,71 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       diff: latest.summary?.diff || null,
       errors_count: latest.errors?.length || 0,
     });
+  });
+
+  app.post("/api/run-history/:run_id/revert", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const run = getRunById(req.params.run_id);
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      const { categories } = req.body || {};
+      if (!categories || !Array.isArray(categories) || categories.length === 0) {
+        return res.status(400).json({ error: "categories array required (rank, offer_dm, playbooks)" });
+      }
+
+      const validCats = ["rank", "offer_dm", "playbooks"];
+      const filteredCats = categories.filter((c: string) => validCats.includes(c));
+      if (filteredCats.length === 0) {
+        return res.status(400).json({ error: "No valid categories. Must be: rank, offer_dm, playbooks" });
+      }
+
+      const changeset = run.summary?.changeset;
+      if (!changeset || !changeset.entries || changeset.entries.length === 0) {
+        return res.status(400).json({ error: "No changeset available for this run" });
+      }
+
+      const alreadyReverted = new Set(changeset.reverted_categories || []);
+      const newCats = filteredCats.filter((c: string) => !alreadyReverted.has(c));
+      if (newCats.length === 0) {
+        return res.status(400).json({
+          error: "All requested categories already reverted",
+          reverted_categories: Array.from(alreadyReverted),
+        });
+      }
+
+      const result = await revertChangeset(changeset.entries, newCats);
+
+      const allReverted = new Set([...alreadyReverted, ...newCats]);
+      const allCatsInChangeset = new Set((changeset.entries || []).map((e: any) => e.category));
+      const fullyReverted = [...allCatsInChangeset].every(c => allReverted.has(c));
+
+      run.summary = {
+        ...run.summary,
+        changeset: {
+          ...changeset,
+          reverted: fullyReverted,
+          reverted_at: new Date().toISOString(),
+          reverted_categories: Array.from(allReverted),
+        },
+      };
+      completeRun(run.run_id, {
+        summary: run.summary,
+        status: run.status as "completed" | "error",
+      });
+
+      res.json({
+        success: true,
+        reverted: result.reverted,
+        skipped: result.skipped,
+        categories: filteredCats,
+        errors: result.errors,
+      });
+    } catch (err: any) {
+      log(`Revert error: ${err.message}`, "revert");
+      res.status(500).json({ error: "Revert failed", message: err.message });
+    }
   });
 
   app.get("/api/run-status", authMiddleware, (_req: Request, res: Response) => {
