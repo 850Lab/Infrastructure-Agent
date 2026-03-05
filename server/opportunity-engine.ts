@@ -1,3 +1,5 @@
+import { resolveAndWriteDMs, type DMResolutionSummary } from "./dm-resolver";
+
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
@@ -17,6 +19,11 @@ interface CompanyRecord {
   followupDue: string | null;
   finalPriority: number;
   todayCallList: boolean;
+  normalizedDomain: string | null;
+  primaryDMName: string;
+  primaryDMEmail: string;
+  primaryDMPhone: string;
+  primaryDMConfidence: number;
 }
 
 interface CallRecord {
@@ -48,6 +55,7 @@ export interface EngineResult {
   fresh_selected: number;
   score_fill_selected: number;
   overdue_followups_included: number;
+  dm_resolution: DMResolutionSummary | null;
   freshness_alert: { triggered: boolean; required: number; available: number };
   slip_alert: { triggered: boolean; overdue_count: number };
   companies_updated: number;
@@ -115,6 +123,11 @@ async function fetchAllCompanies(): Promise<CompanyRecord[]> {
         followupDue: f.Followup_Due || null,
         finalPriority: parseInt(f.Final_Priority || "0", 10) || 0,
         todayCallList: !!f.Today_Call_List,
+        normalizedDomain: f.Normalized_Domain || null,
+        primaryDMName: String(f.Primary_DM_Name || "").trim(),
+        primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
+        primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
+        primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
       });
     }
     offset = data.offset;
@@ -449,6 +462,26 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
     return b.finalPriority - a.finalPriority;
   });
 
+  logOE("Resolving primary decision makers for selected companies...");
+  const selectedCompaniesForDM = [...selected.values()].map(s => ({
+    id: s.company.id,
+    companyName: s.company.companyName,
+    normalizedDomain: s.company.normalizedDomain,
+    existingDM: s.company.primaryDMName ? {
+      name: s.company.primaryDMName,
+      email: s.company.primaryDMEmail,
+      phone: s.company.primaryDMPhone,
+      confidence: s.company.primaryDMConfidence,
+    } : undefined,
+  }));
+
+  let dmResolution: DMResolutionSummary | null = null;
+  try {
+    dmResolution = await resolveAndWriteDMs(selectedCompaniesForDM);
+  } catch (e: any) {
+    logOE(`DM resolution failed: ${e.message}`);
+  }
+
   return {
     top_requested: top,
     hot_selected: hotSelectedCount,
@@ -456,6 +489,7 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
     fresh_selected: freshSelectedCount,
     score_fill_selected: scoreFillCount,
     overdue_followups_included: overdueIncluded,
+    dm_resolution: dmResolution,
     freshness_alert: freshnessAlert,
     slip_alert: slipAlert,
     companies_updated: companiesUpdated,

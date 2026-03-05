@@ -1,0 +1,105 @@
+You are my Replit engineer. Add PRIMARY DECISION MAKER RESOLUTION to the call list so that each company has a named person to ask for.
+
+GOAL:
+For each company selected in Today_Call_List, populate these fields on the Companies record:
+- Primary_DM_Name
+- Primary_DM_Title
+- Primary_DM_Email
+- Primary_DM_Phone
+- Primary_DM_Seniority
+- Primary_DM_Source
+- Primary_DM_Confidence (0-100)
+
+This will allow the Foreman list view to show “who to ask for” when calling.
+
+ASSUMPTIONS:
+- A Decision_Makers table may exist from DM enrichment pipeline.
+- Field names may differ; use Airtable schema inspection to find the real names.
+- If Decision_Makers table does not exist, create it with minimum fields and continue (but no DM will be found until enrichment populates it).
+
+STEP 1 — Ensure schema (create if missing)
+Ensure Companies has these fields (create if missing):
+Primary_DM_Name (singleLineText)
+Primary_DM_Title (singleLineText)
+Primary_DM_Email (singleLineText)
+Primary_DM_Phone (singleLineText)
+Primary_DM_Seniority (singleLineText)
+Primary_DM_Source (singleLineText)
+Primary_DM_Confidence (number precision=0)
+
+Ensure Decision_Makers table exists with minimum fields (create if missing):
+- company (linkToCompanies if possible; otherwise singleLineText and log LINK_DEFERRED_DM)
+- name (singleLineText)
+- title (singleLineText)
+- email (singleLineText)
+- phone (singleLineText)
+- seniority (singleLineText)
+- department (singleLineText)
+- source (singleLineText)
+- updated_at (dateTime)
+
+IMPORTANT: If a Decision_Makers table already exists with different field names, detect and map to the closest equivalents:
+company/company_name, name/full_name, title/role, email/email_address, phone/phone_number, source, seniority, department.
+
+STEP 2 — Primary DM selection algorithm (per company)
+Create server/dm-resolver.ts with:
+resolvePrimaryDMForCompany(companyRecord) -> {primaryDM fields}
+
+Candidate selection:
+- Get all Decision_Makers linked to / associated with the company.
+  If link exists, use it.
+  If link doesn’t exist, match by company name text OR normalized domain if present.
+
+Ranking rules:
+A) Title priority (highest first):
+  1. Safety Director, Safety Manager, HSE Manager, EHS Manager
+  2. Project Manager, Turnaround Manager, Shutdown Manager
+  3. Operations Manager, Plant Manager, Maintenance Manager
+  4. Superintendent, General Manager, VP Operations
+  5. Other
+
+B) Contactability bonus:
+  +30 if direct email present
+  +20 if direct phone present
+  +10 if both
+
+C) Seniority bonus:
+  +15 if seniority indicates Director/VP/C-level
+  +10 if Manager
+  +0 otherwise
+
+D) Recency bonus:
+  +10 if updated_at within last 30 days
+
+Compute confidence score 0-100 based on these bonuses and return the top ranked candidate.
+
+Writeback rules:
+- Only update Companies Primary_DM_* fields if:
+  - they are empty OR
+  - new confidence > existing confidence OR
+  - existing DM fields are missing email/phone and new DM has them
+
+STEP 3 — Integrate into call list generation
+Update the Opportunity Engine (or call list generator) so that AFTER Today_Call_List is computed:
+- For each company with Today_Call_List=true:
+  - run resolvePrimaryDMForCompany(company)
+  - write the Primary_DM_* fields to Companies
+
+Add CLI:
+npx tsx server/run-opportunity-engine.ts --top=25
+should now also populate Primary_DM_* fields for those 25.
+
+STEP 4 — Logging
+Print:
+companies_today_list
+companies_with_dm_found
+companies_missing_dm
+avg_dm_confidence
+
+MINI-TESTS:
+1) Create 1 company + 2 decision makers (Safety Manager and Office Admin) -> resolver picks Safety Manager.
+2) If Safety Manager has email, Admin has phone only -> still pick Safety Manager due to title priority, but confidence reflects contactability.
+3) Re-run is idempotent (does not thrash updates unless improved).
+
+DELIVERABLE:
+Show code changes + how to see the results in Airtable.

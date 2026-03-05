@@ -312,6 +312,13 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   },
   { name: "Final_Priority", type: "number", options: { precision: 0 } },
   { name: "Today_Call_List", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+  { name: "Primary_DM_Name", type: "singleLineText" },
+  { name: "Primary_DM_Title", type: "singleLineText" },
+  { name: "Primary_DM_Email", type: "singleLineText" },
+  { name: "Primary_DM_Phone", type: "singleLineText" },
+  { name: "Primary_DM_Seniority", type: "singleLineText" },
+  { name: "Primary_DM_Source", type: "singleLineText" },
+  { name: "Primary_DM_Confidence", type: "number", options: { precision: 0 } },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [
@@ -370,10 +377,32 @@ export async function ensureSchema(): Promise<SchemaReport> {
   let tables = await getBaseSchema();
   log(`Found ${tables.length} existing tables`, "schema");
 
+  const DM_FIELDS: FieldSpec[] = [
+    { name: "company_name_text", type: "singleLineText" },
+    { name: "full_name", type: "singleLineText" },
+    { name: "title", type: "singleLineText" },
+    { name: "email", type: "singleLineText" },
+    { name: "phone", type: "singleLineText" },
+    { name: "linkedin_url", type: "singleLineText" },
+    { name: "seniority", type: "singleLineText" },
+    { name: "department", type: "singleLineText" },
+    { name: "source", type: "singleLineText" },
+    {
+      name: "enriched_at",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+  ];
+
   const tableSpecs: Array<{ name: string; fields: FieldSpec[]; description?: string }> = [
     { name: "Search_Queries", fields: SEARCH_QUERIES_FIELDS, description: "Search queries for Outscraper lead generation" },
     { name: "Companies", fields: COMPANIES_FIELDS, description: "Companies/leads database" },
     { name: "Calls", fields: CALLS_FIELDS, description: "Call records and outcomes" },
+    { name: "Decision_Makers", fields: DM_FIELDS, description: "Decision maker contacts for companies" },
   ];
 
   for (const spec of tableSpecs) {

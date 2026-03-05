@@ -59,10 +59,28 @@ async function main() {
       console.log(`⚠ SLIP_ALERT: ${result.slip_alert.overdue_count} overdue follow-ups detected — force-included in today's list`);
     }
 
+    if (result.dm_resolution) {
+      const dm = result.dm_resolution;
+      console.log("");
+      console.log("═══════ DECISION MAKER RESOLUTION ═══════");
+      console.log(`  Companies on list:    ${dm.companiesOnList}`);
+      console.log(`  DM found:             ${dm.companiesWithDM}`);
+      console.log(`  DM missing:           ${dm.companiesMissingDM}`);
+      console.log(`  Avg confidence:       ${dm.avgConfidence}%`);
+      console.log("═════════════════════════════════════════");
+    }
+
     if (result.details.length > 0) {
       console.log("");
       console.log("TODAY'S CALL LIST:");
       console.log("─".repeat(80));
+
+      const dmMap = new Map<string, { dmName: string; confidence: number }>();
+      if (result.dm_resolution) {
+        for (const u of result.dm_resolution.updates) {
+          dmMap.set(u.companyName, { dmName: u.dmName, confidence: u.confidence });
+        }
+      }
 
       let currentBucket = "";
       for (const d of result.details) {
@@ -72,7 +90,9 @@ async function main() {
         }
         const overdueTag = d.overdue ? " ⚠OVERDUE" : "";
         const followup = d.followupDue ? ` followup=${d.followupDue.split("T")[0]}` : "";
-        console.log(`    ${d.companyName} (priority=${d.finalPriority}${followup}${overdueTag})`);
+        const dmInfo = dmMap.get(d.companyName);
+        const dmTag = dmInfo ? ` → Ask for: ${dmInfo.dmName} (${dmInfo.confidence}%)` : "";
+        console.log(`    ${d.companyName} (priority=${d.finalPriority}${followup}${overdueTag})${dmTag}`);
       }
     }
 

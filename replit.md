@@ -45,7 +45,7 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Priority scoring: +20 high-value category, +10 industrial keywords, +15 website, +10 phone, -10/-20 residential keywords; score 0-100
 
 ### Airtable Schema Bootstrap
-- `server/airtable-schema.ts` - Meta API functions (getBaseSchema, ensureTable, ensureField, ensureSchema); idempotent table/field creation for Search_Queries, Companies, Calls
+- `server/airtable-schema.ts` - Meta API functions (getBaseSchema, ensureTable, ensureField, ensureSchema); idempotent table/field creation for Search_Queries, Companies, Calls, Decision_Makers
 - `server/bootstrap.ts` - CLI runner: `npx tsx server/bootstrap.ts` to bootstrap all Airtable tables/fields
 
 ### Call Outcome Engine
@@ -53,10 +53,18 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/run-call-engine.ts` - CLI runner: `npx tsx server/run-call-engine.ts`
 
 ### Opportunity Engine + Call List Auditor
-- `server/opportunity-engine.ts` - Bucket-based call list generator: derives engagement facts per company (Times_Called, Last_Outcome, Followup_Due from Calls), assigns 3 buckets (Hot Follow-up: overdue/due in 0-2d; Working: status Working/Called/Enriched with signals, last called >3d; Fresh: New/never called, first seen within 14d), fills Today_Call_List by quota (40% hot, 35% working, 25% fresh) with leftover rollover and score-fill, writes back Final_Priority/Bucket/Today_Call_List to Companies
+- `server/opportunity-engine.ts` - Bucket-based call list generator: derives engagement facts per company (Times_Called, Last_Outcome, Followup_Due from Calls), assigns 3 buckets (Hot Follow-up: overdue/due in 0-2d; Working: status Working/Called/Enriched with signals, last called >3d; Fresh: New/never called, first seen within 14d), fills Today_Call_List by quota (40% hot, 35% working, 25% fresh) with leftover rollover and score-fill, writes back Final_Priority/Bucket/Today_Call_List to Companies; after list is built, runs DM resolver for all selected companies
 - `server/run-opportunity-engine.ts` - CLI runner: `npx tsx server/run-opportunity-engine.ts --top=25 --pctHot=0.4 --pctWorking=0.35 --pctFresh=0.25`
 - Alerts: FRESHNESS_ALERT (not enough fresh leads), SLIP_ALERT (overdue followups force-included)
 - Companies fields: First_Seen, Times_Called, Last_Outcome, Followup_Due, Bucket, Final_Priority, Today_Call_List
+
+### Primary DM Resolver
+- `server/dm-resolver.ts` - Resolves the best decision maker per company from Decision_Makers table; writes Primary_DM_Name/Title/Email/Phone/Seniority/Source/Confidence to Companies
+- Title priority: (1) Safety Director/Manager/HSE/EHS, (2) Project/Turnaround/Shutdown Manager, (3) Operations/Plant/Maintenance Manager, (4) Superintendent/GM/VP Ops, (5) Other
+- Contactability bonus: +30 email, +20 phone, +10 both; Seniority bonus: +15 Director/VP/C-level, +10 Manager; Recency: +10 if updated within 30d
+- Confidence score 0-100; writeback only if empty, higher confidence, or new contact info fills gaps
+- Integrated into opportunity engine — runs automatically after Today_Call_List is computed
+- Companies fields: Primary_DM_Name, Primary_DM_Title, Primary_DM_Email, Primary_DM_Phone, Primary_DM_Seniority, Primary_DM_Source, Primary_DM_Confidence
 
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
