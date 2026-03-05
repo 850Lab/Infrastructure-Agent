@@ -37,6 +37,13 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/outscraper.ts` - Google Maps search via Outscraper API to find missing company websites
 - `server/outscraper-routes.ts` - API endpoints (status, lookup-one, lookup-batch, lookup-then-enrich)
 
+### Lead Feed Loop (Automated Lead Pipeline)
+- `server/lead-feed.ts` - Full pipeline: OpenAI query generation → Outscraper lead pull → Airtable upsert + dedupe → Priority scoring → Website enrichment (emails, LinkedIn, service notes)
+- `server/lead-feed-routes.ts` - API endpoints (stats, generate-queries, run-outscraper, enrich, run-all)
+- Airtable tables: "Search Queries" (query_text, market, category, status, last_run, results_count, notes), "Companies" (+ Normalized_Name, Normalized_Domain, Dedupe_Key, Priority_Score, Lead_Status)
+- Deduplication: Dedupe_Key priority: Normalized_Domain > phone digits > normalized_name|city|state; fallback lookup by LOWER(company_name)
+- Priority scoring: +20 high-value category, +10 industrial keywords, +15 website, +10 phone, -10/-20 residential keywords; score 0-100
+
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
 - `server/active-work-routes.ts` - API endpoints (config, generate-queries, score, batch, high-score, rotate)
@@ -79,6 +86,13 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `POST /api/outscraper/lookup-one` - Look up a single company on Google Maps (auth required)
 - `POST /api/outscraper/lookup-batch` - Batch lookup up to N companies (auth required)
 - `POST /api/outscraper/lookup-then-enrich` - Find websites then run DM enrichment (auth required)
+
+### Lead Feed
+- `GET /api/lead-feed/stats` - Pipeline stats (queries, companies, tiers, lead statuses)
+- `POST /api/lead-feed/generate-queries` - Generate search queries via OpenAI (auth required)
+- `POST /api/lead-feed/run-outscraper` - Run queued queries through Outscraper, upsert results (auth required)
+- `POST /api/lead-feed/enrich` - Enrich companies with emails, LinkedIn, service notes (auth required)
+- `POST /api/lead-feed/run-all` - Run full pipeline: generate → outscraper → enrich (auth required)
 
 ### Active Work
 - `GET /api/active-work/config` - Get geos, keywords, query count

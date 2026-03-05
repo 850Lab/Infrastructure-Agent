@@ -9,6 +9,7 @@ import { registerActiveWorkRoutes } from "./active-work-routes";
 import { registerForemanRoutes } from "./foreman-routes";
 import { registerDMRoutes } from "./dm-routes";
 import { registerOutscraperRoutes } from "./outscraper-routes";
+import { registerLeadFeedRoutes } from "./lead-feed-routes";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -115,6 +116,7 @@ export async function registerRoutes(
   registerForemanRoutes(app);
   registerDMRoutes(app);
   registerOutscraperRoutes(app);
+  registerLeadFeedRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);

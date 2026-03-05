@@ -1,0 +1,69 @@
+You are my Replit engineer. Build an automated “Lead Feed Loop” service that runs end-to-end:
+
+GOAL:
+OpenAI (query generation) → Outscraper (lead pull) → Airtable Companies (upsert + dedupe) → Priority Score → Enrichment (website crawl) → Airtable update.
+
+CONSTRAINTS:
+- Use existing Airtable base with these tables: Search_Queries, Companies.
+- Must be idempotent: rerunning should not create duplicates.
+- Must log every run with counts + errors.
+
+AIRTABlE FIELDS:
+Search_Queries: Query, Market, Category, Status (Queued/Running/Done/Error), Last_Run, Results_Count, Notes.
+Companies: Company_Name, Normalized_Name, Website, Normalized_Domain, Phone, City, State, Category, Outscraper_Place_ID, Dedupe_Key, Priority_Score, Priority_Tier (A/B/C), Lead_Status, LinkedIn_Company_URL, Emails, Decision_Makers, Notes, Last_Enriched, Source.
+
+IMPLEMENTATION:
+1) Query Generator (OpenAI):
+- Daily/On-demand, generate 10–30 search queries based on my target categories and Gulf Coast geography.
+- Write new queries into Search_Queries with Status=Queued.
+- Avoid duplicates: don’t insert if Query already exists in Search_Queries.
+
+2) Runner:
+- Fetch Search_Queries where Status=Queued (limit N per run).
+- Set Status=Running.
+- Call Outscraper API with that query and get results (company name, phone, website, place_id if available, address/city/state, category/description if available).
+- For each result:
+  a) Normalize:
+     - Normalized_Name: lowercase, remove punctuation, remove llc/inc/co, trim spaces.
+     - Normalized_Domain: parse hostname from website, lowercase, remove www.
+     - Clean phone: digits only.
+  b) Build Dedupe_Key:
+     - if Normalized_Domain exists => dedupe_key = Normalized_Domain
+     - else if phone exists => dedupe_key = phone_digits
+     - else => dedupe_key = Normalized_Name + '|' + City + '|' + State
+  c) Upsert to Companies:
+     - Search Companies by Dedupe_Key.
+     - If exists: update only missing fields (do not overwrite good data with blanks).
+     - If not exists: create record.
+  d) Priority scoring (0-100):
+     - +20 if Category in {Industrial Maintenance, Scaffolding, Insulation, Turnaround, Tank Cleaning, Industrial Painting/Coatings, Industrial Construction}
+     - +10 if description/services contains keywords: refinery, plant, industrial, turnaround, shutdown
+     - +15 if website exists
+     - +10 if phone exists
+     - penalties for residential-only keywords
+     - Set Priority_Tier: A=75+, B=50-74, C<50
+     - Set Lead_Status: New if created, else keep existing unless blank.
+     - Set Source=Outscraper if created.
+
+3) Enrichment Worker:
+- For Companies where (Website exists) AND (Lead_Status in New/Enriched) AND (Last_Enriched is empty OR older than 14 days):
+  - Fetch homepage text. If thin, try /services then /about then /contact.
+  - Extract emails from page text.
+  - Summarize services + industries served into Notes (short).
+  - Try to find LinkedIn company URL via a simple heuristic (search-like approach or pattern match if present on site).
+  - Update Emails, Notes, LinkedIn_Company_URL (if found), Last_Enriched=now(), Lead_Status=Enriched (if not already beyond that).
+
+4) Monitoring:
+- Print logs: queries processed, results pulled, created vs updated, enriched count.
+- On errors: mark Search_Queries.Status=Error and write Notes with error message.
+
+DELIVERABLES:
+- A single Node/TypeScript service with commands:
+  - npm run generate-queries
+  - npm run run-outsraper
+  - npm run enrich
+- Or a single command that runs all in order with safe limits.
+- Include a .env.example for API keys (OpenAI, Outscraper, Airtable).
+- Provide clear setup steps in README.
+
+Build it now and show the full code changes and how to run it.
