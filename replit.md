@@ -1,4 +1,4 @@
-# Neural OS — Lead Engine Command Center
+# Texas Automation Systems — Lead Engine Command Center
 
 ## Overview
 A B2B lead generation and call management system targeting Gulf Coast industrial contractors with multi-industry extensibility. Features a real-time "Command Center" dashboard with SSE event streaming, Pulse Reactor visualization, dark neon theme, and a 7-page React frontend.
@@ -74,7 +74,7 @@ Three-column layout + bottom timeline:
 - `server/dashboard-routes.ts` — API routes: /api/events (SSE), /api/auth/login, /api/run-daily, /api/run-history, /api/dashboard/stats
 - `client/src/lib/auth.ts` — AuthContext + AuthProvider + ProtectedRoute
 - `client/src/lib/use-sse.ts` — SSE subscription hook with auto-reconnect
-- `client/src/components/app-layout.tsx` — Header (Neural OS + Command Center subtitle + StatusPill + Logout) + Framer Motion page transitions
+- `client/src/components/app-layout.tsx` — Header (Texas Automation Systems + StatusPill + Logout) + Framer Motion page transitions
 - `client/src/pages/dashboard.tsx` — Command Center: Pulse Reactor + System Status + Run History + Event Log + Step Timeline
 
 ### Voice Memo Analyzer

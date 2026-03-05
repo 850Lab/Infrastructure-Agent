@@ -59,8 +59,7 @@ export default function AppLayout({ children, runStatus = "standby", showBackToC
               <Link href="/dashboard" className="flex items-center gap-2.5" data-testid="link-home">
                 <Activity className="w-5 h-5" style={{ color: "#10B981" }} />
                 <div className="flex flex-col">
-                  <span className="font-bold text-base tracking-tight leading-none" style={{ color: "#0F172A" }}>Neural OS</span>
-                  <span className="text-xs leading-none mt-0.5" style={{ color: "#94A3B8" }}>Command Center</span>
+                  <span className="font-bold text-base tracking-tight leading-none" style={{ color: "#0F172A" }}>Texas Automation Systems</span>
                 </div>
               </Link>
             )}

@@ -42,8 +42,7 @@ export default function LoginPage() {
               <line x1="24" y1="16" x2="30" y2="16" stroke="currentColor" strokeWidth="2" />
             </svg>
           </div>
-          <CardTitle className="text-2xl font-bold" style={{ color: "#0F172A" }}>Neural OS</CardTitle>
-          <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>Lead Engine Command Center</p>
+          <CardTitle className="text-2xl font-bold" style={{ color: "#0F172A" }}>Texas Automation Systems</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
