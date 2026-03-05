@@ -4,6 +4,8 @@ import { eventBus } from "./events";
 import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
 import { getHistory, getRunById, getRunStatus, loadHistory } from "./run-history";
 import { computeMachineMetrics } from "./machine-metrics";
+import { getUserConfig, saveUserConfig, suggestMachineName, mapToIndustryConfig } from "./user-config";
+import type { MachineConfig } from "./user-config";
 import { log } from "./logger";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
@@ -12,15 +14,31 @@ const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
 interface TokenEntry {
   token: string;
   expires_at: number;
+  email: string;
 }
 
 const tokens: Map<string, TokenEntry> = new Map();
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
-function createToken(): { token: string; expires_in: number } {
+function createToken(email: string): { token: string; expires_in: number } {
   const token = randomUUID();
-  tokens.set(token, { token, expires_at: Date.now() + TOKEN_TTL_MS });
+  tokens.set(token, { token, expires_at: Date.now() + TOKEN_TTL_MS, email });
   return { token, expires_in: TOKEN_TTL_MS / 1000 };
+}
+
+function getEmailFromToken(token: string): string | null {
+  const entry = tokens.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expires_at) return null;
+  return entry.email;
+}
+
+function extractToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+  return null;
 }
 
 function validateToken(token: string): boolean {
@@ -89,7 +107,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
 
     if (email?.toLowerCase() === adminEmail?.toLowerCase() && password === adminPassword) {
-      const tokenData = createToken();
+      const tokenData = createToken(email.toLowerCase());
       log(`Login successful for ${email}`, "auth");
       return res.json(tokenData);
     }
@@ -174,6 +192,89 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         opportunities_total: null,
         computed_at: Date.now(),
       });
+    }
+  });
+
+  app.get("/api/me", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const token = extractToken(req);
+      const email = token ? getEmailFromToken(token) : null;
+      if (!email) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+
+      const config = await getUserConfig(email);
+      const safeConfig = config ? {
+        machine_name: config.machine_name,
+        market: config.market,
+        opportunity: config.opportunity,
+        decision_maker_focus: config.decision_maker_focus,
+        geo: config.geo,
+        industry_config_selected: config.industry_config_selected,
+      } : null;
+      res.json({
+        email,
+        machine_config: safeConfig,
+        needsOnboarding: !config,
+      });
+    } catch (err: any) {
+      log(`/api/me error: ${err.message}`, "auth");
+      res.status(500).json({ error: "Failed to load user profile" });
+    }
+  });
+
+  app.post("/api/onboarding", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const token = extractToken(req);
+      const email = token ? getEmailFromToken(token) : null;
+      if (!email) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+
+      const { machine_name, market, opportunity, decision_maker_focus, geo } = req.body || {};
+
+      if (!machine_name || !market || !opportunity || !decision_maker_focus || !geo) {
+        return res.status(400).json({ error: "All fields are required" });
+      }
+
+      const industryConfig = mapToIndustryConfig(market);
+
+      const config: MachineConfig = {
+        email,
+        machine_name,
+        market,
+        opportunity,
+        decision_maker_focus,
+        geo,
+        industry_config_selected: industryConfig,
+        created_at: Date.now(),
+      };
+
+      const saved = await saveUserConfig(config);
+      log(`Onboarding complete for ${email}: ${machine_name} (${industryConfig})`, "onboarding");
+      res.json({ success: true, config: saved });
+    } catch (err: any) {
+      log(`Onboarding error: ${err.message}`, "onboarding");
+      res.status(500).json({ error: "Failed to save configuration" });
+    }
+  });
+
+  app.post("/api/onboarding/suggest-name", authMiddleware, (req: Request, res: Response) => {
+    const { market, opportunity, geo } = req.body || {};
+    const name = suggestMachineName(market || "", opportunity || "", geo || "");
+    res.json({ suggested_name: name });
+  });
+
+  app.post("/api/onboarding/build", authMiddleware, (req: Request, res: Response) => {
+    try {
+      const run_id = startDailyRun({ top: 10, bootstrap: true });
+      log(`Onboarding build triggered: ${run_id}`, "onboarding");
+      res.json({ run_id });
+    } catch (err) {
+      if (err instanceof RunAlreadyActiveError) {
+        return res.status(409).json({ error: "RUN_ALREADY_ACTIVE" });
+      }
+      res.status(500).json({ error: "Failed to start build" });
     }
   });
 

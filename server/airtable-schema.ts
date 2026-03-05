@@ -521,6 +521,28 @@ export async function ensureSchema(): Promise<SchemaReport> {
     { name: "Calls", fields: CALLS_FIELDS, description: "Call records and outcomes" },
     { name: "Decision_Makers", fields: DM_FIELDS, description: "Decision maker contacts for companies" },
     { name: "Run_History", fields: RUN_HISTORY_FIELDS, description: "Persistent run history for the daily orchestrator" },
+    {
+      name: "User_Config",
+      fields: [
+        { name: "email", type: "singleLineText" },
+        { name: "machine_name", type: "singleLineText" },
+        { name: "market", type: "singleLineText" },
+        { name: "opportunity", type: "singleLineText" },
+        { name: "decision_maker_focus", type: "singleLineText" },
+        { name: "geo", type: "singleLineText" },
+        { name: "industry_config_selected", type: "singleLineText" },
+        {
+          name: "created_at",
+          type: "dateTime",
+          options: {
+            dateFormat: { name: "iso" },
+            timeFormat: { name: "24hour" },
+            timeZone: "America/Chicago",
+          },
+        },
+      ],
+      description: "Per-user machine configuration from onboarding",
+    },
   ];
 
   for (const spec of tableSpecs) {

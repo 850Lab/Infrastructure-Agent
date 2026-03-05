@@ -1,5 +1,439 @@
 [
   {
+    "run_id": "run_1772747877766_jz231y",
+    "started_at": 1772747877766,
+    "steps": [
+      {
+        "step": "bootstrap",
+        "started_at": 1772747877769,
+        "status": "ok",
+        "finished_at": 1772747881808,
+        "duration_ms": 4039,
+        "stats": {
+          "created": 18
+        }
+      },
+      {
+        "step": "opportunity_engine",
+        "started_at": 1772747881809,
+        "status": "ok",
+        "finished_at": 1772747891083,
+        "duration_ms": 9273,
+        "stats": {
+          "top_requested": 10,
+          "hot_selected": 0,
+          "working_selected": 0,
+          "fresh_selected": 10,
+          "score_fill_selected": 0,
+          "overdue_followups_included": 0,
+          "dm_resolution": {
+            "companiesOnList": 10,
+            "companiesWithDM": 2,
+            "companiesMissingDM": 8,
+            "avgConfidence": 82,
+            "updates": []
+          },
+          "freshness_alert": {
+            "triggered": false,
+            "required": 4,
+            "available": 417
+          },
+          "slip_alert": {
+            "triggered": false,
+            "overdue_count": 0
+          },
+          "companies_updated": 435,
+          "rank_writes": 0,
+          "rank_skipped": 10,
+          "details": [
+            {
+              "companyName": "Irex Energy Solutions",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-474-2298",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Top Maintenance Services",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-300-4502",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Thermal Industrial Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 346-708-2790",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Insul Pro Solutions",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-965-7797",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "General Insulation Company, Inc.",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 844-851-9740",
+              "primaryDMName": "Gerald Towle",
+              "primaryDMTitle": "Director of Sales and Marketing for Commercial and Residential Divisions",
+              "primaryDMEmail": "gtowle@generalinsulation.com",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05). DM: Gerald Towle Director of Sales and Marketing for Commercial and Residential Divisions.",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Lake Charles Spray Foam Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-427-8351",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Industrial Specialty Crafts",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-813-1167",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Performance Insulation Contractors, Inc.",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 281-471-9900",
+              "primaryDMName": "Joseph Perry",
+              "primaryDMTitle": "Corporate Safety Manager",
+              "primaryDMEmail": "josephperry@performance-1.com",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05). DM: Joseph Perry Corporate Safety Manager.",
+              "offerDMName": "Joseph Perry",
+              "offerDMTitle": "Corporate Safety Manager",
+              "offerDMFitScore": 80
+            },
+            {
+              "companyName": "Insultherm Inc",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 281-767-2520",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "IBP Beaumont",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-724-0300",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            }
+          ]
+        }
+      },
+      {
+        "step": "dm_coverage",
+        "started_at": 1772747891084,
+        "status": "ok",
+        "finished_at": 1772747892328,
+        "duration_ms": 1244,
+        "stats": {
+          "companiesOnList": 10,
+          "companiesNeedingEnrichment": 0,
+          "companiesEnriched": 0,
+          "companiesReady": 2,
+          "companiesMissing": 8,
+          "companiesErrored": 0,
+          "dmResolution": {
+            "companiesOnList": 10,
+            "companiesWithDM": 2,
+            "companiesMissingDM": 8,
+            "avgConfidence": 82,
+            "updates": []
+          },
+          "callList": [
+            {
+              "companyName": "Irex Energy Solutions",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Top Maintenance Services",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Thermal Industrial Insulation",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Insul Pro Solutions",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "General Insulation Company, Inc.",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "Gerald Towle",
+              "primaryDMTitle": "Director of Sales and Marketing for Commercial and Residential Divisions",
+              "primaryDMEmail": "gtowle@generalinsulation.com",
+              "primaryDMPhone": "(617) 799-8345"
+            },
+            {
+              "companyName": "Lake Charles Spray Foam Insulation",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Industrial Specialty Crafts",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Performance Insulation Contractors, Inc.",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "Joseph Perry",
+              "primaryDMTitle": "Corporate Safety Manager",
+              "primaryDMEmail": "josephperry@performance-1.com",
+              "primaryDMPhone": "281-471-9900"
+            },
+            {
+              "companyName": "Insultherm Inc",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "IBP Beaumont",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            }
+          ]
+        }
+      },
+      {
+        "step": "dm_fit",
+        "started_at": 1772747892329,
+        "status": "ok",
+        "finished_at": 1772747893099,
+        "duration_ms": 770,
+        "stats": {
+          "totalCompanies": 10,
+          "offerDMSelected": 1,
+          "noFitCount": 9,
+          "avgFitScore": 80,
+          "updated": 9,
+          "skipped": 1
+        }
+      },
+      {
+        "step": "playbooks",
+        "started_at": 1772747893100,
+        "status": "ok",
+        "finished_at": 1772747893186,
+        "duration_ms": 86,
+        "stats": {
+          "generated": 0,
+          "skipped": 10,
+          "errors": 0,
+          "details": [
+            {
+              "companyName": "Irex Energy Solutions",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Top Maintenance Services",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Thermal Industrial Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Insul Pro Solutions",
+              "status": "skipped"
+            },
+            {
+              "companyName": "General Insulation Company, Inc.",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Lake Charles Spray Foam Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Industrial Specialty Crafts",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Performance Insulation Contractors, Inc.",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Insultherm Inc",
+              "status": "skipped"
+            },
+            {
+              "companyName": "IBP Beaumont",
+              "status": "skipped"
+            }
+          ]
+        }
+      },
+      {
+        "step": "call_engine",
+        "started_at": 1772747893188,
+        "status": "ok",
+        "finished_at": 1772747893276,
+        "duration_ms": 88,
+        "stats": {
+          "calls_processed": 0,
+          "companies_updated": 0,
+          "followups_scheduled": 0,
+          "gatekeepers_recorded": 0,
+          "details": []
+        }
+      },
+      {
+        "step": "query_intel",
+        "started_at": 1772747893277,
+        "status": "ok",
+        "finished_at": 1772747907406,
+        "duration_ms": 14129,
+        "stats": {
+          "freshCount": 431,
+          "freshNeeded": 0,
+          "queriesGenerated": 20,
+          "queriesInserted": 7,
+          "queriesSkippedDuplicates": 13,
+          "queriesRetired": 0,
+          "attributionMode": "exact",
+          "winFlagUpdated": 0,
+          "queryStatsUpdated": 0
+        }
+      }
+    ],
+    "errors": [],
+    "status": "completed",
+    "finished_at": 1772747907407,
+    "duration_ms": 29641,
+    "summary": {
+      "errors_count": 0
+    }
+  },
+  {
     "run_id": "run_1772747332396_22bwyx",
     "started_at": 1772747332396,
     "steps": [
