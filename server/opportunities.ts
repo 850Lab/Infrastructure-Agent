@@ -55,29 +55,78 @@ function addDays(days: number): string {
   return d.toISOString();
 }
 
+async function findCompanyRecordId(companyName: string): Promise<string | null> {
+  if (!companyName) return null;
+  const table = encodeURIComponent("Companies");
+  const escaped = companyName.replace(/'/g, "\\'");
+  const formula = encodeURIComponent(`LOWER({Company_Name})=LOWER('${escaped}')`);
+  try {
+    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1&fields[]=Company_Name`);
+    return data.records?.[0]?.id || null;
+  } catch {
+    return null;
+  }
+}
+
 async function findActiveOpportunity(companyName: string): Promise<AirtableRecord | null> {
   if (!companyName) return null;
   const table = encodeURIComponent("Opportunities");
-  const escaped = companyName.replace(/'/g, "\\'");
+
+  const companyRecordId = await findCompanyRecordId(companyName);
+  if (!companyRecordId) {
+    logOpp(`findActiveOpportunity: no Companies record for "${companyName}"`);
+    return null;
+  }
+
   const formula = encodeURIComponent(
-    `AND(LOWER({Company})=LOWER('${escaped}'),{Stage}!='Won',{Stage}!='Lost')`
+    `AND(RECORD_ID()!='',{Stage}!='Won',{Stage}!='Lost')`
   );
   try {
-    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`);
-    return data.records?.[0] || null;
-  } catch {
+    const records: AirtableRecord[] = [];
+    let offset: string | undefined;
+    do {
+      const data = await airtableRequest(
+        `${table}?filterByFormula=${formula}&pageSize=100&fields[]=Company&fields[]=Stage&fields[]=Notes&fields[]=Next_Action${offset ? `&offset=${offset}` : ""}`
+      );
+      records.push(...(data.records || []));
+      offset = data.offset;
+    } while (offset);
+
+    for (const rec of records) {
+      const companyField = rec.fields.Company;
+      if (Array.isArray(companyField) && companyField.includes(companyRecordId)) {
+        return rec;
+      }
+    }
+    return null;
+  } catch (e: any) {
+    logOpp(`findActiveOpportunity error: ${e.message}`);
     return null;
   }
 }
 
 async function createOpportunity(fields: Record<string, any>): Promise<AirtableRecord | null> {
   const table = encodeURIComponent("Opportunities");
+
+  if (fields.Company && typeof fields.Company === "string") {
+    const companyRecordId = await findCompanyRecordId(fields.Company);
+    if (companyRecordId) {
+      fields.Company = [companyRecordId];
+    } else {
+      const companyName = fields.Company;
+      delete fields.Company;
+      logOpp(`Company record not found for "${companyName}", creating opportunity without link`);
+    }
+  }
+
+  delete fields.Owner;
+
   try {
     const res = await airtableRequest(table, {
       method: "POST",
       body: JSON.stringify({ fields }),
     });
-    logOpp(`Created opportunity for ${fields.Company} → ${fields.Stage}`);
+    logOpp(`Created opportunity → ${fields.Stage}`);
     return res;
   } catch (e: any) {
     logOpp(`Failed to create opportunity: ${e.message}`);
@@ -193,6 +242,49 @@ export async function handleCallOutcome(
   }
 }
 
+async function resolveCompanyNames(recordIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (recordIds.length === 0) return map;
+
+  const unique = [...new Set(recordIds)];
+  const table = encodeURIComponent("Companies");
+  const chunks = [];
+  for (let i = 0; i < unique.length; i += 10) {
+    chunks.push(unique.slice(i, i + 10));
+  }
+
+  for (const chunk of chunks) {
+    const orParts = chunk.map(id => `RECORD_ID()='${id}'`).join(",");
+    const formula = encodeURIComponent(`OR(${orParts})`);
+    try {
+      const data = await airtableRequest(`${table}?filterByFormula=${formula}&fields[]=Company_Name`);
+      for (const rec of data.records || []) {
+        map.set(rec.id, String(rec.fields.Company_Name || ""));
+      }
+    } catch (e: any) {
+      logOpp(`resolveCompanyNames error: ${e.message}`);
+    }
+  }
+
+  return map;
+}
+
+function extractCompanyName(companyField: any, nameMap: Map<string, string>): string {
+  if (Array.isArray(companyField) && companyField.length > 0) {
+    return nameMap.get(companyField[0]) || companyField[0];
+  }
+  if (typeof companyField === "string") return companyField;
+  return "";
+}
+
+function extractOwner(ownerField: any): string {
+  if (!ownerField) return "";
+  if (typeof ownerField === "string") return ownerField;
+  if (typeof ownerField === "object" && ownerField.name) return ownerField.name;
+  if (typeof ownerField === "object" && ownerField.email) return ownerField.email;
+  return "";
+}
+
 export function registerOpportunityRoutes(app: Express) {
   app.get("/api/opportunities", authMiddleware, async (req: Request, res: Response) => {
     try {
@@ -219,13 +311,21 @@ export function registerOpportunityRoutes(app: Express) {
         offset = data.offset;
       } while (offset);
 
+      const allCompanyIds: string[] = [];
+      for (const rec of records) {
+        if (Array.isArray(rec.fields.Company)) {
+          allCompanyIds.push(...rec.fields.Company);
+        }
+      }
+      const nameMap = await resolveCompanyNames(allCompanyIds);
+
       const opportunities = records.map((rec: AirtableRecord) => ({
         id: rec.id,
-        company: String(rec.fields.Company || ""),
+        company: extractCompanyName(rec.fields.Company, nameMap),
         stage: String(rec.fields.Stage || ""),
         next_action: String(rec.fields.Next_Action || ""),
         next_action_due: String(rec.fields.Next_Action_Due || ""),
-        owner: String(rec.fields.Owner || ""),
+        owner: extractOwner(rec.fields.Owner),
         value_estimate: rec.fields.Value_Estimate ?? null,
         source: String(rec.fields.Source || ""),
         last_updated: String(rec.fields.Last_Updated || ""),
@@ -262,18 +362,28 @@ export function registerOpportunityRoutes(app: Express) {
       if (value_estimate !== undefined) updates.Value_Estimate = value_estimate;
       if (owner !== undefined) updates.Owner = owner;
 
+      delete updates.Owner;
+
       const rec = await updateOpportunity(id, updates);
       if (!rec) {
         return res.status(500).json({ error: "Failed to update opportunity" });
       }
 
+      let companyName = "";
+      if (Array.isArray(rec.fields.Company) && rec.fields.Company.length > 0) {
+        const nameMap = await resolveCompanyNames(rec.fields.Company);
+        companyName = nameMap.get(rec.fields.Company[0]) || rec.fields.Company[0];
+      } else {
+        companyName = String(rec.fields.Company || "");
+      }
+
       res.json({
         id: rec.id,
-        company: String(rec.fields.Company || ""),
+        company: companyName,
         stage: String(rec.fields.Stage || ""),
         next_action: String(rec.fields.Next_Action || ""),
         next_action_due: String(rec.fields.Next_Action_Due || ""),
-        owner: String(rec.fields.Owner || ""),
+        owner: extractOwner(rec.fields.Owner),
         value_estimate: rec.fields.Value_Estimate ?? null,
         last_updated: String(rec.fields.Last_Updated || ""),
         notes: String(rec.fields.Notes || ""),

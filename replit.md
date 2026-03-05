@@ -37,7 +37,8 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 **Lead Engine**: Manages query generation, lead feeding via Outscraper, scoring, enrichment, and deduplication.
 **DM Enrichment**: Utilizes Apollo.io and GPT for decision-maker information gathering and enrichment.
 **Playbook Generator**: GPT-4o generates dynamic outreach scripts (call openers, gatekeeper scripts, emails, SMS).
-**Call Outcome Engine**: Processes call logs, updates lead statuses, schedules follow-ups, and adjusts engagement scores.
+**Call Outcome Engine**: Processes call logs, updates lead statuses, schedules follow-ups, and adjusts engagement scores. Automatically creates/updates Opportunities in Airtable for Qualified, Callback, Won, and Not Interested outcomes.
+**Opportunities Pipeline**: Tracks deals through stages (Qualified → SiteWalk → QuoteSent → DeploymentScheduled → Won/Lost) with auto-generated next actions and due dates. One active opportunity per company (idempotent). API: GET /api/opportunities, GET /api/opportunities/summary, POST /api/opportunities/:id/update. Pipeline page at /pipeline with funnel cards and stage filtering.
 **Opportunity Engine**: Generates bucket-based call lists (Hot, Working, Fresh).
 **Query Intelligence Engine**: Evolves search queries based on outcomes and discovery.
 **DM Coverage Engine**: Identifies and fills gaps in decision-maker coverage for call lists.

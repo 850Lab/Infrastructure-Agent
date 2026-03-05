@@ -71,8 +71,7 @@ export default function PipelinePage() {
 
   const queryUrl = stageFilter ? `/api/opportunities?stage=${stageFilter}` : "/api/opportunities";
   const { data: oppsData, isLoading: oppsLoading } = useQuery<{ opportunities: Opportunity[]; count: number }>({
-    queryKey: ["/api/opportunities", stageFilter],
-    queryFn: () => fetch(queryUrl, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    queryKey: [queryUrl],
     enabled: !!token,
   });
 
@@ -80,8 +79,10 @@ export default function PipelinePage() {
     mutationFn: ({ id, stage }: { id: string; stage: string }) =>
       apiRequest("POST", `/api/opportunities/${id}/update`, { stage }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities/summary"] });
+      queryClient.invalidateQueries({ predicate: (q) => {
+        const key = q.queryKey[0];
+        return typeof key === "string" && key.startsWith("/api/opportunities");
+      }});
     },
   });
 

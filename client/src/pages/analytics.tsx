@@ -20,8 +20,23 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleString();
 }
 
+interface OppSummary {
+  stages: Record<string, { count: number; value: number }>;
+  total_active: number;
+  total_won: number;
+  total_lost: number;
+  total_value: number;
+}
+
 export default function AnalyticsPage() {
+  const { getToken } = useAuth();
+  const token = getToken();
   const { latestRun, allRuns, isLoading } = useLatestRun();
+
+  const { data: oppSummary } = useQuery<OppSummary>({
+    queryKey: ["/api/opportunities/summary"],
+    enabled: !!token,
+  });
 
   const totalSteps = latestRun?.steps?.length ?? 0;
   const completedSteps = latestRun?.steps?.filter((s: any) => s.status === "ok").length ?? 0;
@@ -56,6 +71,47 @@ export default function AnalyticsPage() {
             </Card>
           ))}
         </div>
+
+        {oppSummary && (
+          <Card style={{ border: "1px solid #E2E8F0" }} data-testid="card-opportunity-summary">
+            <CardHeader>
+              <CardTitle className="text-lg font-bold" style={{ color: "#0F172A" }}>Opportunity Pipeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                {[
+                  { stage: "Qualified", color: "#3B82F6" },
+                  { stage: "SiteWalk", label: "Site Walk", color: "#8B5CF6" },
+                  { stage: "QuoteSent", label: "Quote Sent", color: "#F59E0B" },
+                  { stage: "DeploymentScheduled", label: "Deployment", color: "#F97316" },
+                  { stage: "Won", color: "#10B981" },
+                  { stage: "Lost", color: "#EF4444" },
+                ].map(({ stage, label, color }) => (
+                  <div key={stage} className="text-center rounded-lg p-3" style={{ background: `${color}08`, border: `1px solid ${color}20` }}>
+                    <p className="text-xl font-bold font-mono" style={{ color }} data-testid={`opp-count-${stage.toLowerCase()}`}>
+                      {oppSummary.stages?.[stage]?.count ?? 0}
+                    </p>
+                    <p className="text-xs" style={{ color: "#94A3B8" }}>{label || stage}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-4 mt-4 pt-3" style={{ borderTop: "1px solid #E2E8F0" }}>
+                <div className="flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5" style={{ color: "#10B981" }} />
+                  <span className="text-sm font-semibold" style={{ color: "#0F172A" }}>{oppSummary.total_active} active</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5" style={{ color: "#10B981" }} />
+                  <span className="text-sm" style={{ color: "#64748B" }}>{oppSummary.total_won} won</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <XCircle className="w-3.5 h-3.5" style={{ color: "#EF4444" }} />
+                  <span className="text-sm" style={{ color: "#64748B" }}>{oppSummary.total_lost} lost</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {latestRun && (
           <Card style={{ border: "1px solid #E2E8F0" }}>

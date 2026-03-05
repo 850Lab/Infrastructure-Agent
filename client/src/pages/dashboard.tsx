@@ -33,6 +33,7 @@ const STEP_LABELS: Record<string, string> = {
 
 const SECTION_BUTTONS = [
   { label: "Today", route: "/today", steps: ["opportunity_engine", "playbooks"] },
+  { label: "Pipeline", route: "/pipeline", steps: [] },
   { label: "Follow-ups", route: "/followups", steps: ["call_engine"] },
   { label: "Lead Engine", route: "/lead-engine", steps: ["lead_feed", "query_intel"] },
   { label: "Contacts", route: "/contacts", steps: ["dm_coverage", "dm_fit"] },
