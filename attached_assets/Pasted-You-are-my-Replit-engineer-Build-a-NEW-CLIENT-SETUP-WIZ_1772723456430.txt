@@ -1,0 +1,92 @@
+You are my Replit engineer. Build a NEW CLIENT SETUP WIZARD so this platform can be deployed for a new client/industry quickly.
+
+GOAL:
+Create a single command:
+npx tsx server/setup-client.ts
+
+It must:
+1) Verify environment variables
+2) Bootstrap Airtable schema
+3) Confirm the active INDUSTRY_CONFIG is loaded
+4) Seed initial Search_Queries (cold-start templates) if Search_Queries is empty
+5) Run a smoke test (dry-run modes) to verify each engine can run without errors
+6) Output a “Client Ready Report” with next steps
+
+FLAGS:
+--seed=true/false (default true)
+--smoke=true/false (default true)
+--top=10 (default 10)
+--market override optional
+
+STEP 1 — Env validation
+Validate these are present:
+AIRTABLE_API_KEY
+AIRTABLE_BASE_ID
+OPENAI_API_KEY
+(Outscraper key if used: OUTSCRAPER_API_KEY / or your project’s key name)
+If missing, print a clear error and exit non-zero.
+
+STEP 2 — Bootstrap
+Call bootstrap schema (existing)
+Report tables created/fields created
+
+STEP 3 — Config
+Load CFG from server/config.ts and print:
+CFG.name, CFG.market, key categories count, keyword count, tier1 titles
+
+STEP 4 — Seed Queries
+If --seed=true:
+- Check if Search_Queries has any non-retired records
+- If none, insert 10 starter queries using CFG.search_templates and CFG.company_categories.
+- Set Status="Queued", Last_Generated_By="SetupWizard", Notes="seed"
+
+STEP 5 — Smoke test (no external spend where possible)
+If --smoke=true:
+Run lightweight checks:
+
+A) Opportunity Engine smoke:
+- run with --top=<top> but in DRY mode if possible (do not overwrite fields, just compute and log)
+- If dry mode doesn’t exist, run normally but limit to top=5.
+
+B) DM Coverage smoke:
+- run with limit=5 but skip external enrichment calls by default if possible:
+  add a flag --noEnrich=true to dm-coverage runner to only compute DM_Count and statuses.
+  If that flag doesn’t exist, implement it.
+
+C) Playbooks smoke:
+- run for limit=3, but only if Today_Call_List exists; otherwise skip.
+
+D) Query Intel smoke:
+- run in read-only mode if possible; otherwise just compute Fresh pool count and print it.
+
+Collect any errors into an array and print at end.
+
+STEP 6 — Client Ready Report output
+Print:
+
+SETUP COMPLETE
+- Config: <name>
+- Tables OK: yes/no
+- Queries seeded: <n>
+- Smoke tests: pass/fail
+- Next steps:
+  1) Run lead feed to populate companies
+  2) Run daily orchestrator each morning
+  3) Log calls into Calls table
+
+FILES:
+- server/setup-client.ts
+- (optional) add DRY/NOENRICH flags to existing runners to support safe smoke testing
+- update replit.md: “New Client Setup (15 minutes)”
+
+MINI TEST:
+Run:
+INDUSTRY_CONFIG=saas npx tsx server/setup-client.ts --seed=true --smoke=true --top=5
+Expected:
+- seeds SaaS style queries if empty
+- prints config header
+- smoke tests complete without errors
+- outputs next steps
+
+DELIVERABLE:
+Show code + command.

@@ -249,6 +249,24 @@ npx tsx server/run-daily.ts --top=25 --bootstrap=true
   - Generates new search queries from winning patterns, retires low performers
   - Then run lead-feed to pull leads from queued queries: `POST /api/lead-feed/run-all`
 
+## New Client Setup (15 minutes)
+```
+npx tsx server/setup-client.ts --seed=true --smoke=true --top=10
+```
+For a specific industry:
+```
+INDUSTRY_CONFIG=saas npx tsx server/setup-client.ts --seed=true --smoke=true --top=5
+```
+Steps performed:
+1. Validates env vars (AIRTABLE_API_KEY, AIRTABLE_BASE_ID, OPENAI_API_KEY)
+2. Bootstraps Airtable schema (creates tables/fields)
+3. Loads and displays industry config
+4. Seeds 10 search queries from config templates (if Search_Queries is empty)
+5. Runs smoke tests: opportunity engine, DM fit, playbooks, fresh pool
+6. Prints Client Ready Report with next steps
+
+Flags: `--seed=true/false`, `--smoke=true/false`, `--top=N`, `--market=<override>`
+
 ## Switching Industries
 Set the `INDUSTRY_CONFIG` environment variable to switch the entire platform to a different industry:
 ```
