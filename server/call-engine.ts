@@ -1,3 +1,5 @@
+import { handleCallOutcome } from "./opportunities";
+
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
@@ -226,7 +228,17 @@ export async function processCall(call: CallRecord): Promise<{
     body: JSON.stringify({ fields: callUpdate }),
   });
 
-  return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated, gatekeeperRecorded };
+  let opportunityResult = null;
+  try {
+    opportunityResult = await handleCallOutcome(call.company, call.outcome, call.notes);
+    if (opportunityResult) {
+      logEngine(`Opportunity ${opportunityResult.action} for ${call.company} (${opportunityResult.opportunityId})`);
+    }
+  } catch (e: any) {
+    logEngine(`Opportunity handling error for ${call.company}: ${e.message}`);
+  }
+
+  return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated, gatekeeperRecorded, opportunityResult };
 }
 
 export async function runEngine(): Promise<EngineResult> {

@@ -515,12 +515,54 @@ export async function ensureSchema(): Promise<SchemaReport> {
     { name: "duration_ms", type: "number", options: { precision: 0 } },
   ];
 
+  const OPPORTUNITIES_FIELDS: FieldSpec[] = [
+    { name: "Company", type: "singleLineText" },
+    {
+      name: "Stage",
+      type: "singleSelect",
+      options: {
+        choices: [
+          { name: "Qualified", color: "blueLight2" },
+          { name: "SiteWalk", color: "cyanLight2" },
+          { name: "QuoteSent", color: "yellowLight2" },
+          { name: "DeploymentScheduled", color: "orangeLight2" },
+          { name: "Won", color: "greenLight2" },
+          { name: "Lost", color: "redLight2" },
+        ],
+      },
+    },
+    { name: "Next_Action", type: "multilineText" },
+    {
+      name: "Next_Action_Due",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+    { name: "Owner", type: "singleLineText" },
+    { name: "Value_Estimate", type: "number", options: { precision: 0 } },
+    { name: "Source", type: "singleLineText" },
+    {
+      name: "Last_Updated",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+    { name: "Notes", type: "multilineText" },
+  ];
+
   const tableSpecs: Array<{ name: string; fields: FieldSpec[]; description?: string }> = [
     { name: "Search_Queries", fields: SEARCH_QUERIES_FIELDS, description: "Search queries for Outscraper lead generation" },
     { name: "Companies", fields: COMPANIES_FIELDS, description: "Companies/leads database" },
     { name: "Calls", fields: CALLS_FIELDS, description: "Call records and outcomes" },
     { name: "Decision_Makers", fields: DM_FIELDS, description: "Decision maker contacts for companies" },
     { name: "Run_History", fields: RUN_HISTORY_FIELDS, description: "Persistent run history for the daily orchestrator" },
+    { name: "Opportunities", fields: OPPORTUNITIES_FIELDS, description: "Pipeline opportunities from call outcomes" },
     {
       name: "User_Config",
       fields: [

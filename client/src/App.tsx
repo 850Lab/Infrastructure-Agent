@@ -14,6 +14,7 @@ import FollowupsPage from "@/pages/followups";
 import LeadEnginePage from "@/pages/lead-engine";
 import ContactsPage from "@/pages/contacts";
 import AnalyticsPage from "@/pages/analytics";
+import PipelinePage from "@/pages/pipeline";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
@@ -93,6 +94,9 @@ function Router() {
         </Route>
         <Route path="/analytics">
           <ProtectedRoute><AnalyticsPage /></ProtectedRoute>
+        </Route>
+        <Route path="/pipeline">
+          <ProtectedRoute><PipelinePage /></ProtectedRoute>
         </Route>
         <Route path="/">
           <Redirect to="/dashboard" />

@@ -12,6 +12,7 @@ import { registerOutscraperRoutes } from "./outscraper-routes";
 import { registerLeadFeedRoutes } from "./lead-feed-routes";
 import { registerDashboardRoutes } from "./dashboard-routes";
 import { registerTodayRoutes } from "./today-routes";
+import { registerOpportunityRoutes } from "./opportunities";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -121,6 +122,7 @@ export async function registerRoutes(
   registerLeadFeedRoutes(app);
   await registerDashboardRoutes(app);
   registerTodayRoutes(app);
+  registerOpportunityRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);

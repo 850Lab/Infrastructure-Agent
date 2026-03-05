@@ -2,8 +2,10 @@ import AppLayout from "@/components/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Clock, CheckCircle, Loader2 } from "lucide-react";
+import { Activity, Clock, CheckCircle, Loader2, Target, Trophy, XCircle } from "lucide-react";
 import { useLatestRun } from "@/lib/use-latest-run";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
