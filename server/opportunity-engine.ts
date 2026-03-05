@@ -54,6 +54,13 @@ export interface BucketConfig {
   pctFresh: number;
 }
 
+interface Explainability {
+  rankReason: string;
+  rankEvidence: string;
+  rankInputsJSON: string;
+  rankVersion: string;
+}
+
 export interface EngineResult {
   top_requested: number;
   hot_selected: number;
@@ -65,6 +72,8 @@ export interface EngineResult {
   freshness_alert: { triggered: boolean; required: number; available: number };
   slip_alert: { triggered: boolean; overdue_count: number };
   companies_updated: number;
+  rank_writes: number;
+  rank_skipped: number;
   details: Array<{
     companyName: string;
     bucket: string;
@@ -76,6 +85,7 @@ export interface EngineResult {
     primaryDMTitle: string;
     primaryDMEmail: string;
     gatekeeperName: string;
+    rankReason: string;
   }>;
 }
 
@@ -271,6 +281,115 @@ function assignBucket(
   return null;
 }
 
+const RANK_VERSION = "v1";
+
+function buildExplainability(
+  c: CompanyRecord,
+  bucket: string,
+  overdue: boolean,
+  now: Date
+): Explainability {
+  const evidence: string[] = [];
+  const reasons: string[] = [];
+
+  if (bucket === "Hot Follow-up") {
+    const dueStr = c.followupDue ? c.followupDue.split("T")[0] : "soon";
+    if (overdue) {
+      const overdueDays = c.followupDue
+        ? Math.max(1, Math.floor((now.getTime() - new Date(c.followupDue).getTime()) / (1000 * 60 * 60 * 24)))
+        : 0;
+      evidence.push(`Bucket: Hot Follow-up (overdue by ${overdueDays} day${overdueDays !== 1 ? "s" : ""})`);
+      reasons.push(`Hot follow-up overdue ${dueStr}.`);
+    } else {
+      evidence.push(`Bucket: Hot Follow-up (due ${dueStr})`);
+      reasons.push(`Follow-up due ${dueStr}.`);
+    }
+  } else if (bucket === "Working") {
+    evidence.push("Bucket: Working (active pipeline, has signals)");
+    reasons.push("Active pipeline with engagement signals.");
+  } else if (bucket === "Fresh") {
+    const firstSeenDate = c.firstSeen ? c.firstSeen.split("T")[0] : "recently";
+    evidence.push(`Bucket: Fresh (first seen ${firstSeenDate})`);
+    reasons.push(`Fresh lead (added ${firstSeenDate}).`);
+  } else {
+    evidence.push(`Bucket: ${bucket} (score fill)`);
+    reasons.push("High priority score filled remaining slot.");
+  }
+
+  if (c.opportunityType || c.opportunitySignal) {
+    const parts: string[] = [];
+    if (c.opportunityType) parts.push(c.opportunityType);
+    if (c.opportunityScore) parts.push(`score ${c.opportunityScore}`);
+    if (c.opportunitySignal) parts.push(`signal: ${c.opportunitySignal}`);
+    evidence.push(`Opportunity: ${parts.join(" | ")}`);
+  } else if (c.opportunityScore > 0) {
+    evidence.push(`Opportunity score: ${c.opportunityScore}`);
+  }
+
+  if (c.engagementScore !== 0) {
+    const sign = c.engagementScore > 0 ? "+" : "";
+    const lastOutcomeNote = c.lastOutcome ? ` (${c.lastOutcome})` : "";
+    evidence.push(`Engagement: ${sign}${c.engagementScore}${lastOutcomeNote}`);
+    if (c.engagementScore >= 10) {
+      reasons.push(`Prior engagement ${sign}${c.engagementScore}.`);
+    }
+  }
+
+  if (c.primaryDMName) {
+    const channels: string[] = [];
+    if (c.primaryDMEmail) channels.push("email");
+    if (c.primaryDMPhone) channels.push("phone");
+    const channelStr = channels.length > 0 ? ` (${channels.join(" + ")})` : "";
+    const titleStr = c.primaryDMTitle ? ` ${c.primaryDMTitle}` : "";
+    evidence.push(`Decision maker: ${c.primaryDMName}${titleStr}${channelStr}`);
+    reasons.push(`DM: ${c.primaryDMName}${titleStr}.`);
+  }
+
+  if (c.gatekeeperName) {
+    evidence.push(`Gatekeeper known: ${c.gatekeeperName}`);
+  }
+
+  if (c.timesCalled > 0) {
+    evidence.push(`Called ${c.timesCalled} time${c.timesCalled !== 1 ? "s" : ""}${c.lastOutcome ? `, last: ${c.lastOutcome}` : ""}`);
+  } else {
+    evidence.push("Not yet contacted");
+  }
+
+  if (c.priorityTier) {
+    evidence.push(`Priority: ${c.priorityTier}-tier, score ${c.priorityScore}, final ${c.finalPriority}`);
+  }
+
+  const inputs: Record<string, any> = {
+    Final_Priority: c.finalPriority,
+    Priority_Score: c.priorityScore,
+    Priority_Tier: c.priorityTier,
+    Opportunity_Score: c.opportunityScore,
+    Opportunity_Type: c.opportunityType || null,
+    Opportunity_Signal: c.opportunitySignal || null,
+    Engagement_Score: c.engagementScore,
+    Times_Called: c.timesCalled,
+    Last_Outcome: c.lastOutcome || null,
+    Followup_Due: c.followupDue || null,
+    Bucket: bucket,
+    Overdue: overdue,
+    Primary_DM_Name: c.primaryDMName || null,
+    Primary_DM_Title: c.primaryDMTitle || null,
+    Primary_DM_Email: !!c.primaryDMEmail,
+    Primary_DM_Phone: !!c.primaryDMPhone,
+    Gatekeeper_Name: c.gatekeeperName || null,
+    Active_Work_Score: c.activeWorkScore,
+    Lead_Status: c.leadStatus,
+    First_Seen: c.firstSeen || null,
+  };
+
+  return {
+    rankReason: reasons.join(" "),
+    rankEvidence: evidence.map(e => `• ${e}`).join("\n"),
+    rankInputsJSON: JSON.stringify(inputs, null, 2),
+    rankVersion: RANK_VERSION,
+  };
+}
+
 export async function runOpportunityEngine(config: BucketConfig): Promise<EngineResult> {
   logOE("Fetching all companies and calls...");
 
@@ -418,6 +537,16 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
     logOE(`SLIP_ALERT: ${overdueCount} overdue follow-ups detected`);
   }
 
+  logOE(`Computing rank explainability for ${selected.size} selected companies...`);
+  const explainMap = new Map<string, Explainability>();
+  let rankWrites = 0;
+  let rankSkipped = 0;
+
+  for (const [id, sel] of selected) {
+    const expl = buildExplainability(sel.company, sel.bucket, sel.overdue, now);
+    explainMap.set(id, expl);
+  }
+
   logOE(`Writing back engagement facts and selections for ${companies.length} companies...`);
 
   const batchSize = 10;
@@ -441,9 +570,28 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
       if (sel) {
         updateFields.Today_Call_List = true;
         updateFields.Bucket = sel.bucket;
+
+        const expl = explainMap.get(c.id);
+        if (expl) {
+          if (c.existingRankVersion === RANK_VERSION) {
+            rankSkipped++;
+          } else {
+            updateFields.Rank_Reason = expl.rankReason;
+            updateFields.Rank_Evidence = expl.rankEvidence;
+            updateFields.Rank_Inputs_JSON = expl.rankInputsJSON;
+            updateFields.Rank_Version = expl.rankVersion;
+            rankWrites++;
+          }
+        }
       } else {
         updateFields.Today_Call_List = false;
         updateFields.Bucket = null;
+        if (c.existingRankVersion) {
+          updateFields.Rank_Reason = null;
+          updateFields.Rank_Evidence = null;
+          updateFields.Rank_Inputs_JSON = null;
+          updateFields.Rank_Version = null;
+        }
       }
 
       return { id: c.id, fields: updateFields };
@@ -466,18 +614,24 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
   const scoreFillCount = [...selected.values()].filter(s => s.bucket === "Hold").length;
   const overdueIncluded = [...selected.values()].filter(s => s.overdue).length;
 
-  const details = [...selected.values()].map(s => ({
-    companyName: s.company.companyName,
-    bucket: s.bucket,
-    finalPriority: s.company.finalPriority,
-    followupDue: s.company.followupDue,
-    overdue: s.overdue,
-    phone: s.company.phone,
-    primaryDMName: s.company.primaryDMName,
-    primaryDMTitle: s.company.primaryDMTitle,
-    primaryDMEmail: s.company.primaryDMEmail,
-    gatekeeperName: s.company.gatekeeperName,
-  }));
+  logOE(`Rank explainability: ${rankWrites} written, ${rankSkipped} skipped (already v1)`);
+
+  const details = [...selected.values()].map(s => {
+    const expl = explainMap.get(s.company.id);
+    return {
+      companyName: s.company.companyName,
+      bucket: s.bucket,
+      finalPriority: s.company.finalPriority,
+      followupDue: s.company.followupDue,
+      overdue: s.overdue,
+      phone: s.company.phone,
+      primaryDMName: s.company.primaryDMName,
+      primaryDMTitle: s.company.primaryDMTitle,
+      primaryDMEmail: s.company.primaryDMEmail,
+      gatekeeperName: s.company.gatekeeperName,
+      rankReason: expl?.rankReason || "",
+    };
+  });
   details.sort((a, b) => {
     const bucketOrder: Record<string, number> = { "Hot Follow-up": 0, "Working": 1, "Fresh": 2, "Hold": 3 };
     const oa = bucketOrder[a.bucket] ?? 4;
@@ -517,6 +671,8 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
     freshness_alert: freshnessAlert,
     slip_alert: slipAlert,
     companies_updated: companiesUpdated,
+    rank_writes: rankWrites,
+    rank_skipped: rankSkipped,
     details,
   };
 }

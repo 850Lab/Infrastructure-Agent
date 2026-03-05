@@ -180,6 +180,16 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Prints a DAILY HEALTH REPORT with: list counts, DM resolution stats, calls processed, fresh pool, query intel status, errors, step timing
 - Continues past errors (collects them), exits 1 if any step failed
 
+### Rank Explainability Layer
+- When Opportunity Engine selects companies for Today_Call_List, it computes and writes 4 fields:
+  - `Rank_Reason` (multilineText) — 1–2 line human-readable summary of why this company was ranked
+  - `Rank_Evidence` (multilineText) — 3–6 bullet points with scoring inputs, bucket, DM info, engagement, call history
+  - `Rank_Inputs_JSON` (multilineText) — full JSON of all inputs used for ranking (audit/debug)
+  - `Rank_Version` (singleLineText) — version tag, currently "v1"
+- Idempotent: if Rank_Version already matches, the fields are not rewritten on re-run
+- Fields are cleared when a company is removed from Today_Call_List
+- CLI output shows truncated Rank_Reason (90 chars) per company in the call list preview
+
 ### Industry Configuration
 - `config/types.ts` - TypeScript type definition for IndustryConfig (categories, keywords, DM title tiers, scoring, call_list, geo, lead_feed, etc.)
 - `config/industry-default.ts` - Default config (Industrial Contractors, Gulf Coast)

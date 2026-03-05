@@ -46,6 +46,8 @@ async function main() {
     console.log(`  Score fill:           ${result.score_fill_selected}`);
     console.log(`  Overdue included:     ${result.overdue_followups_included}`);
     console.log(`  Companies updated:    ${result.companies_updated}`);
+    console.log(`  Rank reasons written: ${result.rank_writes}`);
+    console.log(`  Rank reasons skipped: ${result.rank_skipped} (idempotent)`);
     console.log("═══════════════════════════════════════");
 
     if (result.freshness_alert.triggered) {
@@ -111,6 +113,11 @@ async function main() {
 
         if (d.primaryDMEmail) {
           console.log(`      Email: ${d.primaryDMEmail}`);
+        }
+
+        if (d.rankReason) {
+          const truncated = d.rankReason.length > 90 ? d.rankReason.slice(0, 87) + "..." : d.rankReason;
+          console.log(`      Why: ${truncated}`);
         }
       }
     }
