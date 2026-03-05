@@ -1,0 +1,204 @@
+BUILD REQUEST: “NEURAL OS” BRAIN MOTHERBOARD DASHBOARD (FRONTEND-ONLY UPGRADE)
+Do NOT change backend logic. Keep SSE + auth + routes exactly as they work now. Replace the current chip/box motherboard UI with a premium brain-scan dashboard using ONLY: SVG brain silhouette + lobe fills + glowing nodes + pulsing synapse curves + 3D parallax tilt + SSE-driven firing visuals. Replit’s output must NOT use basic straight connector lines—use CURVED synapse arcs + glow filters + traveling pulse dots.
+
+SCOPE
+- Edit ONLY frontend files (do not touch existing server engines/CLI). Keep existing pages/routes.
+- Replace /dashboard visuals + navigation concept.
+- Remove top tabs; keep minimal header: Logo/Title + Status pill + Logout. Navigation happens by clicking brain regions or nodes.
+
+FILES TO CHANGE
+- client/src/components/app-layout.tsx (remove tabs, keep minimal header)
+- client/src/pages/dashboard.tsx (replace with brain dashboard)
+- client/src/lib/use-sse.ts (only if needed; keep API same)
+- client/src/index.css (only for additional glow/parallax utilities; keep shadcn vars intact)
+- client/src/pages/today.tsx, followups.tsx, lead-engine.tsx, contacts.tsx, analytics.tsx (add “Back to Brain” control + matching style)
+
+========================================================
+1) DASHBOARD VISUAL: BRAIN SILHOUETTE (SVG) + LOBE REGIONS
+========================================================
+Create a clean, recognizable SIDE-VIEW brain silhouette as SVG paths (vector). It must include:
+- Brain outline (1 main path)
+- Cerebellum + brainstem shapes (2 additional paths)
+- Optional subtle gyri lines (thin strokes inside)
+
+Within the brain, add subtle lobe region fills so users can see regions:
+- Frontal
+- Parietal
+- Temporal
+- Occipital
+- Cerebellum/Brainstem region
+
+IMPORTANT: Make the region fills subtle (8–12% opacity) and never overpower the silhouette.
+
+COLOR PALETTE (use these exact hexes)
+- Background: #070B12 (very dark slate)
+- Primary neon (standby): #2DD4BF (teal)
+- Active firing: #22D3EE (electric cyan)
+- Signal pulse: #38BDF8 (signal blue)
+- Error: #EF4444 (red)
+- Brain outline stroke: rgba(255,255,255,0.14)
+- Internal gyri lines: rgba(255,255,255,0.06)
+- Region fills: teal/cyan tinted at 0.08–0.12 opacity
+
+========================================================
+2) NODES (NEURAL MODULES) + SYNAPSE CURVES (NO STRAIGHT LINES)
+========================================================
+Place 8 glowing neural “nodes” (circles) inside anatomically plausible regions.
+Node IDs MUST match SSE step names as close as possible:
+bootstrap, lead_feed, opportunity_engine, dm_coverage, dm_fit, playbooks, call_engine, query_intel
+
+Node positions (use these EXACT coordinates within viewBox 0 0 1200 700)
+- The brain graphic should occupy roughly x=80..820, y=90..600.
+- Place nodes like this (cx,cy):
+  bootstrap:          210, 520   (brainstem)
+  lead_feed:          260, 315   (parietal mid-left)
+  opportunity_engine: 360, 240   (frontal/top-front)
+  dm_coverage:        430, 355   (temporal mid)
+  dm_fit:             480, 270   (frontal/temporal boundary)
+  playbooks:          560, 240   (frontal front-mid)
+  call_engine:        320, 500   (cerebellum/coordination)
+  query_intel:        210, 430   (occipital/parietal back)
+
+Node visuals:
+- Standby: dim teal glow + slow breathing pulse
+- Active (STEP_STARTED): bright cyan bloom + slightly larger
+- Done (STEP_DONE): cool down to standby
+- Error: red glow + flicker
+- TRIGGER_FIRED: do NOT just brighten the line; animate a traveling dot along a CURVED synapse
+
+SYNAPSE CURVES (SVG paths). Define these 8 curved edges with IDs. Use these EXACT path d strings:
+(They are intentionally curved; do not replace with straight lines.)
+
+edge-bootstrap-lead_feed:
+d="M 210 520 C 220 470, 240 390, 260 315"
+
+edge-lead_feed-opportunity_engine:
+d="M 260 315 C 300 290, 320 270, 360 240"
+
+edge-opportunity_engine-dm_coverage:
+d="M 360 240 C 400 260, 410 310, 430 355"
+
+edge-dm_coverage-dm_fit:
+d="M 430 355 C 450 330, 465 300, 480 270"
+
+edge-dm_fit-playbooks:
+d="M 480 270 C 510 255, 535 245, 560 240"
+
+edge-playbooks-call_engine:
+d="M 560 240 C 520 320, 430 430, 320 500"
+
+edge-call_engine-query_intel:
+d="M 320 500 C 290 485, 250 460, 210 430"
+
+edge-query_intel-lead_feed:
+d="M 210 430 C 210 380, 230 340, 260 315"
+
+Stroke styling for synapses:
+- Default: thin stroke (2px) using rgba(45,212,191,0.25) + soft blur glow
+- Active/running: brighter rgba(34,211,238,0.45)
+- Error: red tint on relevant synapse when ERROR in that step
+
+========================================================
+3) SSE-DRIVEN STATE + “FIRING” ANIMATIONS
+========================================================
+Use the existing use-sse hook (client/src/lib/use-sse.ts) and wire visuals:
+
+Event handling rules:
+- RUN_STARTED: set runStatus="running" and do a single “global EEG spike” (brief flash on the whole brain group: opacity 1 -> 1.08 glow -> back)
+- RUN_DONE: set runStatus="standby" (unless errors were seen)
+- STEP_STARTED(step): set that node active (cyan) and add to activeNodes set
+- STEP_DONE(step): remove from activeNodes set and fade node back to standby
+- ERROR(step): set runStatus="error"; that node turns red and flickers for 1.2s; log panel highlights
+- TRIGGER_FIRED({trigger}) OR TRIGGER_FIRED({step}): animate a traveling pulse dot along the mapped synapse path
+
+TRIGGER_FIRED mapping (trigger -> edge id):
+bootstrap -> edge-bootstrap-lead_feed
+lead_feed -> edge-lead_feed-opportunity_engine
+opportunity_engine -> edge-opportunity_engine-dm_coverage
+dm_coverage -> edge-dm_coverage-dm_fit
+dm_fit -> edge-dm_fit-playbooks
+playbooks -> edge-playbooks-call_engine
+call_engine -> edge-call_engine-query_intel
+query_intel -> edge-query_intel-lead_feed
+
+Traveling pulse implementation (MANDATORY; no basic line highlights):
+- On trigger: find the SVG path element by ID
+- Use getTotalLength/getPointAtLength to move a small circle along it for 800ms
+- Pulse dot style: r=5, fill #38BDF8 with glow filter
+- Max 2 simultaneous pulses; queue or replace oldest
+
+========================================================
+4) 3D PARALLAX TILT + BREATHING
+========================================================
+Dashboard container uses CSS perspective (1200px). The brain group tilts with mouse movement:
+- rotateX small (-6..6 degrees)
+- rotateY small (-8..8 degrees)
+- Smooth with requestAnimationFrame
+
+Standby breathing:
+- whole brain group subtly scales 1.0 -> 1.01 -> 1.0 over 3.2s loop
+- each node also has its own mild pulse offset
+
+========================================================
+5) DASHBOARD UI LAYOUT (NO TABS)
+========================================================
+Update app layout header:
+- Left: “Neural OS” + small label “Motherboard”
+- Center: status pill (Standby/Running/Error) with matching glow color
+- Right: Logout
+
+On /dashboard:
+- Title: “Motherboard”
+- Subtext EEG vibe:
+  Standby: “Neural Net: idle — listening for triggers”
+  Running: “Neural Net: firing — step: <current/last step>”
+  Error:   “Neural Net: fault detected — check event log”
+
+Run Now button:
+- Keep top-right near the dashboard title area
+- Calls POST /api/run-daily (auth header)
+- Disabled while running
+
+Event log panel (right side, glass panel):
+- Shows latest 30 events with icons:
+  RUN_STARTED ⏵, RUN_DONE ⏹, STEP_STARTED ▶, STEP_DONE ✓, TRIGGER_FIRED ⚡, ERROR ⛔, HEARTBEAT ·
+- Each row: icon, time, short message (type + step/trigger)
+
+Brainwave strip at bottom:
+- 40 bars spanning width beneath brain + log
+- Bars scale with eventRate (rolling 10s)
+- Dim teal in standby, cyan in running, red tint in error
+
+========================================================
+6) NAVIGATION (CLICK BRAIN REGIONS / NODES TO OPEN PAGES)
+========================================================
+No tabs. Navigation is via brain:
+- Clicking the FRONTAL region OR nodes opportunity_engine/playbooks -> /today
+- Clicking TEMPORAL region OR nodes dm_coverage/dm_fit -> /contacts
+- Clicking PARIETAL/OCCIPITAL region OR nodes lead_feed/query_intel -> /lead-engine
+- Clicking CEREBELLUM/BRAINSTEM region OR node call_engine -> /followups
+- Clicking bootstrap node -> /analytics
+
+Add hover tooltips:
+- “Frontal: Today Console”
+- “Temporal: Contacts & DMs”
+- “Parietal/Occipital: Lead Engine”
+- “Cerebellum: Follow-ups”
+- “Brainstem: Analytics / System”
+
+Pages (today/followups/lead-engine/contacts/analytics) must include a “Back to Brain” button that routes to /dashboard.
+
+========================================================
+7) QUALITY BAR (IMPORTANT)
+========================================================
+- No straight connector lines. All synapses must be curved and glow.
+- The brain silhouette must be clearly recognizable (not a blob).
+- The UI must look premium: soft glows, subtle noise, glass panels, clean spacing.
+- SSE activity should be visually obvious: nodes bloom + pulses travel + EEG spikes.
+
+DELIVERABLE
+- Provide the final modified files.
+- Confirm the node colors reflect Standby vs Running vs Error.
+- Confirm TRIGGER_FIRED produces traveling pulse dots.
+- Confirm “Run Now” makes the brain fire in real time.
+- Confirm existing CLI runners remain unchanged and working.
