@@ -74,11 +74,8 @@ interface NeuralNetworkProps {
   machineMetrics: { wins_total: number | null; calls_total: number | null } | null;
   runHistory: Array<{ steps: Array<{ step: string; status: string }> }> | null;
   eventRate: number;
+  confidenceScore: number;
   onNodeClick: (route: string) => void;
-}
-
-function computeConfidence(wins: number, calls: number): number {
-  return Math.min(100, 50 + wins * 10 + calls * 5);
 }
 
 function computeEdgeWeights(history: Array<{ steps: Array<{ step: string }> }> | null): Map<string, number> {
@@ -105,6 +102,7 @@ export default function NeuralNetwork({
   machineMetrics,
   runHistory,
   eventRate,
+  confidenceScore,
   onNodeClick,
 }: NeuralNetworkProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -118,9 +116,8 @@ export default function NeuralNetwork({
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef(0);
 
-  const wins = machineMetrics?.wins_total ?? 0;
   const calls = machineMetrics?.calls_total ?? 0;
-  const confidence = computeConfidence(wins, calls);
+  const confidence = confidenceScore;
   const edgeWeights = useMemo(() => computeEdgeWeights(runHistory ?? null), [runHistory]);
 
   useEffect(() => {

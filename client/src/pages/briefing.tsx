@@ -126,6 +126,20 @@ export default function BriefingPage() {
     refetchInterval: 60000,
   });
 
+  const { data: confidenceData } = useQuery<{
+    confidence_score: number;
+    explanation: string;
+    components: {
+      dm_reached_rate: number;
+      qualified_rate: number;
+      won_rate: number;
+      not_interested_rate: number;
+    };
+  }>({
+    queryKey: ["/api/confidence"],
+    enabled: !!token,
+  });
+
   const runPipelineMutation = useMutation({
     mutationFn: (idx: number) => apiRequest("POST", "/api/action/run-pipeline").then(() => idx),
     onSuccess: (idx: number) => {
@@ -275,6 +289,51 @@ export default function BriefingPage() {
                 </div>
               ))}
             </motion.div>
+
+            {confidenceData && (
+              <motion.div
+                className="rounded-xl p-4 mb-8 flex items-center gap-4"
+                style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15, duration: 0.4 }}
+                data-testid="card-briefing-confidence"
+              >
+                <div className="flex-shrink-0">
+                  <p
+                    className="text-3xl font-bold font-mono"
+                    style={{
+                      color: confidenceData.confidence_score >= 70 ? EMERALD
+                        : confidenceData.confidence_score >= 40 ? "#F59E0B"
+                        : "#EF4444",
+                    }}
+                    data-testid="text-briefing-confidence-score"
+                  >
+                    {confidenceData.confidence_score}
+                  </p>
+                  <p className="text-xs font-mono" style={{ color: MUTED }}>/100</p>
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-mono tracking-widest uppercase mb-1" style={{ color: MUTED }}>
+                    Targeting Accuracy
+                  </p>
+                  <div className="w-full h-1.5 rounded-full mb-1.5" style={{ background: BORDER }}>
+                    <div
+                      className="h-1.5 rounded-full transition-all duration-700"
+                      style={{
+                        width: `${confidenceData.confidence_score}%`,
+                        background: confidenceData.confidence_score >= 70 ? EMERALD
+                          : confidenceData.confidence_score >= 40 ? "#F59E0B"
+                          : "#EF4444",
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs" style={{ color: MUTED }} data-testid="text-briefing-confidence-explanation">
+                    {confidenceData.explanation}
+                  </p>
+                </div>
+              </motion.div>
+            )}
 
             <motion.div
               initial={{ opacity: 0, y: 10 }}

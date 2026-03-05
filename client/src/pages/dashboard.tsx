@@ -142,6 +142,21 @@ export default function DashboardPage() {
     refetchInterval: runStatus === "running" ? 5000 : 30000,
   });
 
+  const { data: confidenceData } = useQuery<{
+    confidence_score: number;
+    explanation: string;
+    components: {
+      dm_reached_rate: number;
+      qualified_rate: number;
+      won_rate: number;
+      not_interested_rate: number;
+    };
+  }>({
+    queryKey: ["/api/confidence"],
+    enabled: !!token,
+    refetchInterval: 120000,
+  });
+
   useEffect(() => {
     if (recentEvents.length === 0 || recentEvents.length === lastEventCount.current) return;
     const newCount = recentEvents.length - lastEventCount.current;
@@ -310,6 +325,49 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            <div
+              className="rounded-2xl p-5"
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #E2E8F0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              }}
+              data-testid="card-targeting-accuracy"
+            >
+              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
+                Targeting Accuracy
+              </p>
+              <div className="flex items-end gap-3 mb-2">
+                <p
+                  className="text-3xl font-bold font-mono"
+                  style={{
+                    color: (confidenceData?.confidence_score ?? 50) >= 70 ? EMERALD
+                      : (confidenceData?.confidence_score ?? 50) >= 40 ? "#F59E0B"
+                      : ERROR_RED,
+                  }}
+                  data-testid="text-confidence-score"
+                >
+                  {confidenceData?.confidence_score ?? 50}
+                </p>
+                <p className="text-xs font-mono mb-1" style={{ color: "#94A3B8" }}>/100</p>
+              </div>
+              <div className="w-full h-2 rounded-full mb-3" style={{ background: "#F1F5F9" }}>
+                <div
+                  className="h-2 rounded-full transition-all duration-700"
+                  style={{
+                    width: `${confidenceData?.confidence_score ?? 50}%`,
+                    background: (confidenceData?.confidence_score ?? 50) >= 70 ? EMERALD
+                      : (confidenceData?.confidence_score ?? 50) >= 40 ? "#F59E0B"
+                      : ERROR_RED,
+                  }}
+                  data-testid="confidence-bar"
+                />
+              </div>
+              <p className="text-xs" style={{ color: "#64748B" }} data-testid="text-confidence-explanation">
+                {confidenceData?.explanation || "Baseline targeting score."}
+              </p>
+            </div>
+
             <Button
               onClick={handleRunNow}
               disabled={runStatus === "running" || runLoading}
@@ -354,6 +412,7 @@ export default function DashboardPage() {
                 } : null}
                 runHistory={runHistory ?? null}
                 eventRate={eventRate}
+                confidenceScore={confidenceData?.confidence_score ?? 50}
                 onNodeClick={(route) => navigate(route)}
               />
             </div>

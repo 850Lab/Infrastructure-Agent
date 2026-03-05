@@ -7,6 +7,7 @@ import { computeMachineMetrics } from "./machine-metrics";
 import { getUserConfig, saveUserConfig, suggestMachineName, mapToIndustryConfig } from "./user-config";
 import type { MachineConfig } from "./user-config";
 import { computeDailyBriefing } from "./briefing";
+import { computeOutcomes, computeConfidence } from "./outcomes";
 import { log } from "./logger";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
@@ -355,5 +356,29 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
   app.post("/api/action/open-company/:id", authMiddleware, async (req: Request, res: Response) => {
     const { id } = req.params;
     res.json({ company_id: id, message: "Company detail navigation ready." });
+  });
+
+  app.get("/api/outcomes", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const range = String(req.query.range || "7d");
+      if (range !== "7d" && range !== "30d") {
+        return res.status(400).json({ error: "range must be 7d or 30d" });
+      }
+      const outcomes = await computeOutcomes(range);
+      res.json(outcomes);
+    } catch (err: any) {
+      log(`Outcomes error: ${err.message}`, "outcomes");
+      res.status(500).json({ error: "Failed to compute outcomes" });
+    }
+  });
+
+  app.get("/api/confidence", authMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const confidence = await computeConfidence();
+      res.json(confidence);
+    } catch (err: any) {
+      log(`Confidence error: ${err.message}`, "outcomes");
+      res.status(500).json({ error: "Failed to compute confidence" });
+    }
   });
 }
