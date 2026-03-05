@@ -1,11 +1,11 @@
 # Texas Automation Systems — Lead Engine Command Center
 
 ## Overview
-A B2B lead generation and call management system targeting Gulf Coast industrial contractors with multi-industry extensibility. Features a real-time "Command Center" dashboard with SSE event streaming, Pulse Reactor visualization, dark neon theme, and a 7-page React frontend.
+A B2B lead generation and call management system targeting Gulf Coast industrial contractors with multi-industry extensibility. Features a real-time "Command Center" dashboard with SSE event streaming, Pulse Reactor visualization, white + emerald theme, and a 7-page React frontend. All sub-pages fetch live data from the latest engine run via `/api/run-history`.
 
 ## Architecture
 - **Backend**: Express + TypeScript server on port 5000
-- **Frontend**: React + Shadcn UI + Framer Motion, dark theme (#070B12) with neon teal (#2DD4BF) accent
+- **Frontend**: React + Shadcn UI + Framer Motion, white theme (#FFFFFF bg, #0F172A text) with emerald (#10B981) accent
 - **Database**: PostgreSQL (Replit built-in) for webhook processing logs
 - **External Services**: Airtable REST API, OpenAI (Whisper + GPT), Make.com API, Apollo.io, Outscraper
 - **Real-time**: Server-Sent Events (SSE) for live dashboard updates
@@ -13,11 +13,11 @@ A B2B lead generation and call management system targeting Gulf Coast industrial
 ## Frontend Pages (7 routes)
 - `/login` — Auth page (validates against ADMIN_EMAIL + ADMIN_PASSWORD)
 - `/dashboard` — Command Center (System Status card, Pulse Reactor, Run History, Event Log, Step Timeline)
-- `/today` — Today's Call List (Opportunity Engine / Playbooks)
-- `/followups` — Follow-ups (Call Engine)
-- `/lead-engine` — Lead Engine (Lead Feed / Query Intel)
-- `/contacts` — Contacts (DM Coverage / DM Fit)
-- `/analytics` — Analytics (Bootstrap)
+- `/today` — Today's Call List — shows companies, DMs, priority, playbook status from opportunity_engine + dm_coverage + playbooks steps
+- `/followups` — Follow-ups — shows call engine stats + generated playbooks with call openers and gatekeeper scripts
+- `/lead-engine` — Lead Engine — shows fresh pool size, query intel metrics from query_intel + opportunity_engine steps
+- `/contacts` — Contacts — shows decision makers with names, titles, emails, phones from dm_coverage + dm_fit steps
+- `/analytics` — Analytics — shows run history, step breakdown with durations and key stats
 
 ### Dashboard Layout
 Three-column layout + bottom timeline:
