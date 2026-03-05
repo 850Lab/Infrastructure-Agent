@@ -22,7 +22,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 
 ### Technical Implementations
 **Backend**: Developed with Express and TypeScript, providing a robust and scalable API layer.
-**Frontend**: A 7-page React application for various operational views (Dashboard, Today's Call List, Follow-ups, Lead Engine, Contacts, Analytics).
+**Frontend**: An 8-page React application for various operational views (Dashboard, Today's Call List, Follow-ups, Lead Engine, Contacts, Analytics, Pipeline).
 **Database**: PostgreSQL is utilized for storing webhook processing logs.
 **Authentication**: Token-based authentication with UUID tokens, 24-hour expiry, and automatic token management. Cross-tab synchronization ensures consistent login states.
 **Real-time Communication**: Server-Sent Events (SSE) provide live updates for dashboard components, including run status, step progress, and event logs. An in-memory EventBus manages SSE pub/sub.
@@ -38,7 +38,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 **DM Enrichment**: Utilizes Apollo.io and GPT for decision-maker information gathering and enrichment.
 **Playbook Generator**: GPT-4o generates dynamic outreach scripts (call openers, gatekeeper scripts, emails, SMS).
 **Call Outcome Engine**: Processes call logs, updates lead statuses, schedules follow-ups, and adjusts engagement scores. Automatically creates/updates Opportunities in Airtable for Qualified, Callback, Won, and Not Interested outcomes.
-**Opportunities Pipeline**: Tracks deals through stages (Qualified → SiteWalk → QuoteSent → DeploymentScheduled → Won/Lost) with auto-generated next actions and due dates. One active opportunity per company (idempotent). API: GET /api/opportunities, GET /api/opportunities/summary, POST /api/opportunities/:id/update. Pipeline page at /pipeline with funnel cards and stage filtering.
+**Opportunities Pipeline**: Tracks deals through stages (Qualified → SiteWalk → QuoteSent → DeploymentScheduled → Won/Lost) with auto-generated next actions and due dates. One active opportunity per company (idempotent). API: GET /api/opportunities, GET /api/opportunities/summary, POST /api/opportunities/:id/update. Pipeline page at /pipeline with funnel cards and stage filtering. DealCard component (`client/src/components/deal-card.tsx`) renders inline on Today and Follow-ups pages when a company has an active opportunity, showing stage badge, advance button with optimistic UI, stage-jump dropdown, and Mark Lost/Won actions.
 **Opportunity Engine**: Generates bucket-based call lists (Hot, Working, Fresh).
 **Query Intelligence Engine**: Evolves search queries based on outcomes and discovery.
 **DM Coverage Engine**: Identifies and fills gaps in decision-maker coverage for call lists.

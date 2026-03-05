@@ -1,0 +1,341 @@
+You are my Replit Agent. Your task is to TEST this entire system like a real end-user would, find bugs BEFORE users do, fix them, and produce a “Go-Live Readiness Report.”
+
+NON-NEGOTIABLES:
+- Do NOT assume anything exists. Verify in code + runtime.
+- Do NOT leave flaky behavior “good enough.” If you see a possible user-facing bug, fix it.
+- Prioritize user-impact over developer convenience.
+- All fixes must be idempotent and safe in production.
+- After fixes, re-run the full test suite in this prompt.
+
+OUTPUTS REQUIRED:
+1) A “Go-Live Readiness Report” with:
+   - What was tested (checklist)
+   - Bugs found (severity, steps to reproduce)
+   - Fixes applied (file changes)
+   - Regression results (pass/fail)
+   - Remaining risks (if any) + mitigations
+2) A “Runbook for Live Ops” (how to diagnose issues fast)
+
+========================================================
+PHASE 0 — BASELINE INVENTORY + HEALTH CHECK (MUST DO FIRST)
+========================================================
+A) Confirm app boots cleanly
+- Start server + React in the standard way for this repo.
+- Confirm no runtime exceptions in terminal.
+- Confirm React loads in browser.
+
+B) Confirm environment validation
+- Run:
+  npx tsx server/setup-client.ts --seed=false --smoke=true --top=5
+- If missing ENV vars cause silent failures, fix to fail fast with clear errors.
+
+C) Confirm Airtable connectivity + schema consistency
+- Run:
+  npx tsx server/bootstrap.ts
+- Verify required tables/fields exist (Companies, Calls, Search_Queries, Decision_Makers, Opportunities, Run_History, User_Config if used).
+- If any code writes to a field that doesn’t exist, update bootstrap to create it.
+
+D) Confirm logging is clean and not leaking secrets
+- Search for accidental logging of API keys/tokens.
+- Ensure logs mask secrets.
+
+DELIVERABLE FOR PHASE 0:
+- A short summary of boot status + schema status + any immediate crashes fixed.
+
+========================================================
+PHASE 1 — AUTH + FIRST-TIME USER FLOW (CRITICAL USER PATH)
+========================================================
+Goal: A brand new user can login, onboard, see briefing, run pipeline, and get a today list without confusion.
+
+TEST 1.1: Login
+- Attempt login with wrong password → must show friendly error, no crash.
+- Attempt login with correct creds → must redirect properly.
+- Confirm protected routes redirect to /login when unauthenticated.
+BUGS TO LOOK FOR:
+- infinite redirect loops
+- token stored incorrectly
+- logout doesn’t clear session
+
+TEST 1.2: Onboarding (first-time)
+- Clear stored user config (simulate new user).
+- Confirm user is redirected to /onboarding after login.
+- Complete onboarding answers.
+- Click “Build my machine” (or equivalent) and confirm it triggers backend build endpoint.
+- Confirm onboarding completion persists and next login doesn’t restart onboarding.
+BUGS TO LOOK FOR:
+- onboarding state not persisted
+- build button does nothing / no error visible
+- onboarding blocks user if SSE is down
+
+TEST 1.3: First intelligence briefing
+- After onboarding completes:
+  - /briefing loads
+  - shows recommended actions
+  - Run Pipeline action works
+BUGS TO LOOK FOR:
+- blank briefing due to missing data
+- action buttons silently failing
+- incorrect “work estimate” math causing confusion
+
+DELIVERABLE FOR PHASE 1:
+- Confirm the “First 60 seconds” journey is smooth.
+- Fix any user-facing friction immediately.
+
+========================================================
+PHASE 2 — REALTIME MOTHERBOARD (SSE + NEURAL UI)
+========================================================
+Goal: Dashboard feels alive, never dead, and accurately reflects system activity.
+
+TEST 2.1: SSE connection stability
+- Load /dashboard; confirm status shows connected.
+- Disable network briefly (simulate dropout) then re-enable.
+- Confirm UI shows reconnecting then connected, and event log backfills.
+BUGS TO LOOK FOR:
+- UI stuck in “awaiting signal…”
+- memory leaks (event handlers multiply)
+- runaway reconnect loops
+- SSE stream not closed on navigation
+
+TEST 2.2: Run Now triggers neural firing
+- Click Run Now.
+- Confirm:
+  - run_id returned
+  - nodes spike in correct order
+  - step start/end events appear with narrative text
+  - run history updates
+BUGS TO LOOK FOR:
+- Run Now triggers multiple runs concurrently
+- Run Now breaks if run already active (should show “already running”)
+- steps out of order / missing events
+- timeline doesn’t match backend step timing
+
+TEST 2.3: Error visualization
+- Force a controlled error (e.g., temporarily set OPENAI_API_KEY to invalid in dev).
+- Confirm:
+  - node flashes error
+  - event log shows error with human message
+  - run status becomes error
+  - system recovers when key fixed
+BUGS TO LOOK FOR:
+- error crashes server
+- UI never returns to standby
+- errors not actionable
+
+DELIVERABLE FOR PHASE 2:
+- SSE is resilient.
+- Motherboard accurately reflects real runs.
+
+========================================================
+PHASE 3 — DAILY PIPELINE INTEGRITY (THE ENGINE MUST BE TRUSTWORTHY)
+========================================================
+Goal: run-daily produces consistent outputs and doesn’t corrupt data.
+
+TEST 3.1: Orchestrator dry run (safe)
+- Run:
+  npx tsx server/run-daily.ts --top=10
+- Confirm no exceptions.
+- Confirm final report includes timing, counts, errors.
+BUGS TO LOOK FOR:
+- child processes spawned unexpectedly
+- run hangs
+- unhandled promise rejections
+
+TEST 3.2: Idempotency across all steps
+- Run daily twice in a row.
+- Confirm second run does not rewrite unnecessarily:
+  - explainability should skip if unchanged
+  - playbooks should skip if within window
+  - dm-fit should skip unless improved
+  - call-engine should process 0 if none unprocessed
+BUGS TO LOOK FOR:
+- repeated writes causing rate limits
+- changing Rank_Reason text every run
+- playbooks regenerating every time
+
+TEST 3.3: Concurrency guard
+- Trigger run-daily while a run is active (via UI or endpoint).
+- Must return 409 and show a friendly UI message.
+BUGS TO LOOK FOR:
+- two runs overlap and stomp fields
+- event streams intermix
+
+DELIVERABLE FOR PHASE 3:
+- Verified idempotency + concurrency guard.
+
+========================================================
+PHASE 4 — TODAY CONSOLE + CALL MODE (CORE OPERATOR EXPERIENCE)
+========================================================
+Goal: User can call through list and log outcomes without friction.
+
+TEST 4.1: Today page loads real data
+- Verify today list loads (even if empty, show helpful empty state).
+- Verify Ask For uses Offer_DM when present, fallback role when not.
+BUGS TO LOOK FOR:
+- undefined fields crash rendering
+- empty list looks broken vs informative
+
+TEST 4.2: Inline call logging
+- Log each outcome type:
+  - DM
+  - Gatekeeper (with name prompt)
+  - No Answer
+  - Qualified (with notes prompts)
+  - Callback (date picker)
+  - Not Interested
+- Confirm Calls record created correctly.
+- Confirm call-engine processing updates Companies:
+  - Lead_Status updates
+  - Next_Followup scheduled
+  - Engagement_Score updated
+  - Processed set last
+BUGS TO LOOK FOR:
+- duplicate calls on double-click
+- failing to map company relationship
+- call-engine doesn’t pick up newly logged calls
+
+TEST 4.3: Call Mode deck flow
+- Enter /call-mode.
+- Log 5 calls in sequence and ensure:
+  - auto-advance works
+  - completion counter accurate
+  - no lost entries
+  - keyboard shortcuts (if any) don’t break
+BUGS TO LOOK FOR:
+- advancing before save completes
+- optimistic UI not rolled back on error
+- wrong company logged
+
+DELIVERABLE FOR PHASE 4:
+- A single operator can do 15 calls in a row without confusion.
+
+========================================================
+PHASE 5 — CONTACT INTELLIGENCE + DM QUALITY (THE “EXEC LIST” PROBLEM)
+========================================================
+Goal: Offer-aware DM selection consistently picks operational buyers.
+
+TEST 5.1: DM Fit correctness
+Create or find a test company with both:
+- CEO / exec
+- Safety Manager / Site Superintendent
+Run DM fit for that company and confirm Offer DM selects safety/ops role.
+
+TEST 5.2: No-fit behavior
+For a company with only exec/HR:
+- confirm Offer_DM stays blank
+- Offer_DM_Reason instructs ask-for role
+- playbooks reflect role-based ask
+
+TEST 5.3: DM Coverage workflow
+- Run dm-coverage on today list:
+  npx tsx server/run-dm-coverage.ts --top=10 --limit=10
+- Confirm:
+  - coverage statuses update
+  - enrichment runs only when needed
+  - no infinite retries
+BUGS TO LOOK FOR:
+- wrong company matching by substring
+- email domain matching false positives
+- overwriting good Offer DM with worse one
+
+DELIVERABLE FOR PHASE 5:
+- DM selection is offer-accurate and stable.
+
+========================================================
+PHASE 6 — LEAD ENGINE + QUERY INTEL (THE SELF-FEED LOOP)
+========================================================
+Goal: Queries evolve safely and generate fresh leads without runaway cost.
+
+TEST 6.1: Query intel run
+- Run:
+  npx tsx server/run-query-intel.ts --generate=5 --targetFresh=100 --market="Gulf Coast"
+- Confirm:
+  - inserts are deduped
+  - retirement rules apply
+  - does not spam templates infinitely
+BUGS TO LOOK FOR:
+- query normalization broken (duplicates)
+- retirement too aggressive
+- “cold start mode” inserts every run
+
+TEST 6.2: Lead feed run (cost guard)
+- Run lead feed with a limit / safe mode (if supported).
+- Confirm:
+  - dedupe works
+  - companies get Source_Query attribution
+  - system doesn’t exceed a safe max per run
+BUGS TO LOOK FOR:
+- endless growth because dedupe fails
+- Source_Query missing prevents attribution
+- runaway scraping with no caps
+
+DELIVERABLE FOR PHASE 6:
+- Self-feed is controlled, deduped, attributable.
+
+========================================================
+PHASE 7 — SAFETY, PERFORMANCE, AND LIVE-READINESS
+========================================================
+Goal: No obvious production foot-guns.
+
+TEST 7.1: Rate limit + retry behavior
+- Simulate 429 from external services (Apollo/OpenAI if possible).
+- Confirm exponential backoff is present, and errors are surfaced.
+BUGS TO LOOK FOR:
+- tight retry loops
+- silent failures
+- partial writes leaving inconsistent state
+
+TEST 7.2: UI performance
+- Load Today list with 200+ rows.
+- Confirm virtualization and no UI freeze.
+BUGS TO LOOK FOR:
+- huge re-renders
+- memory leaks from SSE listeners
+
+TEST 7.3: Error boundaries
+- Force a frontend error (undefined field) and ensure:
+  - error boundary shows a friendly message
+  - app doesn’t white-screen
+- Add ErrorBoundary if missing.
+
+TEST 7.4: Production config sanity
+- Confirm dev banners removed/hidden for production.
+- Confirm CORS configured correctly.
+- Confirm env vars loaded correctly in deployed environment.
+
+DELIVERABLE FOR PHASE 7:
+- App survives real-world failure modes gracefully.
+
+========================================================
+BUG TRIAGE RULES (HOW TO FIX)
+========================================================
+For each bug found:
+1) Write a reproduction step list.
+2) Classify severity:
+   - P0: data corruption, security, cannot login/run
+   - P1: blocks calling workflow, breaks run-daily
+   - P2: incorrect UI info, confusing but recoverable
+   - P3: cosmetic polish
+3) Fix the bug:
+   - add guards
+   - improve error messages
+   - make writes idempotent
+   - add caps/timeouts to external calls
+4) Add a regression test or at least a deterministic “mini test” command.
+5) Re-run the relevant phase tests.
+
+========================================================
+FINAL GO-LIVE CHECKLIST (MUST PASS)
+========================================================
+- Login + onboarding works for new user
+- Dashboard SSE stable and reconnects with backfill
+- Run Now triggers correct pipeline and event display
+- Today console loads and can log outcomes end-to-end
+- Call engine processes outcomes and updates companies correctly
+- DM fit selects operational buyer when present; role fallback otherwise
+- Query intel + lead feed dedupe and are cost-capped
+- Run history persists; diff shows changes; revert works (if implemented)
+- No unhandled exceptions in server logs during full run
+- Frontend never whitescreens; error boundaries in place
+
+DELIVERABLE:
+Produce the Go-Live Readiness Report and Runbook after completing all phases and fixes.

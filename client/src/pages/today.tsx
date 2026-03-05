@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
+import DealCard from "@/components/deal-card";
+import type { Opportunity } from "@/components/deal-card";
 import {
   Phone,
   Copy,
@@ -103,11 +105,28 @@ export default function TodayPage() {
     enabled: !!token,
   });
 
+  const { data: oppsData } = useQuery<{ opportunities: Opportunity[]; count: number }>({
+    queryKey: ["/api/opportunities"],
+    enabled: !!token,
+  });
+
+  const oppByCompany = useMemo(() => {
+    const map = new Map<string, Opportunity>();
+    for (const opp of oppsData?.opportunities || []) {
+      if (opp.company && opp.stage !== "Won" && opp.stage !== "Lost") {
+        const key = opp.company.toLowerCase();
+        if (!map.has(key)) map.set(key, opp);
+      }
+    }
+    return map;
+  }, [oppsData]);
+
   const runPipelineMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/action/run-pipeline"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/today-list"] });
       queryClient.invalidateQueries({ queryKey: ["/api/briefing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
     },
   });
 
@@ -119,6 +138,7 @@ export default function TodayPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/today-list"] });
       queryClient.invalidateQueries({ queryKey: ["/api/confidence"] });
       queryClient.invalidateQueries({ queryKey: ["/api/outcomes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
     },
   });
 
@@ -263,6 +283,7 @@ export default function TodayPage() {
               const loggedOutcome = loggedCalls.get(company.company_name);
               const callPhone = company.offer_dm_phone || company.phone;
               const isMobile = /^\+?\d[\d\s()-]{7,}$/.test(callPhone);
+              const opp = company.company_name ? oppByCompany.get(company.company_name.toLowerCase()) : undefined;
 
               return (
                 <motion.div
@@ -323,6 +344,8 @@ export default function TodayPage() {
                             )}
                           </div>
                         )}
+
+                        {opp && <DealCard opportunity={opp} compact />}
 
                         <div className="flex items-center gap-2 flex-wrap">
                           {callPhone ? (
