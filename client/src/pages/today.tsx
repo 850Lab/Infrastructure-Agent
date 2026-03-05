@@ -247,6 +247,17 @@ export default function TodayPage() {
               {companies.length} companies · {callsLogged} calls logged today
             </p>
           </div>
+          {companies.length > 0 && (
+            <Button
+              onClick={() => navigate("/call-mode")}
+              className="rounded-lg text-sm font-semibold px-5 h-9 gap-2"
+              style={{ background: TEXT, color: "#FFF" }}
+              data-testid="button-enter-call-mode"
+            >
+              <Phone className="w-4 h-4" />
+              Call Mode
+            </Button>
+          )}
         </div>
 
         {isLoading && (

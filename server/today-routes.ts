@@ -105,7 +105,12 @@ export interface TodayCompany {
   playbook_gatekeeper: string;
   playbook_voicemail: string;
   playbook_followup: string;
+  playbook_email_subject: string;
+  playbook_email_body: string;
   followup_due: string;
+  website: string;
+  city: string;
+  gatekeeper_name: string;
 }
 
 function companyFields(): string[] {
@@ -114,7 +119,8 @@ function companyFields(): string[] {
     "Times_Called", "Last_Outcome", "Offer_DM_Name", "Offer_DM_Title",
     "Offer_DM_Phone", "Offer_DM_Email", "Rank_Reason", "Rank_Evidence",
     "Playbook_Call_Opener", "Playbook_Gatekeeper_Ask", "Playbook_Voicemail",
-    "Playbook_Followup_Text", "Followup_Due",
+    "Playbook_Followup_Text", "Playbook_Email_Subject", "Playbook_Email_Body",
+    "Followup_Due", "Website", "City", "Gatekeeper_Name",
   ];
 }
 
@@ -139,7 +145,12 @@ function mapCompany(rec: AirtableRecord): TodayCompany {
     playbook_gatekeeper: String(f.Playbook_Gatekeeper_Ask || ""),
     playbook_voicemail: String(f.Playbook_Voicemail || ""),
     playbook_followup: String(f.Playbook_Followup_Text || ""),
+    playbook_email_subject: String(f.Playbook_Email_Subject || ""),
+    playbook_email_body: String(f.Playbook_Email_Body || ""),
     followup_due: String(f.Followup_Due || ""),
+    website: String(f.Website || ""),
+    city: String(f.City || ""),
+    gatekeeper_name: String(f.Gatekeeper_Name || ""),
   };
 }
 

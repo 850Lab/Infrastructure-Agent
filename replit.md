@@ -22,7 +22,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 
 ### Technical Implementations
 **Backend**: Developed with Express and TypeScript, providing a robust and scalable API layer.
-**Frontend**: An 8-page React application for various operational views (Dashboard, Today's Call List, Follow-ups, Lead Engine, Contacts, Analytics, Pipeline).
+**Frontend**: A 9-page React application for various operational views (Dashboard, Today's Call List, Follow-ups, Lead Engine, Contacts, Analytics, Pipeline, Call Mode).
 **Database**: PostgreSQL is utilized for storing webhook processing logs.
 **Authentication**: Token-based authentication with UUID tokens, 24-hour expiry, and automatic token management. Cross-tab synchronization ensures consistent login states.
 **Real-time Communication**: Server-Sent Events (SSE) provide live updates for dashboard components, including run status, step progress, and event logs. An in-memory EventBus manages SSE pub/sub.
@@ -41,6 +41,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 **Revert Last Run**: During each daily run, a changeset of before/after field values is captured for rank, offer_dm, and playbook categories (`server/run-changeset.ts`). Stored in `summary_json.changeset`. API: POST /api/run-history/:run_id/revert with `{ categories: ["rank","offer_dm","playbooks"] }` writes `fields_before` back to Airtable. Supports partial revert (revert some categories, leave others available). UI in dashboard Run History expansion shows category toggles and revert button; already-reverted categories shown as grey label.
 **Call Outcome Engine**: Processes call logs, updates lead statuses, schedules follow-ups, and adjusts engagement scores. Automatically creates/updates Opportunities in Airtable for Qualified, Callback, Won, and Not Interested outcomes.
 **Opportunities Pipeline**: Tracks deals through stages (Qualified → SiteWalk → QuoteSent → DeploymentScheduled → Won/Lost) with auto-generated next actions and due dates. One active opportunity per company (idempotent). API: GET /api/opportunities, GET /api/opportunities/summary, POST /api/opportunities/:id/update. Pipeline page at /pipeline with funnel cards and stage filtering. DealCard component (`client/src/components/deal-card.tsx`) renders inline on Today and Follow-ups pages when a company has an active opportunity, showing stage badge, advance button with optimistic UI, stage-jump dropdown, and Mark Lost/Won actions.
+**Call Mode**: Full-screen operator cockpit at `/call-mode` for rapid call sessions. Dark-themed deck-style UI showing one company at a time with all contact info, rank intel, and call scripts. Six outcome buttons (DM, Gatekeeper, No Answer, Qualified, Callback, Not Interested) with keyboard shortcuts (1-6). Gatekeeper prompts for name if not on file, Qualified prompts for notes, Callback prompts for date. Auto-advances to next company on log. Progress bar and completed/remaining counts. Accessible from Today page "Call Mode" button.
 **Opportunity Engine**: Generates bucket-based call lists (Hot, Working, Fresh).
 **Query Intelligence Engine**: Evolves search queries based on outcomes and discovery.
 **DM Coverage Engine**: Identifies and fills gaps in decision-maker coverage for call lists.
