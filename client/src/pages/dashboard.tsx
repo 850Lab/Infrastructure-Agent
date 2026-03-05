@@ -20,14 +20,14 @@ const STEP_ORDER = [
 ] as const;
 
 const STEP_LABELS: Record<string, string> = {
-  bootstrap: "Bootstrap",
-  opportunity_engine: "Opp Engine",
-  dm_coverage: "DM Coverage",
-  dm_fit: "DM Fit",
-  playbooks: "Playbooks",
-  call_engine: "Call Engine",
-  query_intel: "Query Intel",
-  lead_feed: "Lead Feed",
+  bootstrap: "System Boot",
+  opportunity_engine: "Opportunity Scan",
+  dm_coverage: "Contact Mapping",
+  dm_fit: "Buyer Selection",
+  playbooks: "Script Generation",
+  call_engine: "Call Processing",
+  query_intel: "Intel Engine",
+  lead_feed: "Lead Expansion",
 };
 
 const SECTION_BUTTONS = [
@@ -37,15 +37,6 @@ const SECTION_BUTTONS = [
   { label: "Contacts", route: "/contacts", steps: ["dm_coverage", "dm_fit"] },
   { label: "Analytics", route: "/analytics", steps: ["bootstrap"] },
 ];
-
-const EVENT_ICONS: Record<string, string> = {
-  RUN_STARTED: "\u23F5",
-  RUN_DONE: "\u23F9",
-  STEP_STARTED: "\u25B6",
-  STEP_DONE: "\u2713",
-  TRIGGER_FIRED: "\u26A1",
-  ERROR: "\u26D4",
-};
 
 const EMERALD = "#10B981";
 const EMERALD_DARK = "#059669";
@@ -500,7 +491,7 @@ export default function DashboardPage() {
                                 {run.steps.map((s, si) => (
                                   <div key={si} className="flex items-center gap-2 text-xs font-mono" style={{ color: s.status === "error" ? ERROR_RED : "#64748B" }}>
                                     <span>{s.status === "done" ? "\u2713" : s.status === "error" ? "\u2717" : "\u00B7"}</span>
-                                    <span>{s.step}</span>
+                                    <span>{STEP_LABELS[s.step] || s.step.replace(/_/g, " ")}</span>
                                     {s.duration_ms != null && <span style={{ color: "#CBD5E1" }}>{(s.duration_ms / 1000).toFixed(1)}s</span>}
                                   </div>
                                 ))}
@@ -536,19 +527,27 @@ export default function DashboardPage() {
                     const time = new Date(evt.receivedAt).toLocaleTimeString("en-US", {
                       hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
                     });
-                    const icon = EVENT_ICONS[evt.type] || "\u00B7";
-                    const isErr = evt.type === "ERROR";
-                    const msg = evt.payload.step || evt.payload.trigger || evt.payload.message || evt.payload.status || "";
+                    const severity = evt.payload.severity || "info";
+                    const icon = severity === "error" ? "\u26D4" : severity === "warn" ? "\u26A0" : severity === "success" ? "\u2713" : "\u25B6";
+                    const iconColor = severity === "error" ? ERROR_RED : severity === "warn" ? "#F59E0B" : severity === "success" ? EMERALD : "#94A3B8";
+                    const titleColor = severity === "error" ? ERROR_RED : "#0F172A";
+                    const title = evt.payload.human_title || evt.type;
+                    const message = evt.payload.human_message || evt.payload.step || evt.payload.trigger || "";
                     return (
                       <div
                         key={`${evt.receivedAt}-${idx}`}
-                        className="flex items-start gap-2 py-1"
+                        className="flex items-start gap-2 py-1.5"
                         style={{ borderBottom: "1px solid #F1F5F9" }}
+                        data-testid={`event-row-${idx}`}
                       >
-                        <span className="text-xs flex-shrink-0" style={{ color: isErr ? ERROR_RED : EMERALD, width: "14px", textAlign: "center" }}>{icon}</span>
-                        <span className="text-xs font-mono flex-shrink-0" style={{ color: "#94A3B8" }}>{time}</span>
-                        <span className="text-xs font-mono flex-shrink-0 font-semibold" style={{ color: isErr ? ERROR_RED : "#334155" }}>{evt.type}</span>
-                        <span className="text-xs font-mono truncate" style={{ color: "#64748B" }}>{msg}</span>
+                        <span className="text-xs flex-shrink-0 mt-0.5" style={{ color: iconColor, width: "14px", textAlign: "center" }}>{icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold truncate" style={{ color: titleColor }} data-testid={`event-title-${idx}`}>{title}</span>
+                            <span className="text-xs font-mono flex-shrink-0" style={{ color: "#94A3B8" }}>{time}</span>
+                          </div>
+                          <p className="text-xs font-mono truncate mt-0.5" style={{ color: "#64748B" }} data-testid={`event-message-${idx}`}>{message}</p>
+                        </div>
                       </div>
                     );
                   })

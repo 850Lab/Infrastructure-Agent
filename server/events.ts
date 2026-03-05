@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { toNarrative } from "./narrative";
 
 export type EventType =
   | "STEP_STARTED"
@@ -34,14 +35,28 @@ class EventBus {
   }
 
   publish(type: EventType, payload: Record<string, any>): void {
-    const event: SSEEvent = { type, payload: { ...payload, ts: payload.ts ?? Date.now() }, ts: Date.now() };
+    const ts = Date.now();
+    const narrative = toNarrative(type, { ...payload, ts: payload.ts ?? ts });
+
+    const enrichedPayload = {
+      ...payload,
+      ts: payload.ts ?? ts,
+      raw_type: narrative.raw_type,
+      raw_step: narrative.raw_step,
+      raw_trigger: narrative.raw_trigger,
+      human_title: narrative.human_title,
+      human_message: narrative.human_message,
+      severity: narrative.severity,
+    };
+
+    const event: SSEEvent = { type, payload: enrichedPayload, ts };
 
     this.buffer.push(event);
     if (this.buffer.length > this.maxBuffer) {
       this.buffer = this.buffer.slice(-this.maxBuffer);
     }
 
-    const data = `event: ${type}\ndata: ${JSON.stringify(event.payload)}\n\n`;
+    const data = `event: ${type}\ndata: ${JSON.stringify(enrichedPayload)}\n\n`;
 
     for (const res of this.subscribers) {
       try {

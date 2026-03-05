@@ -68,7 +68,8 @@ Three-column layout + bottom timeline:
 ## Key Files
 
 ### Dashboard + SSE
-- `server/events.ts` — EventBus: in-memory SSE pub/sub with 200-event ring buffer
+- `server/events.ts` — EventBus: in-memory SSE pub/sub with 200-event ring buffer; enriches all events with narrative fields via narrative.ts
+- `server/narrative.ts` — Narrative layer: maps raw step names to human_title, human_message, and severity for every SSE event
 - `server/run-history.ts` — Persistent run history with dual-storage (Airtable Run_History + data/run_history.json fallback), max 200 runs
 - `server/machine-metrics.ts` — Lifetime counters (companies, DMs, calls, wins, opportunities) from Airtable with 5-min cache
 - `server/run-daily-web.ts` — Instrumented daily orchestrator for web (publishes SSE events, prevents concurrent runs)
