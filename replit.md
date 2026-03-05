@@ -25,12 +25,12 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/make-airtable.ts` - Airtable write functions for Make tables
 
 ### Foreman (Call Pack Generator)
-- `server/foreman.ts` - Candidate fetching, deterministic scoring, ranking, CallCenter push, Airtable tagging
+- `server/foreman.ts` - Candidate fetching, deterministic scoring (+30 refinery, +20 phone, +15 geo, +20 website signals, +15 has DM, +5 DM email, +5 DM phone, +10 DM prob, +10 never contacted, +5 website), ranking, CallCenter push, Airtable tagging; DM names/titles included in call pack openers
 - `server/foreman-routes.ts` - API endpoints (preview, generate, generate-and-tag)
 
 ### Decision Maker Enrichment
-- `server/apollo.ts` - Apollo.io API client (org enrichment: employees, industry, description)
-- `server/dm-enrichment.ts` - Website crawling, GPT-4o DM extraction, email generation, Airtable sync, batch enrichment, backfill
+- `server/apollo.ts` - Apollo.io API client: org enrichment (employees, industry, description), People Search by domain (searchPeopleByDomain, enrichPerson), exponential backoff on 429s
+- `server/dm-enrichment.ts` - DM pipeline: Apollo People Search (primary) → website crawl + GPT-4o extraction (fallback) → dedup by name → Airtable Decision_Makers write; supplemental website DMs merged when Apollo returns results; email generation for DMs without emails
 - `server/dm-routes.ts` - API endpoints (stats, preview, enrich-one, enrich-batch, backfill-contacts)
 
 ### Outscraper (Website Lookup)
@@ -43,6 +43,10 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Airtable tables: "Search Queries" (query_text, market, category, status, last_run, results_count, notes), "Companies" (+ Normalized_Name, Normalized_Domain, Dedupe_Key, Priority_Score, Lead_Status)
 - Deduplication: Dedupe_Key priority: Normalized_Domain > phone digits > normalized_name|city|state; fallback lookup by LOWER(company_name)
 - Priority scoring: +20 high-value category, +10 industrial keywords, +15 website, +10 phone, -10/-20 residential keywords; score 0-100
+
+### Airtable Schema Bootstrap
+- `server/airtable-schema.ts` - Meta API functions (getBaseSchema, ensureTable, ensureField, ensureSchema); idempotent table/field creation for Search_Queries, Companies, Calls
+- `server/bootstrap.ts` - CLI runner: `npx tsx server/bootstrap.ts` to bootstrap all Airtable tables/fields
 
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
@@ -112,7 +116,7 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `CALLCENTER_BASE_URL` - CallCenter app URL (for Foreman push)
 - `INTERNAL_API_KEY` - Shared secret between HUB and CallCenter
 - `OUTSCRAPER_API_KEY` - Outscraper API key (Google Maps website lookup)
-- `APOLLO_API_KEY` - Apollo.io API key (org enrichment, free tier)
+- `APOLLO_API_KEY` - Apollo.io API key (org enrichment + People Search; free tier limits People Search to 403 → falls back to website crawl)
 - `DATABASE_URL` - PostgreSQL connection string
 
 ## Airtable Configuration

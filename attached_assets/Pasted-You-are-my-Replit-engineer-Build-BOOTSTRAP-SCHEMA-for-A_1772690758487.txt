@@ -1,0 +1,102 @@
+You are my Replit engineer. Build BOOTSTRAP SCHEMA for Airtable.
+
+NON-NEGOTIABLES:
+- Do not assume tables or fields exist.
+- You ARE allowed to create missing tables/fields.
+- Do not rename existing fields.
+- If a field exists with a different type, DO NOT change it—log "TYPE_MISMATCH" and continue.
+
+TECH NOTE:
+Use Airtable Web API schema endpoints (get base schema + create table + create field). (See Airtable dev docs: get base schema, create table, create field.)
+
+ENV VARS REQUIRED:
+AIRTABLE_PAT=...
+AIRTABLE_BASE_ID=...
+
+IMPLEMENTATION:
+1) Create a module: src/lib/airtable_schema.ts that exports:
+   - getBaseSchema(): fetch current base tables/fields
+   - ensureTable(tableName, description?): create table if missing
+   - ensureField(tableId, fieldName, fieldType, options?): create field if missing
+   - ensureSchema(): orchestrates everything below and returns a report object
+
+2) Ensure these tables exist (create if missing):
+   A) Search_Queries
+   B) Companies
+   C) Calls
+
+3) Ensure these fields exist (create if missing):
+
+TABLE: Search_Queries
+- Query (singleLineText)
+- Market (singleSelect) options: ["Gulf Coast"]
+- Category (singleSelect) options: ["Scaffolding","Insulation","Industrial Maintenance","Turnaround","Tank Cleaning","Coatings","Mechanical","Construction","Other"]
+- Status (singleSelect) options: ["Queued","Running","Done","Error"]
+- Last_Run (dateTime) includeTime=true
+- Results_Count (number) precision=0
+- Notes (multilineText)
+
+TABLE: Companies
+Identity / Dedupe
+- Company_Name (singleLineText)
+- Normalized_Name (singleLineText)
+- Website (url)
+- Normalized_Domain (singleLineText)
+- Phone (singleLineText)
+- City (singleLineText)
+- State (singleLineText)
+- Category (singleSelect) same options as Search_Queries.Category
+- Outscraper_Place_ID (singleLineText)
+- Dedupe_Key (singleLineText)
+
+Scoring / Workflow
+- Priority_Score (number) precision=0
+- Priority_Tier (singleSelect) options: ["A","B","C"]
+- Lead_Status (singleSelect) options: ["New","Enriched","Called","Working","Won","Lost"]
+- Source (singleLineText)
+
+Enrichment
+- Emails (multilineText)
+- Notes (multilineText)
+- Last_Enriched (dateTime) includeTime=true
+
+Opportunity Detection
+- Opportunity_Signal (singleLineText)
+- Opportunity_Type (singleSelect) options: ["Turnaround","Maintenance","Industrial Contractor","Plant Services","Unknown"]
+- Opportunity_Score (number) precision=0
+- Opportunity_Notes (multilineText)
+- Opportunity_Last_Checked (dateTime) includeTime=true
+
+TABLE: Calls
+- Company (linkToAnotherRecord) link to Companies (if linking is too complex via API, create as singleLineText for now and log "LINK_DEFERRED")
+- Call_Time (dateTime) includeTime=true
+- Outcome (singleSelect) options: ["No Answer","Gatekeeper","Decision Maker","Qualified","Not Interested","Callback","Won","Lost"]
+- Notes (multilineText)
+- VoiceMemo_URL (url)
+- Transcription (multilineText)
+- Analysis (multilineText)
+- Next_Followup (dateTime) includeTime=true
+
+4) Build a CLI script:
+- src/scripts/bootstrap.ts
+- npm run bootstrap
+
+The script must:
+- call ensureSchema()
+- print a clean "Schema Report" with:
+  - tables_created[]
+  - fields_created[{table, field}]
+  - fields_existing_count
+  - type_mismatches[{table, field, expected, actual}]
+  - link_deferred (true/false)
+
+5) Add .env.example with required env vars.
+
+MINI-TESTS (must be documented in README):
+- Run `npm run bootstrap` twice.
+  - Second run should create NOTHING new.
+  - It should still print a report showing 0 created.
+- Confirm Airtable now has the 3 tables and key fields.
+
+DELIVERABLE:
+Show full code changes and exact commands to run locally in Replit.

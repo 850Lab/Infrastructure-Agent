@@ -245,7 +245,7 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
   if (enriched.length > 0) {
     try {
       const dmTable = encodeURIComponent("Decision_Makers");
-      const dmByCompany = new Map<string, { name: string; title: string; priority: number }>();
+      const dmByCompany = new Map<string, { name: string; title: string; priority: number; hasEmail: boolean; hasPhone: boolean }>();
 
       const DEPT_PRIORITY: Record<string, number> = {
         operations: 1, maintenance: 2, safety: 3, executive: 4, sales: 5, finance: 6, other: 7,
@@ -268,6 +268,8 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
           const dept = String(rec.fields.department || "other").toLowerCase();
           const seniority = String(rec.fields.seniority || "other").toLowerCase();
           const priority = (DEPT_PRIORITY[dept] || 7) * 10 + (SENIORITY_PRIORITY[seniority] || 5);
+          const recHasEmail = !!(rec.fields.email && String(rec.fields.email).includes("@"));
+          const recHasPhone = !!(rec.fields.phone && String(rec.fields.phone).replace(/\D/g, "").length >= 10);
 
           const existing = dmByCompany.get(compName);
           if (!existing || priority < existing.priority) {
@@ -275,7 +277,12 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
               name: rec.fields.full_name || "",
               title: rec.fields.title || "",
               priority,
+              hasEmail: recHasEmail || (existing?.hasEmail ?? false),
+              hasPhone: recHasPhone || (existing?.hasPhone ?? false),
             });
+          } else {
+            if (recHasEmail && !existing.hasEmail) existing.hasEmail = true;
+            if (recHasPhone && !existing.hasPhone) existing.hasPhone = true;
           }
         }
 
@@ -290,6 +297,15 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
           c.dmTitle = dm.title;
           c.score += 15;
           c.scoreBreakdown.push("has DM contact");
+
+          if (dm.hasEmail) {
+            c.score += 5;
+            c.scoreBreakdown.push("DM has email");
+          }
+          if (dm.hasPhone) {
+            c.score += 5;
+            c.scoreBreakdown.push("DM has phone");
+          }
         }
       }
 

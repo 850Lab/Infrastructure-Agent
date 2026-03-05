@@ -1,6 +1,7 @@
 import { log } from "./index";
 import OpenAI from "openai";
-import { enrichOrganization } from "./apollo";
+import { enrichOrganization, searchPeopleByDomain, isApolloAvailable } from "./apollo";
+import type { ApolloPerson } from "./apollo";
 
 const proxyClient = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -250,6 +251,53 @@ Return ONLY the JSON array, no other text.`,
   }
 }
 
+function mapApolloSeniority(seniority: string): string {
+  const s = (seniority || "").toLowerCase();
+  if (s.includes("c_suite") || s === "founder" || s === "owner") return "c_suite";
+  if (s.includes("vp") || s.includes("vice")) return "vp";
+  if (s.includes("director")) return "director";
+  if (s.includes("manager") || s.includes("senior")) return "manager";
+  return "other";
+}
+
+function mapApolloDepartment(departments: string[], title: string): string {
+  const all = [...departments.map(d => d.toLowerCase()), title.toLowerCase()].join(" ");
+  if (all.includes("operations") || all.includes("plant")) return "operations";
+  if (all.includes("maintenance") || all.includes("turnaround")) return "maintenance";
+  if (all.includes("safety") || all.includes("hse") || all.includes("ehs") || all.includes("health")) return "safety";
+  if (all.includes("executive") || all.includes("c_suite") || all.includes("owner") || all.includes("president") || all.includes("ceo")) return "executive";
+  if (all.includes("sales") || all.includes("business development")) return "sales";
+  if (all.includes("finance") || all.includes("accounting")) return "finance";
+  return "other";
+}
+
+function apolloPeopleToDecisionMakers(people: ApolloPerson[], domain: string): DecisionMaker[] {
+  return people
+    .filter(p => p.name && p.name.includes(" "))
+    .map(p => {
+      let email = p.email || "";
+      let source = "apollo";
+      if (!email && p.name.includes(" ") && domain && domain.includes(".")) {
+        const generated = generateProbableEmail(p.name, domain);
+        if (generated) {
+          email = generated;
+          source = "apollo+email_generated";
+        }
+      }
+
+      return {
+        full_name: p.name,
+        title: p.title,
+        email,
+        phone: p.phone || "",
+        linkedin_url: p.linkedin_url || "",
+        seniority: mapApolloSeniority(p.seniority),
+        department: mapApolloDepartment(p.departments, p.title),
+        source,
+      };
+    });
+}
+
 function generateProbableEmail(fullName: string, domain: string): string | null {
   if (!domain || !domain.includes(".")) return null;
   const cleaned = fullName.toLowerCase()
@@ -304,18 +352,63 @@ export async function enrichCompany(recordId: string): Promise<EnrichmentResult>
     log(`Apollo enrichment failed for ${domain}: ${e.message}`, "dm-enrich");
   }
 
-  const { content, pagesScanned } = await crawlForTeamPages(domain);
-  const decisionMakers = await extractDMsWithGPT(content, companyName, domain);
+  let decisionMakers: DecisionMaker[] = [];
+  let pagesScanned = 0;
 
-  for (const dm of decisionMakers) {
-    if (!dm.email && dm.full_name.includes(" ") && domain && domain.includes(".")) {
-      const generated = generateProbableEmail(dm.full_name, domain);
-      if (generated) {
-        dm.email = generated;
-        if (!dm.source.includes("email_generated")) {
-          dm.source = dm.source ? `${dm.source}+email_generated` : "email_generated";
+  if (isApolloAvailable()) {
+    try {
+      const apolloPeople = await searchPeopleByDomain(domain);
+      if (apolloPeople.length > 0) {
+        decisionMakers = apolloPeopleToDecisionMakers(apolloPeople, domain);
+        log(`Apollo People Search: ${decisionMakers.length} DMs for ${companyName}`, "dm-enrich");
+      }
+    } catch (e: any) {
+      log(`Apollo People Search failed for ${companyName}: ${e.message}`, "dm-enrich");
+    }
+  }
+
+  if (decisionMakers.length === 0) {
+    log(`Falling back to website crawl for ${companyName}`, "dm-enrich");
+    const crawlResult = await crawlForTeamPages(domain);
+    pagesScanned = crawlResult.pagesScanned;
+    const crawledDMs = await extractDMsWithGPT(crawlResult.content, companyName, domain);
+
+    for (const dm of crawledDMs) {
+      if (!dm.email && dm.full_name.includes(" ") && domain && domain.includes(".")) {
+        const generated = generateProbableEmail(dm.full_name, domain);
+        if (generated) {
+          dm.email = generated;
+          if (!dm.source.includes("email_generated")) {
+            dm.source = dm.source ? `${dm.source}+email_generated` : "email_generated";
+          }
         }
       }
+    }
+
+    decisionMakers = crawledDMs;
+  } else {
+    const apolloNames = new Set(decisionMakers.map(d => d.full_name.toLowerCase()));
+    try {
+      const crawlResult = await crawlForTeamPages(domain);
+      pagesScanned = crawlResult.pagesScanned;
+      if (crawlResult.content.length > 200) {
+        const crawledDMs = await extractDMsWithGPT(crawlResult.content, companyName, domain);
+        for (const dm of crawledDMs) {
+          if (!apolloNames.has(dm.full_name.toLowerCase())) {
+            if (!dm.email && dm.full_name.includes(" ") && domain.includes(".")) {
+              const generated = generateProbableEmail(dm.full_name, domain);
+              if (generated) {
+                dm.email = generated;
+                dm.source = dm.source ? `${dm.source}+email_generated` : "email_generated";
+              }
+            }
+            dm.source = dm.source ? `${dm.source}+website_supplement` : "website_supplement";
+            decisionMakers.push(dm);
+          }
+        }
+      }
+    } catch (e: any) {
+      log(`Supplemental website crawl failed for ${companyName}: ${e.message}`, "dm-enrich");
     }
   }
 
