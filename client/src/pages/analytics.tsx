@@ -4,17 +4,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PhoneCall, Target, Activity } from "lucide-react";
 
 const metrics = [
-  { label: "Calls This Week", value: "—", icon: PhoneCall },
-  { label: "Win Rate", value: "—", icon: Target },
-  { label: "Avg Engagement", value: "—", icon: Activity },
+  { label: "Calls This Week", value: "\u2014", icon: PhoneCall },
+  { label: "Win Rate", value: "\u2014", icon: Target },
+  { label: "Avg Engagement", value: "\u2014", icon: Activity },
 ];
 
 const headers = ["Metric", "Value", "Trend"];
 
 export default function AnalyticsPage() {
   return (
-    <AppLayout>
+    <AppLayout showBackToChip>
       <div className="p-6 space-y-6">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-xs font-mono text-muted-foreground tracking-wider uppercase">Bootstrap</span>
+        </div>
         <h1 className="text-2xl font-bold glow-text" data-testid="text-page-title">Analytics</h1>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {metrics.map((m) => (

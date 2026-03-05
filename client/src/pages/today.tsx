@@ -4,17 +4,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Users, UserCheck, BookOpen } from "lucide-react";
 
 const metrics = [
-  { label: "Companies on List", value: "—", icon: Users },
-  { label: "DMs Resolved", value: "—", icon: UserCheck },
-  { label: "Playbooks Ready", value: "—", icon: BookOpen },
+  { label: "Companies on List", value: "\u2014", icon: Users },
+  { label: "DMs Resolved", value: "\u2014", icon: UserCheck },
+  { label: "Playbooks Ready", value: "\u2014", icon: BookOpen },
 ];
 
 const headers = ["Company", "DM", "Score", "Playbook Status"];
 
 export default function TodayPage() {
   return (
-    <AppLayout>
+    <AppLayout showBackToChip>
       <div className="p-6 space-y-6">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-xs font-mono text-muted-foreground tracking-wider uppercase">Opportunity Engine / Playbooks</span>
+        </div>
         <h1 className="text-2xl font-bold glow-text" data-testid="text-page-title">Today's Call List</h1>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {metrics.map((m) => (

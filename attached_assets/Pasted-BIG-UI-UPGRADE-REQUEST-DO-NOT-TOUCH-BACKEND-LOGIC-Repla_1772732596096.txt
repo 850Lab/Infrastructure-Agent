@@ -1,0 +1,123 @@
+BIG UI UPGRADE REQUEST (DO NOT TOUCH BACKEND LOGIC):
+Replace the current “boxes + top tabs” UI with a DIGITAL CHIP dashboard that acts as the main navigation. No tabs. The chip itself contains “sections” (modules). Clicking a section expands it into a full page using 3D parallax motion. Replit supports animations now — use Framer Motion (already installed) and CSS 3D transforms.
+
+GOAL UX:
+- The /dashboard is a stylized digital chip on a dark slate background with neon cyan traces.
+- The chip has 6–8 labeled “silicon blocks” (modules) and etched traces between them.
+- Standby: the chip softly pulses (“breathing”), with subtle scanning shimmer across traces.
+- Running (SSE events): modules “fire” like brain activity (quick spike glow) and traces animate signal pulses.
+- Navigation: instead of top tabs, user clicks chip modules. The selected module expands outward (parallax 3D zoom) into that section’s page. A back gesture/click collapses back to chip view.
+- The old pages still exist as routes, but the chip is the primary navigation. The top nav becomes minimal (only Logo + Status + Logout). No section links.
+
+DO NOT BREAK:
+- SSE hook behavior
+- Run Now button on dashboard
+- Existing routes still accessible
+- Existing CLI runners unaffected (frontend only)
+
+IMPLEMENTATION TASKS:
+
+T1) Replace App Layout navigation
+- Update client/src/components/app-layout.tsx:
+  - Remove tab links (Dashboard/Today/etc)
+  - Keep only:
+    - Left: “Motherboard” title
+    - Center: Status pill (Standby/Running/Error) from SSE hook
+    - Right: Logout button
+  - Keep AnimatePresence transitions but switch to “camera” style transitions (3D depth).
+
+T2) Build “Chip Navigation” Dashboard
+- Replace client/src/pages/dashboard.tsx with a new layout:
+  - A single large CHIP in the center (SVG or div-based) with:
+    - chip body: rounded rect with subtle gradient + noise
+    - traces: thin neon lines (SVG paths) across chip surface
+    - modules: clickable “silicon blocks” with labels
+  - Keep “Run Now” button in the top-right of the dashboard area.
+  - Keep Event Log panel but integrate it into the chip area (e.g., as a “diagnostic window” etched into the chip or floating glass panel).
+  - Keep Brainwave strip, but make it look like a small “oscilloscope” embedded at chip bottom edge.
+
+T3) Chip Modules + Routing map
+Create these module IDs and map them to routes:
+- lead_feed -> /lead-engine
+- query_intel -> /lead-engine
+- opportunity_engine -> /today
+- playbooks -> /today
+- dm_coverage -> /contacts
+- dm_fit -> /contacts
+- call_engine -> /followups
+- bootstrap -> /analytics
+
+When user clicks a module:
+- Animate: module rises toward camera (scale up + translateZ)
+- The chip tilts slightly with pointer movement (parallax)
+- Then transition to route with a “chip zoom” effect
+
+Also add a “Back to Chip” UI on every page (top-left icon) that returns to /dashboard with a reverse animation.
+
+T4) 3D Parallax + Expand effect
+- Use CSS perspective on the dashboard container:
+  - perspective: 1200px;
+  - chip rotates slightly based on mouse position:
+    rotateX = (mouseY - centerY) * small factor
+    rotateY = (mouseX - centerX) * small factor
+- Use Framer Motion for:
+  - chip idle pulse (scale 1.00→1.01→1.00)
+  - module hover glow
+  - module click “lift” (z-depth + glow)
+  - page transitions: a consistent “camera slide/zoom” between chip and pages
+
+T5) SSE-driven “neural firing” visuals
+- Keep the existing client/src/lib/use-sse.ts.
+- Update dashboard visuals so:
+  - STEP_STARTED: the corresponding module block flashes cyan, then stays “active glowing”
+  - STEP_DONE: module returns to standby glow
+  - ERROR: module glows red + status pill red
+  - TRIGGER_FIRED: animate a signal pulse traveling along a trace path connected to that module
+Implementation suggestion:
+  - Represent traces as SVG paths with IDs.
+  - For pulses: render a small glowing dot that moves along a path using getPointAtLength for 800ms.
+  - Allow max 2 simultaneous pulses (queue/reuse).
+
+T6) CHIP DESIGN SPEC (use these positions but style as chip blocks, not floating boxes)
+Use a chip surface area of roughly x=80..820, y=120..580 inside a 1200x700 viewBox.
+Define modules as “silicon blocks” embedded in chip:
+- bootstrap near top-left
+- lead_feed left-mid
+- opportunity_engine center-top
+- dm_coverage right-top
+- dm_fit far-right-top
+- playbooks right-mid
+- call_engine center-bottom
+- query_intel left-bottom
+Traces should look like etched PCB lines with rounded corners, not simple straight connectors.
+
+T7) Keep routes/pages but restyle them to match chip theme
+- For today/followups/lead-engine/contacts/analytics pages:
+  - Add a small “chip breadcrumb” header
+  - Use the same neon accent/glow-card
+  - Add a “Back to Chip” control that routes to /dashboard
+
+FILES YOU WILL TOUCH:
+- client/src/components/app-layout.tsx
+- client/src/pages/dashboard.tsx
+- client/src/pages/today.tsx
+- client/src/pages/followups.tsx
+- client/src/pages/lead-engine.tsx
+- client/src/pages/contacts.tsx
+- client/src/pages/analytics.tsx
+- client/src/index.css (only if needed to support 3D + chip styling; keep shadcn vars intact)
+
+ACCEPTANCE TEST:
+1) Login works
+2) /dashboard shows DIGITAL CHIP (no top tabs)
+3) Hover chip -> subtle parallax tilt
+4) Click a module -> it expands in 3D and transitions to correct page
+5) Back to Chip returns with reverse animation
+6) Click “Run Now” -> SSE events cause modules/traces to “fire” in real time
+7) Status pill reflects Standby/Running/Error
+
+DELIVERABLE:
+- Provide final code changes
+- Confirm module->route mapping
+- Confirm SSE firing visuals work on chip
+- Keep everything clean and premium (dark slate + neon cyan)

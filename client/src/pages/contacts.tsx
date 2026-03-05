@@ -4,17 +4,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Users, Mail, Phone } from "lucide-react";
 
 const metrics = [
-  { label: "Total DMs", value: "—", icon: Users },
-  { label: "With Email", value: "—", icon: Mail },
-  { label: "With Phone", value: "—", icon: Phone },
+  { label: "Total DMs", value: "\u2014", icon: Users },
+  { label: "With Email", value: "\u2014", icon: Mail },
+  { label: "With Phone", value: "\u2014", icon: Phone },
 ];
 
 const headers = ["Name", "Title", "Company", "Email", "Phone", "Fit Score"];
 
 export default function ContactsPage() {
   return (
-    <AppLayout>
+    <AppLayout showBackToChip>
       <div className="p-6 space-y-6">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-xs font-mono text-muted-foreground tracking-wider uppercase">DM Coverage / DM Fit</span>
+        </div>
         <h1 className="text-2xl font-bold glow-text" data-testid="text-page-title">Contacts</h1>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {metrics.map((m) => (
