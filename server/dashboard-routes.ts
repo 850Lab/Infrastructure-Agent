@@ -6,6 +6,7 @@ import { getHistory, getRunById, getRunStatus, loadHistory } from "./run-history
 import { computeMachineMetrics } from "./machine-metrics";
 import { getUserConfig, saveUserConfig, suggestMachineName, mapToIndustryConfig } from "./user-config";
 import type { MachineConfig } from "./user-config";
+import { computeDailyBriefing } from "./briefing";
 import { log } from "./logger";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
@@ -311,5 +312,48 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         last_run_time: null,
       });
     }
+  });
+
+  app.get("/api/briefing", authMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const briefing = await computeDailyBriefing();
+      res.json(briefing);
+    } catch (err: any) {
+      log(`Briefing error: ${err.message}`, "briefing");
+      res.status(500).json({ error: "Failed to compute briefing" });
+    }
+  });
+
+  app.post("/api/action/run-pipeline", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const run = await startDailyRun({ top: 10 });
+      res.json({ run_id: run.run_id, status: "started" });
+    } catch (err: any) {
+      if (err instanceof RunAlreadyActiveError) {
+        res.status(409).json({ error: "Pipeline is already running" });
+      } else {
+        log(`Run-pipeline action error: ${err.message}`, "briefing");
+        res.status(500).json({ error: "Failed to start pipeline" });
+      }
+    }
+  });
+
+  app.post("/api/action/enrich-dms", authMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const run = await startDailyRun({ top: 10 });
+      res.json({ run_id: run.run_id, status: "started", note: "Pipeline will enrich DMs as part of its run." });
+    } catch (err: any) {
+      if (err instanceof RunAlreadyActiveError) {
+        res.status(409).json({ error: "Pipeline is already running" });
+      } else {
+        log(`Enrich-dms action error: ${err.message}`, "briefing");
+        res.status(500).json({ error: "Failed to start enrichment" });
+      }
+    }
+  });
+
+  app.post("/api/action/open-company/:id", authMiddleware, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    res.json({ company_id: id, message: "Company detail navigation ready." });
   });
 }

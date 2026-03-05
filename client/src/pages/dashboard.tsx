@@ -6,7 +6,7 @@ import { useSSE } from "@/lib/use-sse";
 import { useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 const STEP_ORDER = [
   "bootstrap",
@@ -431,6 +431,20 @@ export default function DashboardPage() {
             >
               <Play className="w-5 h-5 mr-2" />
               {runLoading ? "STARTING..." : runStatus === "running" ? "RUNNING..." : "RUN NOW"}
+            </Button>
+
+            <Button
+              onClick={() => navigate("/briefing")}
+              className="w-full h-10 text-sm font-semibold tracking-wider rounded-xl"
+              style={{
+                background: "#F8FAFC",
+                color: "#0F172A",
+                border: "1px solid #E2E8F0",
+              }}
+              data-testid="button-daily-briefing"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Daily Briefing
             </Button>
           </div>
 

@@ -73,14 +73,15 @@ Three-column layout + bottom timeline:
 - `server/run-history.ts` — Persistent run history with dual-storage (Airtable Run_History + data/run_history.json fallback), max 200 runs
 - `server/machine-metrics.ts` — Lifetime counters (companies, DMs, calls, wins, opportunities) from Airtable with 5-min cache
 - `server/run-daily-web.ts` — Instrumented daily orchestrator for web (publishes SSE events, prevents concurrent runs)
-- `server/dashboard-routes.ts` — API routes: /api/events (SSE), /api/auth/login, /api/me, /api/onboarding, /api/onboarding/suggest-name, /api/onboarding/build, /api/run-daily, /api/run-history, /api/run-status, /api/machine-metrics, /api/dashboard/stats
+- `server/briefing.ts` — Daily Briefing engine: computes new_companies_24h, dms_found_24h, hot_followups_due_today, fresh_pool_count, recommended_actions (top 5: RUN_PIPELINE, FOLLOWUP, CALL, ENRICH_DM) with estimated work time
+- `server/dashboard-routes.ts` — API routes: /api/events (SSE), /api/auth/login, /api/me, /api/onboarding, /api/onboarding/suggest-name, /api/onboarding/build, /api/run-daily, /api/run-history, /api/run-status, /api/machine-metrics, /api/dashboard/stats, /api/briefing, /api/action/run-pipeline, /api/action/enrich-dms, /api/action/open-company/:id
 - `server/user-config.ts` — Per-user MachineConfig storage (Airtable User_Config + data/user_config.json fallback); includes name suggestion and config mapping
 - `client/src/lib/auth.ts` — AuthContext + AuthProvider + ProtectedRoute
 - `client/src/lib/use-sse.ts` — SSE subscription hook with auto-reconnect
 - `client/src/App.tsx` — Router with OnboardingGate: checks /api/me for needsOnboarding flag, redirects first-time users to /onboarding
 - `client/src/components/app-layout.tsx` — Header (Texas Automation Systems + StatusPill + Logout) + Framer Motion page transitions
 - `client/src/pages/onboarding.tsx` — 5-step onboarding wizard: market, opportunity, geo, DM focus, machine name + build step with live SSE event log
-- `client/src/pages/briefing.tsx` — First intelligence briefing: shows machine config summary + pipeline metrics + link to dashboard
+- `client/src/pages/briefing.tsx` — Daily Briefing page: greeting with machine name, 4 stat cards (new companies, DMs found, followups due, fresh pool), recommended actions list with action buttons (Run/Open/Enrich), estimated work time, back to dashboard link
 - `client/src/pages/dashboard.tsx` — Command Center: Pulse Reactor + System Status + Machine Memory + Run History + Event Log + Step Timeline
 
 ### Voice Memo Analyzer
