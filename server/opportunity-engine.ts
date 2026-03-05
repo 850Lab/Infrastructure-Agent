@@ -30,6 +30,9 @@ interface CompanyRecord {
   opportunityType: string;
   opportunitySignal: string;
   existingRankVersion: string;
+  offerDMName: string;
+  offerDMTitle: string;
+  offerDMFitScore: number;
 }
 
 interface CallRecord {
@@ -86,6 +89,9 @@ export interface EngineResult {
     primaryDMEmail: string;
     gatekeeperName: string;
     rankReason: string;
+    offerDMName: string;
+    offerDMTitle: string;
+    offerDMFitScore: number;
   }>;
 }
 
@@ -154,6 +160,9 @@ async function fetchAllCompanies(): Promise<CompanyRecord[]> {
         opportunityType: String(f.Opportunity_Type || "").trim(),
         opportunitySignal: String(f.Opportunity_Signal || "").trim(),
         existingRankVersion: String(f.Rank_Version || "").trim(),
+        offerDMName: String(f.Offer_DM_Name || "").trim(),
+        offerDMTitle: String(f.Offer_DM_Title || "").trim(),
+        offerDMFitScore: parseInt(f.Offer_DM_FitScore || "0", 10) || 0,
       });
     }
     offset = data.offset;
@@ -630,6 +639,9 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
       primaryDMEmail: s.company.primaryDMEmail,
       gatekeeperName: s.company.gatekeeperName,
       rankReason: expl?.rankReason || "",
+      offerDMName: s.company.offerDMName,
+      offerDMTitle: s.company.offerDMTitle,
+      offerDMFitScore: s.company.offerDMFitScore,
     };
   });
   details.sort((a, b) => {

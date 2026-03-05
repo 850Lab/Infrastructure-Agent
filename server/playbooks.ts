@@ -21,6 +21,11 @@ interface PlaybookCompany {
   primaryDMTitle: string;
   primaryDMEmail: string;
   primaryDMPhone: string;
+  offerDMName: string;
+  offerDMTitle: string;
+  offerDMEmail: string;
+  offerDMPhone: string;
+  offerDMReason: string;
   gatekeeperName: string;
   rankReason: string;
   rankEvidence: string;
@@ -102,6 +107,11 @@ async function fetchTodayListCompanies(): Promise<PlaybookCompany[]> {
         primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
         primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
         primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
+        offerDMName: String(f.Offer_DM_Name || "").trim(),
+        offerDMTitle: String(f.Offer_DM_Title || "").trim(),
+        offerDMEmail: String(f.Offer_DM_Email || "").trim(),
+        offerDMPhone: String(f.Offer_DM_Phone || "").trim(),
+        offerDMReason: String(f.Offer_DM_Reason || "").trim(),
         gatekeeperName: String(f.Gatekeeper_Name || "").trim(),
         rankReason: String(f.Rank_Reason || "").trim(),
         rankEvidence: String(f.Rank_Evidence || "").trim(),
@@ -139,8 +149,11 @@ function shouldGenerate(c: PlaybookCompany, force: boolean, currentConfigName: s
 }
 
 function buildPrompt(c: PlaybookCompany, cfg: IndustryConfig): string {
-  const dmSection = c.primaryDMName
-    ? `Decision maker: ${c.primaryDMName}${c.primaryDMTitle ? ` (${c.primaryDMTitle})` : ""}. Address them by name.`
+  const bestDMName = c.offerDMName || c.primaryDMName;
+  const bestDMTitle = c.offerDMName ? c.offerDMTitle : c.primaryDMTitle;
+
+  const dmSection = bestDMName
+    ? `Decision maker: ${bestDMName}${bestDMTitle ? ` (${bestDMTitle})` : ""}. Address them by name.${c.offerDMName ? ` (Selected for offer fit: ${c.offerDMReason || "best match for this offer"})` : ""}`
     : `No known decision maker. Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "owner"} by title.`;
 
   const gkSection = c.gatekeeperName
@@ -189,8 +202,8 @@ CRITICAL: Never hallucinate facts. Only reference evidence that appears above. U
 
 Generate a JSON object with these exact fields:
 {
-  "call_opener": "Opening script when the decision maker answers. Max 45 seconds spoken. ${c.primaryDMName ? `Address ${c.primaryDMName} by name.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`}",
-  "gatekeeper_ask": "What to say if a receptionist/gatekeeper answers. Max 12 seconds. ${c.gatekeeperName ? `Address ${c.gatekeeperName} by name.` : "Be professional and direct."}",
+  "call_opener": "Opening script when the decision maker answers. Max 45 seconds spoken. ${bestDMName ? `Address ${bestDMName} by name.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`}",
+  "gatekeeper_ask": "What to say if a receptionist/gatekeeper answers. Max 12 seconds. ${c.gatekeeperName ? `Address ${c.gatekeeperName} by name.` : "Be professional and direct."} ${bestDMName ? `Ask to speak with ${bestDMName}.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`}",
   "voicemail": "Voicemail script. Max 25 seconds. Leave callback reason and phone number placeholder [YOUR_NUMBER].",
   "email_subject": "Email subject line. Short, specific, no spam words.",
   "email_body": "Follow-up email body. Max 130 words. Professional but conversational.",

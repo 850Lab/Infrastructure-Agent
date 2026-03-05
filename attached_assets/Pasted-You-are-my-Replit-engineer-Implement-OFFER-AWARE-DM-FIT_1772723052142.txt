@@ -1,0 +1,103 @@
+You are my Replit engineer. Implement OFFER-AWARE DM FIT so we stop selecting execs and select the true operational buyer for the current offer.
+
+OFFER CONTEXT (for now):
+"Cool Down Trailers / heat mitigation / mobile cooling stations for field crews in plants/refineries during turnaround/maintenance work."
+
+GOAL:
+For each Today_Call_List company, choose the best decision maker specifically for THIS OFFER and write Offer_DM_* fields.
+
+SCHEMA (Companies) — ensure/create fields:
+Offer_DM_Name (singleLineText)
+Offer_DM_Title (singleLineText)
+Offer_DM_Email (singleLineText)
+Offer_DM_Phone (singleLineText)
+Offer_DM_FitScore (number precision=0)
+Offer_DM_Reason (multilineText)
+Offer_DM_Source (singleLineText)
+Offer_DM_Last_Selected (dateTime)
+
+RULES:
+- This does NOT replace Primary_DM_*.
+- Offer_DM_* is the person most likely to own heat mitigation / crew safety / field logistics.
+- Prefer site/field operators over execs when offer fit is higher.
+- If no good-fit DM exists, select NONE and the playbook should ask for the right role title.
+
+DATA SOURCES:
+- Decision_Makers table (preferred)
+- If absent, fall back to Primary_DM_* + company Notes
+- Use Gatekeeper name if present for playbook, but gatekeeper is not the buyer.
+
+IMPLEMENTATION:
+Create server/dm-fit.ts with:
+scoreDMFit(dm, company, cfg) -> { fitScore, reason, fitTier }
+selectOfferDM(company) -> bestCandidate or null
+writeOfferDM(company, candidate) -> updates Offer_DM_* fields idempotently
+
+FIT SCORING (0–100) MUST be deterministic:
+Start fitScore = 0
+
+TITLE-BASED FIT (highest importance):
++45 if title contains any of:
+  safety, hse, ehs, "safety manager", "safety director"
++35 if title contains:
+  superintendent, site manager, field supervisor
++30 if title contains:
+  project manager, turnaround manager, shutdown manager
++25 if title contains:
+  operations manager, maintenance manager
+-25 if title contains:
+  ceo, cfo, coo, president, founder, owner, chairman
+-15 if title contains:
+  hr, recruiting, talent, marketing, accounting
+
+DEPARTMENT FIT (if available):
++15 if department is Safety/Operations/Projects/Maintenance
+-10 if department is Finance/HR/Marketing
+
+CONTACTABILITY BONUS (small):
++8 if direct email
++6 if direct phone
+
+RECENCY BONUS:
++6 if updated_at within 30 days
+
+CAP:
+Clamp 0..100
+
+SELECTION RULE:
+- Choose the DM with highest fitScore.
+- Only accept as Offer DM if fitScore >= 45.
+- If no DM meets threshold:
+  leave Offer_DM_* blank and write Offer_DM_Reason:
+  "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent."
+
+WRITEBACK RULES (idempotent):
+- Only update Offer_DM_* if:
+  fields empty OR new fitScore > existing fitScore OR missing contact info is filled
+- Always set Offer_DM_Last_Selected when selection changes
+
+INTEGRATION:
+1) After DM resolver and DM coverage, run DM Fit for Today_Call_List companies.
+2) Update playbooks generation to prefer:
+   Offer_DM_* if present,
+   else Primary_DM_*,
+   else role-based ask from cfg tier1.
+
+CLI OUTPUT:
+Update run-opportunity-engine and run-daily previews to show:
+Ask For: Offer_DM_Name/Title if present
+Else: "Ask for: Safety Manager (or tier1 role)"
+
+LOGGING:
+Print:
+offer_dm_selected_count / today_list_count
+avg_fit_score
+no_fit_count
+
+MINI TESTS:
+1) Company with CEO + Safety Manager: Offer selects Safety Manager even if CEO has better contact info.
+2) Company with only CEO/HR: Offer DM remains blank; playbook asks for Safety Manager/Site Manager.
+3) Idempotent: rerun causes no rewrites unless better DM discovered.
+
+DELIVERABLE:
+Show new files + modifications in orchestrator and playbooks.

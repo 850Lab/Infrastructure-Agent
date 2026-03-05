@@ -190,6 +190,16 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Fields are cleared when a company is removed from Today_Call_List
 - CLI output shows truncated Rank_Reason (90 chars) per company in the call list preview
 
+### Offer-Aware DM Fit
+- `server/dm-fit.ts` - Scores and selects the best decision maker for the current offer (heat mitigation / crew safety)
+- Runs after DM coverage (Step 2b in Daily Orchestrator), before playbook generation
+- Writes to Companies: Offer_DM_Name, Offer_DM_Title, Offer_DM_Email, Offer_DM_Phone, Offer_DM_FitScore (0–100), Offer_DM_Reason, Offer_DM_Source, Offer_DM_Last_Selected
+- Deterministic scoring: Safety/HSE titles +45, Site/Field ops +35, Project/Turnaround +30, Operations/Maintenance +25; Exec titles -25, HR/Marketing -15; Dept bonus ±15; Contact +8/+6; Recency +6
+- Threshold: fitScore >= 45 to be selected; below = "ask gatekeeper for Safety Manager / Site Superintendent"
+- Does NOT replace Primary_DM_* — Offer_DM_* is the offer-specific buyer
+- Idempotent: only updates if new fitScore > existing or fills missing contact info
+- Playbooks prefer Offer_DM_* over Primary_DM_* when present
+
 ### Outreach Playbooks
 - `server/playbooks.ts` - Generates tailored outreach scripts per Today_Call_List company using OpenAI (GPT-4o)
 - `server/run-playbooks.ts` - CLI runner: `npx tsx server/run-playbooks.ts --limit=25 --force=false`

@@ -96,11 +96,18 @@ async function main() {
         console.log(`    ${d.companyName} (priority=${d.finalPriority}${followup}${overdueTag})`);
 
         const dmInfo = dmMap.get(d.companyName);
-        const dmName = dmInfo?.dmName || d.primaryDMName;
-        const dmTitle = dmInfo?.dmTitle || d.primaryDMTitle;
-        if (dmName) {
-          const titleStr = dmTitle ? ` – ${dmTitle}` : "";
-          console.log(`      Ask For: ${dmName}${titleStr}`);
+        if (d.offerDMName) {
+          const titleStr = d.offerDMTitle ? ` – ${d.offerDMTitle}` : "";
+          console.log(`      Ask For: ${d.offerDMName}${titleStr} (offer fit=${d.offerDMFitScore})`);
+        } else {
+          const dmName = dmInfo?.dmName || d.primaryDMName;
+          const dmTitle = dmInfo?.dmTitle || d.primaryDMTitle;
+          if (dmName) {
+            const titleStr = dmTitle ? ` – ${dmTitle}` : "";
+            console.log(`      Ask For: ${dmName}${titleStr}`);
+          } else {
+            console.log(`      Ask For: Safety Manager (or site superintendent)`);
+          }
         }
 
         if (d.gatekeeperName) {

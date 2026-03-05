@@ -3,6 +3,7 @@ import { runDMCoverage, type CoverageResult } from "./dm-coverage";
 import { runEngine as runCallEngine } from "./call-engine";
 import { runQueryIntel, type QueryIntelResult } from "./query-intel";
 import { generatePlaybooksForTodayList, type PlaybookResult } from "./playbooks";
+import { runDMFit, type DMFitSummary } from "./dm-fit";
 import { ensureSchema, formatReport } from "./airtable-schema";
 import { log } from "./logger";
 import { getIndustryConfig } from "./config";
@@ -84,6 +85,7 @@ async function main() {
 
   let oeResult: OEResult | null = null;
   let coverageResult: CoverageResult | null = null;
+  let dmFitResult: DMFitSummary | null = null;
   let playbookResult: PlaybookResult | null = null;
   let callResult: { calls_processed: number; companies_updated: number; followups_scheduled: number; gatekeepers_recorded: number } | null = null;
   let queryResult: QueryIntelResult | null = null;
@@ -138,8 +140,22 @@ async function main() {
     }
   }
 
+  log("STEP 2b: Offer-aware DM fit...", "daily");
+  {
+    const start = Date.now();
+    try {
+      dmFitResult = await runDMFit();
+      log(`DM Fit: ${dmFitResult.offerDMSelected}/${dmFitResult.totalCompanies} selected, avg fit=${dmFitResult.avgFitScore}, no-fit=${dmFitResult.noFitCount}`, "daily");
+      steps.push({ step: "DM Fit", status: "ok", durationMs: Date.now() - start });
+    } catch (e: any) {
+      log(`DM Fit failed: ${e.message}`, "daily");
+      steps.push({ step: "DM Fit", status: "error", durationMs: Date.now() - start, error: e.message });
+      errors.push(`DM Fit: ${e.message}`);
+    }
+  }
+
   if (config.playbooks) {
-    log("STEP 2b: Generate outreach playbooks...", "daily");
+    log("STEP 2c: Generate outreach playbooks...", "daily");
     const start = Date.now();
     try {
       playbookResult = await generatePlaybooksForTodayList({ limit: config.top, force: false });
@@ -211,6 +227,12 @@ async function main() {
     console.log(`  DMs resolved: ${dmFound}/${dmTotal} (avg confidence ${avgConf}%)`);
   } else {
     console.log("  DMs resolved: FAILED");
+  }
+
+  if (dmFitResult) {
+    console.log(`  Offer DM fit: ${dmFitResult.offerDMSelected}/${dmFitResult.totalCompanies} selected (avg fit=${dmFitResult.avgFitScore}, no-fit=${dmFitResult.noFitCount})`);
+  } else {
+    console.log("  Offer DM fit: FAILED");
   }
 
   if (playbookResult) {
