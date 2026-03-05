@@ -1,20 +1,20 @@
-import type { IndustryConfigType } from "../config/industry-default";
+import { IndustryConfig as DefaultConfig, type IndustryConfigType } from "../config/industry-default";
+
+export type { IndustryConfigType };
 
 let _config: IndustryConfigType | null = null;
+let _logged = false;
 
 export function getIndustryConfig(): IndustryConfigType {
   if (_config) return _config;
 
-  const configName = process.env.INDUSTRY_CONFIG || "default";
+  _config = DefaultConfig;
 
-  try {
-    const mod = require(`../config/industry-${configName}`);
-    _config = mod.IndustryConfig as IndustryConfigType;
-  } catch {
-    const mod = require("../config/industry-default");
-    _config = mod.IndustryConfig as IndustryConfigType;
+  if (!_logged) {
+    _logged = true;
+    const configName = process.env.INDUSTRY_CONFIG || "default";
+    console.log(`Industry config loaded: ${_config.name} (${configName})`);
   }
 
-  console.log(`Industry config loaded: ${_config!.name} (${configName})`);
-  return _config!;
+  return _config;
 }

@@ -172,12 +172,35 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Whisper transcription uses direct OPENAI_API_KEY (Replit proxy doesn't support audio endpoints)
 - GPT-4o analysis uses AI_INTEGRATIONS proxy (supports text chat completions)
 
-## Morning Runbook (Daily)
-1. `npx tsx server/run-opportunity-engine.ts --top=25` — Build today's prioritized call list (buckets + DM resolution)
-2. `npx tsx server/run-dm-coverage.ts --top=25 --limit=25` — Enrich missing DMs for today's companies, then re-resolve
-3. Call the Today_Call_List in Airtable — each company shows Primary_DM_Name/Title/Phone/Email
+### Daily Orchestrator
+- `server/run-daily.ts` - One-command daily pipeline: opportunity engine → DM coverage → call engine → freshness guardrail + query intel
+- CLI: `npx tsx server/run-daily.ts`
+- Flags: `--top=25 --limit=25 --targetFresh=100 --generate=20 --market="Gulf Coast" --bootstrap=false`
+- Steps: (0) Bootstrap if --bootstrap=true, (1) Build today's call list, (2) DM coverage enrichment, (3) Process call outcomes, (4) Check freshness → run query intel if below target
+- Prints a DAILY HEALTH REPORT with: list counts, DM resolution stats, calls processed, fresh pool, query intel status, errors, step timing
+- Continues past errors (collects them), exits 1 if any step failed
 
-Or single command: `npx tsx server/run-dm-coverage.ts --top=25 --limit=25 --runOpportunity=true` (runs opportunity engine first, then coverage)
+### Industry Configuration
+- `config/industry-default.ts` - Industry-specific config: categories, keywords, DM title tiers, search templates, cold-start queries, scoring, geo, lead-feed settings
+- `server/config.ts` - Config loader with `getIndustryConfig()` function; currently loads default config statically
+
+## One Command Daily Runbook
+```
+npx tsx server/run-daily.ts --top=25
+```
+This runs the full pipeline: builds call list → enriches DMs → processes calls → checks freshness.
+
+For first-time setup or after schema changes:
+```
+npx tsx server/run-daily.ts --top=25 --bootstrap=true
+```
+
+## Individual Runners (when needed)
+- `npx tsx server/run-opportunity-engine.ts --top=25` — Build today's call list only
+- `npx tsx server/run-dm-coverage.ts --top=25 --limit=25` — DM coverage only
+- `npx tsx server/run-call-engine.ts` — Process call outcomes only
+- `npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"` — Query intelligence only
+- `npx tsx server/bootstrap.ts` — Schema bootstrap only
 
 ## Weekly / As-Needed
 - If freshness is low (< 100 fresh leads): `npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"`

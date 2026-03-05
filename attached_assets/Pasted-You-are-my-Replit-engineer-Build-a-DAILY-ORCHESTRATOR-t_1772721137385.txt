@@ -1,0 +1,76 @@
+You are my Replit engineer. Build a DAILY ORCHESTRATOR that runs the full pipeline with one command and prints a health report.
+
+GOAL:
+Create a single CLI entrypoint:
+npx tsx server/run-daily.ts
+
+It should execute these steps in order:
+
+STEP 0 — Bootstrap safety (optional flag)
+If --bootstrap=true, run bootstrap first:
+npx tsx server/bootstrap.ts
+(default false)
+
+STEP 1 — Generate today’s call list
+Call the existing opportunity engine programmatically (do NOT spawn a child process unless necessary).
+Equivalent behavior to:
+npx tsx server/run-opportunity-engine.ts --top=<top>
+
+STEP 2 — DM coverage for today’s list
+Run dm-coverage:
+npx tsx server/run-dm-coverage.ts --top=<top> --limit=<limit> --runOpportunity=false
+
+STEP 3 — Process call outcomes
+Run call engine:
+npx tsx server/run-call-engine.ts
+
+STEP 4 — Freshness guardrail + query intelligence (conditional)
+Compute Fresh pool count (use the same logic as query-intel).
+If fresh_count < --targetFresh:
+  run query-intel:
+  npx tsx server/run-query-intel.ts --generate=<generate> --targetFresh=<targetFresh> --market=<market>
+Else:
+  skip query-intel and print “Freshness OK: <fresh_count>”
+
+DEFAULT CLI FLAGS:
+--top=25
+--limit=25
+--targetFresh=100
+--generate=20
+--market="Gulf Coast"
+--bootstrap=false
+
+IMPLEMENTATION REQUIREMENTS:
+1) Create server/run-daily.ts
+2) Refactor existing runners (if needed) so their core logic is exportable and callable from run-daily.ts without starting Express.
+   Use the shared logger.ts already created.
+3) Every step should return a structured result object so the orchestrator can print a final report.
+
+FINAL OUTPUT — HEALTH REPORT
+Print a single summary block like:
+
+DAILY HEALTH REPORT
+- Today list: <count> (hot:<x> working:<y> fresh:<z>)
+- DMs resolved: <found>/<top> (avg confidence <n>)
+- Calls processed: <n> (followups scheduled <n>)
+- Fresh pool: <n> (target <targetFresh>)
+- Query intel: ran/skipped (inserted <n>, retired <n>)
+- Errors: <count>
+
+If any step errors:
+- Continue to next step when safe
+- Collect errors in an array and print them at the end
+
+MINI TEST:
+Run:
+npx tsx server/run-daily.ts --top=10 --limit=10 --targetFresh=9999 --generate=5
+Expected:
+- Builds call list
+- Runs dm coverage
+- Processes calls (likely 0)
+- Freshness will be low due to targetFresh 9999 → runs query-intel
+- Prints report
+
+DELIVERABLE:
+Show server/run-daily.ts and any refactors needed.
+Update replit.md with “One Command Daily Runbook”.
