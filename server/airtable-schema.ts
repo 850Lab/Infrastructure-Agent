@@ -201,6 +201,11 @@ const SEARCH_QUERIES_FIELDS: FieldSpec[] = [
   },
   { name: "Results_Count", type: "number", options: { precision: 0 } },
   { name: "Notes", type: "multilineText" },
+  { name: "Performance_Score", type: "number", options: { precision: 0 } },
+  { name: "Runs", type: "number", options: { precision: 0 } },
+  { name: "Wins", type: "number", options: { precision: 0 } },
+  { name: "Last_Generated_By", type: "singleLineText" },
+  { name: "Retired", type: "checkbox", options: { color: "greenBright", icon: "check" } },
 ];
 
 const COMPANIES_FIELDS: FieldSpec[] = [
@@ -342,6 +347,8 @@ const COMPANIES_FIELDS: FieldSpec[] = [
     },
   },
   { name: "DM_Count", type: "number", options: { precision: 0 } },
+  { name: "Source_Query", type: "singleLineText" },
+  { name: "Win_Flag", type: "checkbox", options: { color: "greenBright", icon: "check" } },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

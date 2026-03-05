@@ -66,6 +66,15 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Integrated into opportunity engine — runs automatically after Today_Call_List is computed
 - Companies fields: Primary_DM_Name, Primary_DM_Title, Primary_DM_Email, Primary_DM_Phone, Primary_DM_Seniority, Primary_DM_Source, Primary_DM_Confidence
 
+### Query Intelligence Engine
+- `server/query-intel.ts` - Evolves Search_Queries using outcomes + discovery: Win_Flag computation, attribution (exact Source_Query or approx by First_Seen timing), Performance_Score scoring, pattern learning from top winners via GPT-4o, cold-start templates, duplicate detection, low-performer retirement
+- `server/run-query-intel.ts` - CLI runner: `npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"`
+- Win definition: has DM email/phone, OR Engagement_Score >= 10, OR last outcome in (Decision Maker, Qualified, Callback)
+- Performance_Score = (Wins×10) + (QualifiedCalls×20) - (NotInterestedCalls×10) + (DMFound×5)
+- Retirement: Runs >= 3 AND Wins == 0 AND Results_Count <= 2 → Retired=true
+- Search_Queries new fields: Performance_Score, Runs, Wins, Last_Generated_By, Retired
+- Companies new fields: Source_Query, Win_Flag
+
 ### DM Coverage Engine
 - `server/dm-coverage.ts` - Detects DM coverage gaps on Today_Call_List, enriches missing DMs via existing pipeline (Apollo → website fallback), re-runs resolver after enrichment
 - `server/run-dm-coverage.ts` - CLI runner: `npx tsx server/run-dm-coverage.ts --top=25 --limit=25 [--runOpportunity=true]`
@@ -160,12 +169,17 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Whisper transcription uses direct OPENAI_API_KEY (Replit proxy doesn't support audio endpoints)
 - GPT-4o analysis uses AI_INTEGRATIONS proxy (supports text chat completions)
 
-## Morning Runbook
+## Morning Runbook (Daily)
 1. `npx tsx server/run-opportunity-engine.ts --top=25` — Build today's prioritized call list (buckets + DM resolution)
 2. `npx tsx server/run-dm-coverage.ts --top=25 --limit=25` — Enrich missing DMs for today's companies, then re-resolve
 3. Call the Today_Call_List in Airtable — each company shows Primary_DM_Name/Title/Phone/Email
 
 Or single command: `npx tsx server/run-dm-coverage.ts --top=25 --limit=25 --runOpportunity=true` (runs opportunity engine first, then coverage)
+
+## Weekly / As-Needed
+- If freshness is low (< 100 fresh leads): `npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"`
+  - Generates new search queries from winning patterns, retires low performers
+  - Then run lead-feed to pull leads from queued queries: `POST /api/lead-feed/run-all`
 
 ## Dependencies
 - @neondatabase/serverless, drizzle-orm - Database

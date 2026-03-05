@@ -1,0 +1,130 @@
+You are my Replit engineer. Build QUERY INTELLIGENCE ENGINE that evolves Search_Queries using outcomes + discovery.
+
+GOAL:
+Generate and maintain Search_Queries automatically using:
+A) high-performing Companies patterns (Opportunity + DM availability)
+B) Call outcomes (Qualified/Decision Maker/Callback vs Not Interested/No Answer)
+so we always get fresh leads while not letting opportunities slip.
+
+TABLES:
+Search_Queries
+Companies
+Calls
+Decision_Makers (optional)
+
+FIELDS (ensure/create if missing):
+Search_Queries:
+- Query (text)
+- Category (single select)
+- Market (single select)
+- Status (Queued/Running/Done/Error)
+- Last_Run (date)
+- Results_Count (number)
+- Notes (long text)
+ADD:
+- Performance_Score (number)
+- Runs (number)
+- Wins (number)  // count of downstream wins attributed
+- Last_Generated_By (text) // "QueryIntel"
+- Retired (checkbox)
+
+Companies:
+ADD (if missing):
+- First_Seen (dateTime)
+- Source_Query (text) // which Search_Queries.Query created it (if available; otherwise blank)
+- Win_Flag (checkbox) // derived signal for "good lead"
+
+Calls:
+Outcome already exists.
+ADD (if missing):
+- Company_Key (text) // normalized mapping if linking is weak
+
+DEFINITION: "WIN"
+A company is a “Win_Flag=true” if any of:
+- Has a DM with direct email OR phone (from Decision_Makers / Primary_DM fields)
+- OR Engagement_Score >= 10
+- OR last call outcome in ("Decision Maker","Qualified","Callback")
+
+STEP 1 — Attribute outcomes back to queries (best-effort)
+If you have Source_Query stored on Companies, use it.
+If not, implement a lightweight attribution:
+- if Company.First_Seen is within 24h after a Search_Queries.Last_Run and Category matches, attribute probabilistically and log "ATTRIB_APPROX".
+
+Update Search_Queries stats:
+- Runs += 1 whenever runner processes it (if not already)
+- Wins += number of Win_Flag companies attributed to it
+- Performance_Score = (Wins * 10) + (QualifiedCalls * 20) - (NotInterestedCalls * 10) + (DMFound * 5)
+(Use best-available signals; if Calls linkage is weak, rely on Win_Flag + DM found.)
+
+STEP 2 — Freshness requirement
+Compute Fresh pool:
+Fresh = Companies where (Times_Called=0 OR Lead_Status="New") AND First_Seen within 14 days.
+If Fresh count < threshold (default 100), create “FRESHNESS_ALERT” and generate new queries.
+
+CLI args:
+--targetFresh=100
+--generate=20
+--market="Gulf Coast"
+
+STEP 3 — Learn patterns from winners
+From the top 50 Win_Flag companies (highest Final_Priority):
+Extract:
+- common categories
+- common keywords from Notes / Opportunity_Notes (refinery, turnaround, shutdown, scaffold, insulation, tank cleaning, coatings, plant services)
+- top cities/states
+
+Use OpenAI to produce:
+- 20 new search queries (unique)
+- each query includes: category + location + 1-2 winning keywords
+Example format:
+"scaffolding contractors houston refinery turnaround"
+"industrial insulation contractors beaumont shutdown"
+"tank cleaning contractors lake charles chemical plant"
+
+OpenAI must return strict JSON:
+{
+ "queries":[
+   {"query":"...", "category":"Scaffolding", "market":"Gulf Coast", "rationale":"..."},
+   ...
+ ]
+}
+
+STEP 4 — Insert queries safely
+Before inserting:
+- normalize query string (lowercase trim)
+- check if Search_Queries.Query already exists (exact match) OR very similar (simple contains check)
+If exists: skip.
+If new: insert with Status="Queued", Last_Generated_By="QueryIntel", Notes includes rationale.
+
+STEP 5 — Retire low performers
+If a query has:
+- Runs >= 3 AND Wins == 0 AND Results_Count low OR repeated duplicates,
+mark Retired=true and Status="Done".
+(Do not delete.)
+
+FILES TO CREATE:
+- server/query-intel.ts (core)
+- server/run-query-intel.ts (CLI)
+
+COMMAND:
+npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"
+
+LOGGING:
+Print:
+fresh_count
+fresh_needed
+queries_generated
+queries_inserted
+queries_skipped_duplicates
+queries_retired
+attribution_mode (exact/approx)
+
+MINI-TESTS:
+1) Run with --generate=5 -> creates up to 5 queued queries.
+2) Re-run immediately -> inserts 0 duplicates (idempotent).
+3) If not enough data (no Win_Flag companies), fall back to a static template query set and log "COLD_START_MODE".
+
+DELIVERABLE:
+Show files + commands. Update replit.md with weekly schedule:
+- daily: run opportunity + dm-coverage
+- if Freshness low: run query-intel
