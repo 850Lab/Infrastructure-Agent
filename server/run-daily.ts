@@ -2,6 +2,7 @@ import { runOpportunityEngine, type EngineResult as OEResult } from "./opportuni
 import { runDMCoverage, type CoverageResult } from "./dm-coverage";
 import { runEngine as runCallEngine } from "./call-engine";
 import { runQueryIntel, type QueryIntelResult } from "./query-intel";
+import { generatePlaybooksForTodayList, type PlaybookResult } from "./playbooks";
 import { ensureSchema, formatReport } from "./airtable-schema";
 import { log } from "./logger";
 import { getIndustryConfig } from "./config";
@@ -13,6 +14,7 @@ interface DailyConfig {
   generate: number;
   market: string;
   bootstrap: boolean;
+  playbooks: boolean;
 }
 
 interface StepResult {
@@ -31,6 +33,7 @@ function parseArgs(): DailyConfig {
     generate: 20,
     market: "Gulf Coast",
     bootstrap: false,
+    playbooks: true,
   };
 
   for (const arg of args) {
@@ -43,6 +46,7 @@ function parseArgs(): DailyConfig {
       case "generate": config.generate = parseInt(val, 10) || 20; break;
       case "market": config.market = val; break;
       case "bootstrap": config.bootstrap = val === "true"; break;
+      case "playbooks": config.playbooks = val === "true"; break;
     }
   }
 
@@ -72,7 +76,7 @@ async function main() {
   console.log("");
   const industryCfg = getIndustryConfig();
   console.log(`Config: ${industryCfg.name} | Market: ${industryCfg.market}`);
-  console.log(`Params: top=${config.top} limit=${config.limit} targetFresh=${config.targetFresh} generate=${config.generate} market="${config.market}" bootstrap=${config.bootstrap}`);
+  console.log(`Params: top=${config.top} limit=${config.limit} targetFresh=${config.targetFresh} generate=${config.generate} market="${config.market}" bootstrap=${config.bootstrap} playbooks=${config.playbooks}`);
   console.log("");
 
   const steps: StepResult[] = [];
@@ -80,6 +84,7 @@ async function main() {
 
   let oeResult: OEResult | null = null;
   let coverageResult: CoverageResult | null = null;
+  let playbookResult: PlaybookResult | null = null;
   let callResult: { calls_processed: number; companies_updated: number; followups_scheduled: number; gatekeepers_recorded: number } | null = null;
   let queryResult: QueryIntelResult | null = null;
   let querySkipped = false;
@@ -130,6 +135,20 @@ async function main() {
       log(`DM coverage failed: ${e.message}`, "daily");
       steps.push({ step: "DM Coverage", status: "error", durationMs: Date.now() - start, error: e.message });
       errors.push(`DM Coverage: ${e.message}`);
+    }
+  }
+
+  if (config.playbooks) {
+    log("STEP 2b: Generate outreach playbooks...", "daily");
+    const start = Date.now();
+    try {
+      playbookResult = await generatePlaybooksForTodayList({ limit: config.top, force: false });
+      log(`Playbooks: ${playbookResult.generated} generated, ${playbookResult.skipped} skipped, ${playbookResult.errors} errors`, "daily");
+      steps.push({ step: "Playbooks", status: "ok", durationMs: Date.now() - start });
+    } catch (e: any) {
+      log(`Playbook generation failed: ${e.message}`, "daily");
+      steps.push({ step: "Playbooks", status: "error", durationMs: Date.now() - start, error: e.message });
+      errors.push(`Playbooks: ${e.message}`);
     }
   }
 
@@ -192,6 +211,12 @@ async function main() {
     console.log(`  DMs resolved: ${dmFound}/${dmTotal} (avg confidence ${avgConf}%)`);
   } else {
     console.log("  DMs resolved: FAILED");
+  }
+
+  if (playbookResult) {
+    console.log(`  Playbooks: ${playbookResult.generated} generated, ${playbookResult.skipped} skipped`);
+  } else if (config.playbooks) {
+    console.log("  Playbooks: FAILED");
   }
 
   if (callResult) {

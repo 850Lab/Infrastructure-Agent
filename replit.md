@@ -190,6 +190,22 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Fields are cleared when a company is removed from Today_Call_List
 - CLI output shows truncated Rank_Reason (90 chars) per company in the call list preview
 
+### Outreach Playbooks
+- `server/playbooks.ts` - Generates tailored outreach scripts per Today_Call_List company using OpenAI (GPT-4o)
+- `server/run-playbooks.ts` - CLI runner: `npx tsx server/run-playbooks.ts --limit=25 --force=false`
+- Per-company fields written to Companies table:
+  - `Playbook_Call_Opener` — opening script when DM answers (≤45s spoken)
+  - `Playbook_Gatekeeper_Ask` — gatekeeper bypass script (≤12s)
+  - `Playbook_Voicemail` — voicemail script (≤25s)
+  - `Playbook_Email_Subject` — email subject line
+  - `Playbook_Email_Body` — follow-up email (≤130 words)
+  - `Playbook_Followup_Text` — SMS/text follow-up (≤240 chars)
+  - `Playbook_Version` — version tag "v1"
+  - `Playbook_Last_Generated` — timestamp of last generation
+- Tailored by: industry config, bucket (Hot/Working/Fresh), DM name/title, gatekeeper name, rank evidence, opportunity signals
+- Idempotent: skips if Playbook_Version matches and generated within last 7 days (use --force=true to override)
+- Integrated into Daily Orchestrator as Step 2b (after DM coverage, before call engine); controlled by --playbooks=true/false (default true)
+
 ### Industry Configuration
 - `config/types.ts` - TypeScript type definition for IndustryConfig (categories, keywords, DM title tiers, scoring, call_list, geo, lead_feed, etc.)
 - `config/industry-default.ts` - Default config (Industrial Contractors, Gulf Coast)
@@ -203,7 +219,7 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 ```
 npx tsx server/run-daily.ts --top=25
 ```
-This runs the full pipeline: builds call list → enriches DMs → processes calls → checks freshness.
+This runs the full pipeline: builds call list → enriches DMs → generates playbooks → processes calls → checks freshness.
 
 For first-time setup or after schema changes:
 ```
@@ -214,6 +230,7 @@ npx tsx server/run-daily.ts --top=25 --bootstrap=true
 - `npx tsx server/run-opportunity-engine.ts --top=25` — Build today's call list only
 - `npx tsx server/run-dm-coverage.ts --top=25 --limit=25` — DM coverage only
 - `npx tsx server/run-call-engine.ts` — Process call outcomes only
+- `npx tsx server/run-playbooks.ts --limit=25 --force=false` — Generate outreach playbooks only
 - `npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"` — Query intelligence only
 - `npx tsx server/bootstrap.ts` — Schema bootstrap only
 

@@ -366,6 +366,22 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   { name: "Rank_Evidence", type: "multilineText" },
   { name: "Rank_Inputs_JSON", type: "multilineText" },
   { name: "Rank_Version", type: "singleLineText" },
+  { name: "Playbook_Call_Opener", type: "multilineText" },
+  { name: "Playbook_Gatekeeper_Ask", type: "multilineText" },
+  { name: "Playbook_Voicemail", type: "multilineText" },
+  { name: "Playbook_Email_Subject", type: "singleLineText" },
+  { name: "Playbook_Email_Body", type: "multilineText" },
+  { name: "Playbook_Followup_Text", type: "multilineText" },
+  { name: "Playbook_Version", type: "singleLineText" },
+  {
+    name: "Playbook_Last_Generated",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

@@ -1,0 +1,89 @@
+You are my Replit engineer. Implement a PLAYBOOKS LAYER that generates what to say for each Today_Call_List company.
+
+GOAL:
+For each Today_Call_List company, generate and store outreach playbooks tailored by:
+- CFG (industry config)
+- Bucket (Hot Follow-up / Working / Fresh)
+- Primary decision maker (if available)
+- Gatekeeper name (if available)
+- Rank_Reason + Rank_Evidence + Opportunity fields
+
+SCHEMA (Companies) — ensure/create fields:
+Playbook_Call_Opener (multilineText)
+Playbook_Gatekeeper_Ask (multilineText)
+Playbook_Voicemail (multilineText)
+Playbook_Email_Subject (singleLineText)
+Playbook_Email_Body (multilineText)
+Playbook_Followup_Text (multilineText)
+Playbook_Version (singleLineText)  // e.g. "v1"
+Playbook_Last_Generated (dateTime)
+
+RULES:
+- Industry-agnostic. Use CFG to guide tone + vocab + title norms.
+- Use a confident, concise style (operator voice).
+- Never include hallucinated facts. Only reference evidence keywords that exist in Rank_Evidence / Opportunity_Notes / Notes.
+- If Primary_DM_Name exists: address them.
+- If Gatekeeper_Name exists: reference them naturally ("Hey Susan, can you connect me with…").
+- If no DM: ask for role by title tier (from CFG decision maker tiers).
+- If Bucket is Hot Follow-up: lead with follow-up context ("calling back as promised" / "following up on…") without inventing details.
+- If Working: lead with relevance + timing.
+- If Fresh: lead with pattern-based relevance (keywords + category), quick qualification question.
+
+GENERATION:
+Create server/playbooks.ts with:
+generatePlaybook(company, cfg) -> { fields... }
+generatePlaybooksForTodayList({limit:number}) -> summary stats
+
+Use OpenAI with strict JSON output:
+{
+  "call_opener": "...",
+  "gatekeeper_ask": "...",
+  "voicemail": "...",
+  "email_subject": "...",
+  "email_body": "...",
+  "followup_text": "..."
+}
+
+PROMPT CONTENT GUIDELINES:
+- call_opener <= 45 seconds spoken
+- gatekeeper_ask <= 12 seconds
+- voicemail <= 25 seconds
+- email_body <= 130 words
+- followup_text <= 240 chars
+- Include placeholders only if needed:
+  {{company_name}}, {{dm_name}}, {{dm_title}}
+
+IDEMPOTENCY:
+- Only generate playbooks for Today_Call_List=true.
+- If Playbook_Version == "v1" AND Playbook_Last_Generated within last 7 days:
+  skip generation unless --force=true.
+- If Rank_Version changes or CFG.name changes, regenerate.
+
+CLI:
+Create server/run-playbooks.ts:
+npx tsx server/run-playbooks.ts --limit=25 --force=false
+
+INTEGRATION:
+Update server/run-daily.ts to optionally run playbooks after DM coverage:
+- Add flag: --playbooks=true/false (default true for platform mode)
+- Include in health report:
+  playbooks_generated, playbooks_skipped
+
+CLI OUTPUT:
+Update opportunity/daily CLI preview to show:
+- “Opener:” first 80 chars
+- “Gatekeeper:” first 60 chars
+
+MINI TEST:
+1) Run playbooks for top=10 today list:
+   - 10 playbooks written
+2) Re-run immediately:
+   - 0 written, skipped 10
+3) Spot check:
+   - A record with Gatekeeper_Name uses it
+   - A record with Primary_DM_Name addresses them
+   - Hot Follow-up bucket has follow-up framing without inventing details
+
+DELIVERABLE:
+Show code changes + run command + sample output.
+Update replit.md “Daily Runbook” to include playbooks.
