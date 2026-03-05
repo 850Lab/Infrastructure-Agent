@@ -205,7 +205,7 @@ export interface DMResolutionSummary {
   companiesWithDM: number;
   companiesMissingDM: number;
   avgConfidence: number;
-  updates: Array<{ companyId: string; companyName: string; dmName: string; confidence: number }>;
+  updates: Array<{ companyId: string; companyName: string; dmName: string; dmTitle: string; confidence: number }>;
 }
 
 export async function resolveAndWriteDMs(
@@ -231,7 +231,7 @@ export async function resolveAndWriteDMs(
   }
   logDM(`Found ${allDMs.length} decision makers across all companies`);
 
-  const updates: Array<{ companyId: string; companyName: string; dmName: string; confidence: number }> = [];
+  const updates: Array<{ companyId: string; companyName: string; dmName: string; dmTitle: string; confidence: number }> = [];
   let totalConfidence = 0;
   let dmFoundCount = 0;
 
@@ -275,6 +275,7 @@ export async function resolveAndWriteDMs(
         companyId: comp.id,
         companyName: comp.companyName,
         dmName: result.name,
+        dmTitle: result.title,
         confidence: result.confidence,
       });
     }

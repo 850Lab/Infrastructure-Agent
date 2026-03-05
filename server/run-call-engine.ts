@@ -15,6 +15,7 @@ async function main() {
     console.log(`  Calls processed:      ${result.calls_processed}`);
     console.log(`  Companies updated:    ${result.companies_updated}`);
     console.log(`  Follow-ups scheduled: ${result.followups_scheduled}`);
+    console.log(`  Gatekeepers recorded: ${result.gatekeepers_recorded}`);
     console.log("═══════════════════════════════════════");
 
     if (result.details.length > 0) {
@@ -26,6 +27,7 @@ async function main() {
         if (d.leadStatusSet) parts.push(`    Lead_Status → ${d.leadStatusSet}`);
         if (d.followupDate) parts.push(`    Next_Followup → ${d.followupDate.split("T")[0]}`);
         if (d.engagementDelta) parts.push(`    Engagement ${d.engagementDelta > 0 ? "+" : ""}${d.engagementDelta}`);
+        if (d.gatekeeperRecorded) parts.push(`    Gatekeeper → ${d.gatekeeperRecorded}`);
         console.log(parts.join("\n"));
       }
     }

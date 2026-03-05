@@ -75,10 +75,10 @@ async function main() {
       console.log("TODAY'S CALL LIST:");
       console.log("─".repeat(80));
 
-      const dmMap = new Map<string, { dmName: string; confidence: number }>();
+      const dmMap = new Map<string, { dmName: string; dmTitle: string; confidence: number }>();
       if (result.dm_resolution) {
         for (const u of result.dm_resolution.updates) {
-          dmMap.set(u.companyName, { dmName: u.dmName, confidence: u.confidence });
+          dmMap.set(u.companyName, { dmName: u.dmName, dmTitle: u.dmTitle || "", confidence: u.confidence });
         }
       }
 
@@ -90,9 +90,28 @@ async function main() {
         }
         const overdueTag = d.overdue ? " ⚠OVERDUE" : "";
         const followup = d.followupDue ? ` followup=${d.followupDue.split("T")[0]}` : "";
+
+        console.log(`    ${d.companyName} (priority=${d.finalPriority}${followup}${overdueTag})`);
+
         const dmInfo = dmMap.get(d.companyName);
-        const dmTag = dmInfo ? ` → Ask for: ${dmInfo.dmName} (${dmInfo.confidence}%)` : "";
-        console.log(`    ${d.companyName} (priority=${d.finalPriority}${followup}${overdueTag})${dmTag}`);
+        const dmName = dmInfo?.dmName || d.primaryDMName;
+        const dmTitle = dmInfo?.dmTitle || d.primaryDMTitle;
+        if (dmName) {
+          const titleStr = dmTitle ? ` – ${dmTitle}` : "";
+          console.log(`      Ask For: ${dmName}${titleStr}`);
+        }
+
+        if (d.gatekeeperName) {
+          console.log(`      Gatekeeper: ${d.gatekeeperName}`);
+        }
+
+        if (d.phone) {
+          console.log(`      Phone: ${d.phone}`);
+        }
+
+        if (d.primaryDMEmail) {
+          console.log(`      Email: ${d.primaryDMEmail}`);
+        }
       }
     }
 

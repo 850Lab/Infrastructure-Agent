@@ -349,6 +349,19 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   { name: "DM_Count", type: "number", options: { precision: 0 } },
   { name: "Source_Query", type: "singleLineText" },
   { name: "Win_Flag", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+  { name: "Gatekeeper_Name", type: "singleLineText" },
+  { name: "Gatekeeper_Phone", type: "singleLineText" },
+  { name: "Gatekeeper_Email", type: "singleLineText" },
+  {
+    name: "Gatekeeper_Last_Spoken",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
+  { name: "Gatekeeper_Notes", type: "multilineText" },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [
@@ -392,6 +405,7 @@ const CALLS_FIELDS: FieldSpec[] = [
     },
   },
   { name: "Processed", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+  { name: "Gatekeeper_Name", type: "singleLineText" },
 ];
 
 export async function ensureSchema(): Promise<SchemaReport> {

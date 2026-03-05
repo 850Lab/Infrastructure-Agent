@@ -49,7 +49,10 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/bootstrap.ts` - CLI runner: `npx tsx server/bootstrap.ts` to bootstrap all Airtable tables/fields
 
 ### Call Outcome Engine
-- `server/call-engine.ts` - Processes logged calls: updates Company Lead_Status (Decision Maker/Qualified→Working, Won→Won, Not Interested→Lost), schedules follow-ups (No Answer +2d, Gatekeeper +7d, DM +5d, Qualified +3d, Callback +1d, Not Interested +90d), updates Engagement_Score (+10 DM, +20 Qualified, +40 Won, -10 Not Interested), marks Processed=true
+- `server/call-engine.ts` - Processes logged calls: updates Company Lead_Status (Decision Maker/Qualified→Working, Won→Won, Not Interested→Lost), schedules follow-ups (No Answer +2d, Gatekeeper +7d, DM +5d, Qualified +3d, Callback +1d, Not Interested +90d), updates Engagement_Score (+10 DM, +20 Qualified, +40 Won, -10 Not Interested, +2 Gatekeeper), marks Processed=true
+- Gatekeeper Memory: when Outcome=Gatekeeper and Calls.Gatekeeper_Name is set, writes Gatekeeper_Name/Gatekeeper_Last_Spoken to Companies; won't overwrite existing name unless new name differs (appends to Gatekeeper_Notes as "Possible alternate gatekeeper")
+- Companies gatekeeper fields: Gatekeeper_Name, Gatekeeper_Phone, Gatekeeper_Email, Gatekeeper_Last_Spoken, Gatekeeper_Notes
+- Calls gatekeeper field: Gatekeeper_Name
 - `server/run-call-engine.ts` - CLI runner: `npx tsx server/run-call-engine.ts`
 
 ### Opportunity Engine + Call List Auditor

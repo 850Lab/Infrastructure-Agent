@@ -1,0 +1,111 @@
+You are my Replit engineer. Implement GATEKEEPER MEMORY so the system remembers receptionists and front-desk staff for each company.
+
+GOAL:
+When a call outcome is "Gatekeeper", capture and store the gatekeeper’s name and optionally phone/email so future calls can reference them.
+
+SCHEMA CHANGES
+
+Ensure these fields exist on Companies (create if missing):
+
+Gatekeeper_Name (singleLineText)
+Gatekeeper_Phone (singleLineText)
+Gatekeeper_Email (singleLineText)
+Gatekeeper_Last_Spoken (dateTime)
+Gatekeeper_Notes (multilineText)
+
+Ensure Calls table has:
+
+Gatekeeper_Name (singleLineText)
+
+IMPORTANT:
+Do NOT overwrite existing gatekeeper data unless the new call provides a name when the company record is blank.
+
+--------------------------------------------------
+
+STEP 1 — Update Call Engine
+
+Modify server/call-engine.ts.
+
+When processing a call where:
+
+Outcome = "Gatekeeper"
+
+Do the following:
+
+1. Read Calls.Gatekeeper_Name.
+2. If present:
+    - Update Companies.Gatekeeper_Name
+    - Set Gatekeeper_Last_Spoken = Call_Time
+3. If company already has a Gatekeeper_Name:
+    - Do NOT overwrite unless the new call also includes a name AND the names differ.
+    - If names differ, append to Gatekeeper_Notes:
+        "Possible alternate gatekeeper: <name>"
+
+Example note:
+"Spoke with Susan (front desk) 2026-03-04"
+
+--------------------------------------------------
+
+STEP 2 — Update Engagement Logic
+
+Gatekeeper calls should NOT change Lead_Status.
+
+But they should add a small signal.
+
+Add:
+
+Engagement +2
+
+When outcome = Gatekeeper.
+
+--------------------------------------------------
+
+STEP 3 — Call List Display
+
+Modify the Opportunity Engine output so the CLI preview prints:
+
+Company | Ask For | Gatekeeper | Phone | Email
+
+Example:
+
+Calcasieu Mechanical
+Ask For: Mike Johnson – Safety Manager
+Gatekeeper: Susan
+Phone: (337) xxx-xxxx
+
+--------------------------------------------------
+
+STEP 4 — Logging
+
+When a gatekeeper name is captured log:
+
+[call-engine] Gatekeeper recorded: Susan @ Calcasieu Mechanical
+
+--------------------------------------------------
+
+STEP 5 — Mini Test
+
+Create a call with:
+
+Outcome = Gatekeeper
+Gatekeeper_Name = Susan
+
+Run:
+
+npx tsx server/run-call-engine.ts
+
+Verify:
+
+Companies.Gatekeeper_Name = Susan
+Gatekeeper_Last_Spoken updated
+Engagement_Score +2
+
+Re-run engine.
+
+Ensure no duplicate writes.
+
+--------------------------------------------------
+
+DELIVERABLE
+
+Show modified files and test output.

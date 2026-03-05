@@ -21,9 +21,11 @@ interface CompanyRecord {
   todayCallList: boolean;
   normalizedDomain: string | null;
   primaryDMName: string;
+  primaryDMTitle: string;
   primaryDMEmail: string;
   primaryDMPhone: string;
   primaryDMConfidence: number;
+  gatekeeperName: string;
 }
 
 interface CallRecord {
@@ -65,6 +67,11 @@ export interface EngineResult {
     finalPriority: number;
     followupDue: string | null;
     overdue: boolean;
+    phone: string;
+    primaryDMName: string;
+    primaryDMTitle: string;
+    primaryDMEmail: string;
+    gatekeeperName: string;
   }>;
 }
 
@@ -125,9 +132,11 @@ async function fetchAllCompanies(): Promise<CompanyRecord[]> {
         todayCallList: !!f.Today_Call_List,
         normalizedDomain: f.Normalized_Domain || null,
         primaryDMName: String(f.Primary_DM_Name || "").trim(),
+        primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
         primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
         primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
         primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
+        gatekeeperName: String(f.Gatekeeper_Name || "").trim(),
       });
     }
     offset = data.offset;
@@ -453,6 +462,11 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
     finalPriority: s.company.finalPriority,
     followupDue: s.company.followupDue,
     overdue: s.overdue,
+    phone: s.company.phone,
+    primaryDMName: s.company.primaryDMName,
+    primaryDMTitle: s.company.primaryDMTitle,
+    primaryDMEmail: s.company.primaryDMEmail,
+    gatekeeperName: s.company.gatekeeperName,
   }));
   details.sort((a, b) => {
     const bucketOrder: Record<string, number> = { "Hot Follow-up": 0, "Working": 1, "Fresh": 2, "Hold": 3 };

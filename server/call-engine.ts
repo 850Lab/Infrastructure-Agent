@@ -7,12 +7,14 @@ interface CallRecord {
   outcome: string;
   callTime: string;
   notes: string;
+  gatekeeperName: string;
 }
 
 interface EngineResult {
   calls_processed: number;
   companies_updated: number;
   followups_scheduled: number;
+  gatekeepers_recorded: number;
   details: Array<{
     callId: string;
     company: string;
@@ -20,6 +22,7 @@ interface EngineResult {
     leadStatusSet: string | null;
     followupDate: string | null;
     engagementDelta: number;
+    gatekeeperRecorded: string | null;
     error?: string;
   }>;
 }
@@ -51,6 +54,7 @@ const OUTCOME_ENGAGEMENT_DELTA: Record<string, number> = {
   "Qualified": 20,
   "Won": 40,
   "Not Interested": -10,
+  "Gatekeeper": 2,
 };
 
 function logEngine(message: string) {
@@ -88,8 +92,6 @@ export async function fetchUnprocessedCalls(): Promise<CallRecord[]> {
   let offset: string | undefined;
 
   do {
-    const params = new URLSearchParams({ filterByFormula: decodeURIComponent(formula), pageSize: "100" });
-    if (offset) params.set("offset", offset);
     const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`);
 
     for (const rec of data.records || []) {
@@ -99,6 +101,7 @@ export async function fetchUnprocessedCalls(): Promise<CallRecord[]> {
         outcome: String(rec.fields.Outcome || "").trim(),
         callTime: String(rec.fields.Call_Time || ""),
         notes: String(rec.fields.Notes || ""),
+        gatekeeperName: String(rec.fields.Gatekeeper_Name || "").trim(),
       });
     }
     offset = data.offset;
@@ -107,7 +110,12 @@ export async function fetchUnprocessedCalls(): Promise<CallRecord[]> {
   return calls;
 }
 
-async function findCompanyByName(companyName: string): Promise<{ id: string; engagementScore: number } | null> {
+async function findCompanyByName(companyName: string): Promise<{
+  id: string;
+  engagementScore: number;
+  gatekeeperName: string;
+  gatekeeperNotes: string;
+} | null> {
   if (!companyName) return null;
 
   const table = encodeURIComponent("Companies");
@@ -121,6 +129,8 @@ async function findCompanyByName(companyName: string): Promise<{ id: string; eng
     return {
       id: rec.id,
       engagementScore: parseInt(rec.fields.Engagement_Score || "0", 10) || 0,
+      gatekeeperName: String(rec.fields.Gatekeeper_Name || "").trim(),
+      gatekeeperNotes: String(rec.fields.Gatekeeper_Notes || "").trim(),
     };
   } catch {
     return null;
@@ -138,6 +148,7 @@ export async function processCall(call: CallRecord): Promise<{
   followupDate: string | null;
   engagementDelta: number;
   companyUpdated: boolean;
+  gatekeeperRecorded: string | null;
 }> {
   const callTable = encodeURIComponent("Calls");
   const compTable = encodeURIComponent("Companies");
@@ -153,6 +164,8 @@ export async function processCall(call: CallRecord): Promise<{
   }
 
   let companyUpdated = false;
+  let gatekeeperRecorded: string | null = null;
+
   if (call.company) {
     const company = await findCompanyByName(call.company);
     if (company) {
@@ -165,6 +178,30 @@ export async function processCall(call: CallRecord): Promise<{
       if (engagementDelta !== 0) {
         const newScore = Math.max(0, company.engagementScore + engagementDelta);
         compUpdate.Engagement_Score = newScore;
+      }
+
+      if (call.outcome === "Gatekeeper" && call.gatekeeperName) {
+        const existingGK = company.gatekeeperName;
+
+        if (!existingGK) {
+          compUpdate.Gatekeeper_Name = call.gatekeeperName;
+          compUpdate.Gatekeeper_Last_Spoken = call.callTime || new Date().toISOString();
+          gatekeeperRecorded = call.gatekeeperName;
+          logEngine(`Gatekeeper recorded: ${call.gatekeeperName} @ ${call.company}`);
+        } else if (existingGK.toLowerCase() !== call.gatekeeperName.toLowerCase()) {
+          compUpdate.Gatekeeper_Last_Spoken = call.callTime || new Date().toISOString();
+          const dateStr = (call.callTime || new Date().toISOString()).split("T")[0];
+          const appendNote = `Possible alternate gatekeeper: ${call.gatekeeperName} (${dateStr})`;
+          const existingNotes = company.gatekeeperNotes;
+          compUpdate.Gatekeeper_Notes = existingNotes
+            ? `${existingNotes}\n${appendNote}`
+            : appendNote;
+          gatekeeperRecorded = call.gatekeeperName;
+          logEngine(`Gatekeeper alternate noted: ${call.gatekeeperName} @ ${call.company} (existing: ${existingGK})`);
+        } else {
+          compUpdate.Gatekeeper_Last_Spoken = call.callTime || new Date().toISOString();
+          logEngine(`Gatekeeper confirmed: ${call.gatekeeperName} @ ${call.company}`);
+        }
       }
 
       if (Object.keys(compUpdate).length > 0) {
@@ -189,7 +226,7 @@ export async function processCall(call: CallRecord): Promise<{
     body: JSON.stringify({ fields: callUpdate }),
   });
 
-  return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated };
+  return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated, gatekeeperRecorded };
 }
 
 export async function runEngine(): Promise<EngineResult> {
@@ -201,6 +238,7 @@ export async function runEngine(): Promise<EngineResult> {
     calls_processed: 0,
     companies_updated: 0,
     followups_scheduled: 0,
+    gatekeepers_recorded: 0,
     details: [],
   };
 
@@ -212,6 +250,7 @@ export async function runEngine(): Promise<EngineResult> {
       result.calls_processed++;
       if (outcome.companyUpdated) result.companies_updated++;
       if (outcome.followupDate) result.followups_scheduled++;
+      if (outcome.gatekeeperRecorded) result.gatekeepers_recorded++;
 
       result.details.push({
         callId: call.id,
@@ -220,6 +259,7 @@ export async function runEngine(): Promise<EngineResult> {
         leadStatusSet: outcome.leadStatusSet,
         followupDate: outcome.followupDate,
         engagementDelta: outcome.engagementDelta,
+        gatekeeperRecorded: outcome.gatekeeperRecorded,
       });
     } catch (e: any) {
       logEngine(`Error processing call ${call.id}: ${e.message}`);
@@ -230,6 +270,7 @@ export async function runEngine(): Promise<EngineResult> {
         leadStatusSet: null,
         followupDate: null,
         engagementDelta: 0,
+        gatekeeperRecorded: null,
         error: e.message,
       });
     }
