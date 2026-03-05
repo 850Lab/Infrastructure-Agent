@@ -19,7 +19,6 @@ export default function FollowupsPage() {
           <span className="text-xs font-mono tracking-wider uppercase" style={{ color: "rgba(45,212,191,0.5)" }}>Call Engine</span>
         </div>
         <h1 className="text-2xl font-bold glow-text" data-testid="text-page-title">Follow-ups</h1>
-        <p className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.25)" }} data-testid="text-brain-region">Cerebellum</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {metrics.map((m) => (
             <Card key={m.label} className="glow-card" data-testid={`card-${m.label.toLowerCase().replace(/\s+/g, "-")}`}>

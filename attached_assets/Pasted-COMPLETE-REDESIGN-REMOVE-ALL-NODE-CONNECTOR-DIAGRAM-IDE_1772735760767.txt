@@ -1,0 +1,134 @@
+COMPLETE REDESIGN — REMOVE ALL NODE/CONNECTOR/DIAGRAM IDEAS
+
+Goal: Make the dashboard simple, bold, premium. No brain. No nodes. No connector lines. Replace with a “Command Center + Live Pulse Reactor” UI that still reflects real-time SSE activity.
+
+DO NOT TOUCH BACKEND. Frontend-only changes. Keep SSE hook + routes working.
+
+PAGES:
+- Keep 7 routes as-is.
+- /dashboard becomes the new “Command Center”.
+
+FILES TO EDIT:
+- client/src/pages/dashboard.tsx (full rewrite)
+- client/src/components/app-layout.tsx (simplify header)
+- client/src/index.css (add minimal glow utilities if needed; keep shadcn vars)
+- client/src/pages/today.tsx, followups.tsx, lead-engine.tsx, contacts.tsx, analytics.tsx (add “Back to Dashboard” button + consistent styling)
+
+========================================================
+1) LAYOUT — DASHBOARD “COMMAND CENTER”
+========================================================
+Structure the dashboard into 3 columns + bottom timeline:
+
+Top header (no tabs):
+- Left: “Neural OS” + small subtitle “Command Center”
+- Center: Status pill (Standby/Running/Error)
+- Right: Logout
+
+Main content grid:
+- Left column (x1):
+  A) BIG Status Card:
+     - Title: SYSTEM STATUS
+     - Large label: STANDBY / RUNNING / ERROR
+     - Subtext: “Listening for triggers” / “Processing run <run_id>” / “Fault detected”
+     - Small KPI row: today_list_count, fresh_pool_count, dm_resolved_count, playbooks_ready_count
+     - Pull KPIs from GET /api/dashboard/stats after login (protected fetch)
+  B) “Run Now” button (large, bold)
+
+- Center column (x2):
+  “Pulse Reactor” — a large circular animated element (NOT SVG graph):
+   - A ring with 2–3 concentric circles
+   - Standby: slow breathing pulse
+   - Running: faster pulse + rotating sweep gradient
+   - Error: red flicker
+   - When STEP_STARTED arrives: do a quick “shockwave” ripple outward
+   - When TRIGGER_FIRED arrives: emit a small burst particle or quick radial tick
+   - Use CSS + Framer Motion only (no canvas required)
+
+- Right column (x1):
+  A) Run History panel:
+     - Pull GET /api/run-history (protected)
+     - Show last 10 runs with status + time
+     - Clicking a run expands details (steps list)
+  B) Event Log panel:
+     - Show latest 30 SSE events, newest on top
+     - Icons: ⏵ ⏹ ▶ ✓ ⚡ ⛔ ·
+     - Each line: time + type + short message
+
+Bottom row (full width):
+- “Run Timeline” bar:
+  - Render the steps in order as chips:
+    bootstrap, opportunity_engine, dm_coverage, dm_fit, playbooks, call_engine, query_intel, lead_feed
+  - Each chip state:
+    standby: dim
+    active: cyan glow
+    done: muted teal
+    error: red
+  - As SSE STEP_STARTED/STEP_DONE come in, update chip states in real time
+
+========================================================
+2) SSE STATE MAPPING (NO DIAGRAMS)
+========================================================
+Use existing use-sse hook state and/or extend it minimally:
+- runStatus: standby/running/error
+- activeSteps Set
+- lastRunId
+- recentEvents
+- eventRate
+
+Behavior:
+- RUN_STARTED -> runStatus=running, set lastRunId
+- RUN_DONE -> runStatus=standby (unless errors occurred)
+- STEP_STARTED(step) -> mark step active; trigger reactor “shockwave”
+- STEP_DONE(step) -> mark step done; calm reactor slightly
+- TRIGGER_FIRED -> reactor emits quick burst + bump eventRate
+- ERROR -> runStatus=error; reactor flickers red; highlight event log
+
+========================================================
+3) VISUAL STYLE (SIMPLE + BOLD)
+========================================================
+Theme:
+- Dark slate background, neon cyan primary.
+- Use large typography, clean spacing.
+- No thin sketchy lines, no diagrams, no brain.
+- Panels should look like “glass”:
+  - subtle border
+  - slight blur backdrop
+  - glow on hover
+
+Reactor look (CSS):
+- A circular div with:
+  - border ring (gradient)
+  - inner glow
+  - rotating sweep when running
+  - subtle grain overlay optional
+
+========================================================
+4) NAVIGATION (SIMPLE)
+========================================================
+No tabs.
+Instead, add a “Sections” row of 5 bold buttons under the header (NOT a nav bar):
+- Today, Follow-ups, Lead Engine, Contacts, Analytics
+These are big pill buttons.
+Click navigates to route.
+They can also reflect activity (glow when running if their related step is active).
+
+Mapping:
+- Today -> /today
+- Follow-ups -> /followups
+- Lead Engine -> /lead-engine
+- Contacts -> /contacts
+- Analytics -> /analytics
+
+========================================================
+5) ACCEPTANCE
+========================================================
+- Dashboard looks premium and bold
+- Run Now triggers real-time visual feedback in reactor + timeline chips
+- No nodes/connectors anywhere
+- SSE events clearly reflected via status, reactor, timeline
+- Run history + stats load from API
+- Existing routes still work
+- CLI runners unaffected
+
+DELIVERABLE
+- Output the updated files and confirm all behaviors above.

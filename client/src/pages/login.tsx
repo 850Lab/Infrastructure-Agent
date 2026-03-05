@@ -42,7 +42,7 @@ export default function LoginPage() {
               <line x1="24" y1="16" x2="30" y2="16" stroke="currentColor" strokeWidth="2" />
             </svg>
           </div>
-          <CardTitle className="text-2xl font-bold glow-text">Motherboard</CardTitle>
+          <CardTitle className="text-2xl font-bold glow-text">Neural OS</CardTitle>
           <p className="text-muted-foreground text-sm mt-1">Lead Engine Command Center</p>
         </CardHeader>
         <CardContent>

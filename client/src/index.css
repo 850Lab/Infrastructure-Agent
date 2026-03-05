@@ -188,57 +188,6 @@
   box-shadow: 0 0 10px hsl(175 80% 50% / 0.3), inset 0 0 10px hsl(175 80% 50% / 0.05);
 }
 
-@keyframes node-breathe {
-  0%, 100% { opacity: 0.70; transform: scale(1.00); }
-  50% { opacity: 0.92; transform: scale(1.02); }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { filter: drop-shadow(0 0 4px hsl(175 80% 50% / 0.3)); }
-  50% { filter: drop-shadow(0 0 12px hsl(175 80% 50% / 0.8)); }
-}
-
-@keyframes chip-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.005); }
-}
-
-@keyframes trace-shimmer {
-  0% { stroke-dashoffset: 200; }
-  100% { stroke-dashoffset: 0; }
-}
-
-@keyframes module-fire {
-  0% { filter: drop-shadow(0 0 2px hsl(175 80% 50% / 0.3)); }
-  30% { filter: drop-shadow(0 0 16px hsl(175 80% 50% / 0.9)); }
-  100% { filter: drop-shadow(0 0 4px hsl(175 80% 50% / 0.4)); }
-}
-
-@keyframes module-fire-red {
-  0% { filter: drop-shadow(0 0 2px hsl(0 84% 60% / 0.3)); }
-  30% { filter: drop-shadow(0 0 16px hsl(0 84% 60% / 0.9)); }
-  100% { filter: drop-shadow(0 0 4px hsl(0 84% 60% / 0.4)); }
-}
-
-@keyframes node-flicker {
-  0% { opacity: 1; filter: drop-shadow(0 0 4px #EF4444); }
-  15% { opacity: 0.4; filter: drop-shadow(0 0 12px #EF4444); }
-  30% { opacity: 1; filter: drop-shadow(0 0 6px #EF4444); }
-  45% { opacity: 0.5; filter: drop-shadow(0 0 14px #EF4444); }
-  60% { opacity: 1; filter: drop-shadow(0 0 8px #EF4444); }
-  75% { opacity: 0.6; filter: drop-shadow(0 0 10px #EF4444); }
-  100% { opacity: 1; filter: drop-shadow(0 0 4px #EF4444); }
-}
-
-.chip-perspective {
-  perspective: 1200px;
-  perspective-origin: center center;
-}
-
-.chip-surface {
-  transform-style: preserve-3d;
-  will-change: transform;
-}
 
 /**
  * Using the elevate system.
