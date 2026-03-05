@@ -20,10 +20,15 @@ A B2B lead generation and call management system targeting Gulf Coast industrial
 - `/analytics` — Analytics (placeholder)
 
 ### Auth Flow
-- POST /api/auth/login → returns UUID token with 24h expiry
-- Token stored in localStorage
-- Protected routes redirect to /login if not authenticated
+- POST /api/auth/login → returns UUID token with 24h expiry (email comparison is case-insensitive)
+- Token stored in localStorage (`auth_token` + `auth_expires_at`)
+- All API calls include `Authorization: Bearer <token>` header automatically via queryClient
+- Global 401 handler: any API returning 401 triggers logout + toast notification + redirect to /login
+- Session expiry warning toast shown 5 minutes before token expires
+- Cross-tab sync via `storage` event listener (logout in one tab logs out all tabs)
 - SSE endpoint accepts `?token=` query param (EventSource can't set headers)
+- Protected routes redirect to /login if not authenticated
+- Query cache: staleTime 5 min, gcTime 10 min — data persists while navigating pages but refreshes periodically
 
 ### Motherboard Dashboard
 - 8 SVG nodes: bootstrap, lead_feed, opportunity_engine, dm_coverage, dm_fit, playbooks, call_engine, query_intel
