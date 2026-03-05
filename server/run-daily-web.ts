@@ -9,6 +9,7 @@ import { log } from "./logger";
 import { getIndustryConfig } from "./config";
 import { eventBus } from "./events";
 import { startRun, addStep, completeRun } from "./run-history";
+import { takeSnapshot, computeDiff } from "./run-diff";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -98,6 +99,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
   log(`Web run started: ${run_id}`, "daily-web");
   const industryCfg = getIndustryConfig();
   log(`Config: ${industryCfg.name} | Market: ${industryCfg.market}`, "daily-web");
+
+  let beforeSnapshot: Awaited<ReturnType<typeof takeSnapshot>> | null = null;
+  try {
+    beforeSnapshot = await takeSnapshot();
+    log(`Before snapshot taken: ${JSON.stringify(beforeSnapshot)}`, "run-diff");
+  } catch (e: any) {
+    log(`Before snapshot failed: ${e.message}`, "run-diff");
+  }
 
   try {
     if (config.bootstrap) {
@@ -202,12 +211,40 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       errors.push(`Query Intel: ${e.message}`);
     }
 
+    let diff = null;
+    if (beforeSnapshot) {
+      try {
+        const afterSnapshot = await takeSnapshot();
+        diff = computeDiff(beforeSnapshot, afterSnapshot);
+        log(`Run diff computed: ${JSON.stringify(diff)}`, "run-diff");
+      } catch (e: any) {
+        log(`After snapshot failed: ${e.message}`, "run-diff");
+      }
+    }
+
     const status = errors.length > 0 ? "error" as const : "completed" as const;
-    completeRun(run_id, { finished_at: Date.now(), errors, status, summary: { errors_count: errors.length } });
+    completeRun(run_id, {
+      finished_at: Date.now(),
+      errors,
+      status,
+      summary: { errors_count: errors.length, warnings_count: 0, diff },
+    });
     eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status });
     log(`Web run ${run_id} finished: ${status} (${errors.length} errors)`, "daily-web");
   } catch (e: any) {
-    completeRun(run_id, { finished_at: Date.now(), errors: [...errors, e.message], status: "error" });
+    let diff = null;
+    if (beforeSnapshot) {
+      try {
+        const afterSnapshot = await takeSnapshot();
+        diff = computeDiff(beforeSnapshot, afterSnapshot);
+      } catch {}
+    }
+    completeRun(run_id, {
+      finished_at: Date.now(),
+      errors: [...errors, e.message],
+      status: "error",
+      summary: { errors_count: errors.length + 1, diff },
+    });
     eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status: "error" });
     log(`Web run ${run_id} crashed: ${e.message}`, "daily-web");
   } finally {

@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/app-layout";
 import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 
 const STEP_ORDER = [
   "bootstrap",
@@ -134,8 +134,9 @@ export default function DashboardPage() {
     run_id: string;
     started_at: string;
     finished_at: string | null;
+    duration_ms?: number;
     steps: Array<{ step: string; status: string; duration_ms?: number }>;
-    summary: string;
+    summary: Record<string, any>;
     errors: string[];
   }>>({
     queryKey: ["/api/run-history"],
@@ -156,6 +157,28 @@ export default function DashboardPage() {
     queryKey: ["/api/confidence"],
     enabled: !!token,
     refetchInterval: 120000,
+  });
+
+  const { data: latestDiff } = useQuery<{
+    run_id: string | null;
+    started_at?: number;
+    finished_at?: number;
+    duration_ms: number | null;
+    status?: string;
+    diff: {
+      companies_added: number;
+      dms_added: number;
+      today_call_list_delta: number;
+      offer_dm_updated: number;
+      playbooks_generated: number;
+      queries_inserted: number;
+      queries_retired: number;
+    } | null;
+    errors_count?: number;
+  }>({
+    queryKey: ["/api/run-latest-diff"],
+    enabled: !!token,
+    refetchInterval: runStatus === "running" ? 5000 : 60000,
   });
 
   useEffect(() => {
@@ -397,6 +420,61 @@ export default function DashboardPage() {
               <FileText className="w-4 h-4 mr-2" />
               Daily Briefing
             </Button>
+
+            {latestDiff?.diff && (
+              <div
+                className="rounded-2xl p-4"
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #E2E8F0",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                }}
+                data-testid="panel-last-run-changes"
+              >
+                <p className="text-xs font-mono tracking-widest uppercase mb-2" style={{ color: "#94A3B8" }}>
+                  Last Run Changes
+                </p>
+                {latestDiff.finished_at && (
+                  <p className="text-xs font-mono mb-3" style={{ color: "#CBD5E1" }}>
+                    {new Date(latestDiff.finished_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}
+                    {latestDiff.duration_ms != null && ` \u00B7 ${(latestDiff.duration_ms / 1000).toFixed(0)}s`}
+                  </p>
+                )}
+                <div className="space-y-1.5">
+                  {[
+                    { label: "Companies added", value: latestDiff.diff.companies_added },
+                    { label: "DMs added", value: latestDiff.diff.dms_added },
+                    { label: "Call list", value: latestDiff.diff.today_call_list_delta },
+                    { label: "Offer DMs updated", value: latestDiff.diff.offer_dm_updated },
+                    { label: "Playbooks generated", value: latestDiff.diff.playbooks_generated },
+                    { label: "Queries inserted", value: latestDiff.diff.queries_inserted },
+                    { label: "Queries retired", value: latestDiff.diff.queries_retired },
+                  ].map((item) => {
+                    const isPositive = item.value > 0;
+                    const isNegative = item.value < 0;
+                    const Icon = isPositive ? ArrowUpRight : isNegative ? ArrowDownRight : Minus;
+                    const color = isPositive ? EMERALD : isNegative ? ERROR_RED : "#CBD5E1";
+                    return (
+                      <div key={item.label} className="flex items-center justify-between" data-testid={`diff-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                        <span className="text-xs font-mono" style={{ color: "#64748B" }}>{item.label}</span>
+                        <div className="flex items-center gap-1">
+                          <Icon className="w-3 h-3" style={{ color }} />
+                          <span className="text-xs font-mono font-semibold" style={{ color }}>
+                            {isPositive ? `+${item.value}` : item.value === 0 ? "0" : `${item.value}`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {(latestDiff.errors_count ?? 0) > 0 && (
+                    <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid #F1F5F9" }}>
+                      <span className="text-xs font-mono" style={{ color: ERROR_RED }}>Errors</span>
+                      <span className="text-xs font-mono font-semibold" style={{ color: ERROR_RED }}>{latestDiff.errors_count}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-2 flex items-center justify-center">
@@ -426,14 +504,14 @@ export default function DashboardPage() {
                 background: "#FFFFFF",
                 border: "1px solid #E2E8F0",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                maxHeight: "260px",
+                maxHeight: "340px",
               }}
               data-testid="panel-run-history"
             >
               <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
                 Run History
               </p>
-              <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+              <div style={{ maxHeight: "280px", overflowY: "auto" }}>
                 {displayHistory.length === 0 ? (
                   <p className="text-xs font-mono text-center py-4" style={{ color: "#CBD5E1" }}>No runs yet</p>
                 ) : (
@@ -474,6 +552,37 @@ export default function DashboardPage() {
                                     {s.duration_ms != null && <span style={{ color: "#CBD5E1" }}>{(s.duration_ms / 1000).toFixed(1)}s</span>}
                                   </div>
                                 ))}
+                                {run.duration_ms != null && (
+                                  <div className="text-xs font-mono pt-1" style={{ color: "#CBD5E1", borderTop: "1px solid #F1F5F9" }}>
+                                    Total: {(run.duration_ms / 1000).toFixed(1)}s
+                                  </div>
+                                )}
+                                {run.summary?.diff && (() => {
+                                  const d = run.summary.diff;
+                                  const items = [
+                                    { l: "Companies", v: d.companies_added },
+                                    { l: "DMs", v: d.dms_added },
+                                    { l: "Call list", v: d.today_call_list_delta },
+                                    { l: "Offer DMs", v: d.offer_dm_updated },
+                                    { l: "Playbooks", v: d.playbooks_generated },
+                                    { l: "Queries +", v: d.queries_inserted },
+                                    { l: "Queries -", v: d.queries_retired },
+                                  ].filter((i) => i.v !== 0);
+                                  if (items.length === 0) return null;
+                                  return (
+                                    <div className="pt-1 mt-1 space-y-0.5" style={{ borderTop: "1px solid #F1F5F9" }}>
+                                      <span className="text-xs font-mono" style={{ color: "#94A3B8" }}>Changes:</span>
+                                      {items.map((i) => (
+                                        <div key={i.l} className="flex items-center justify-between text-xs font-mono">
+                                          <span style={{ color: "#94A3B8" }}>{i.l}</span>
+                                          <span style={{ color: i.v > 0 ? EMERALD : i.v < 0 ? ERROR_RED : "#CBD5E1" }}>
+                                            {i.v > 0 ? `+${i.v}` : i.v}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </motion.div>
                           )}

@@ -176,6 +176,23 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     res.json(run);
   });
 
+  app.get("/api/run-latest-diff", authMiddleware, (_req: Request, res: Response) => {
+    const history = getHistory();
+    const latest = history.find((r) => r.status !== "running" && r.summary?.diff);
+    if (!latest) {
+      return res.json({ run_id: null, diff: null, duration_ms: null });
+    }
+    res.json({
+      run_id: latest.run_id,
+      started_at: latest.started_at,
+      finished_at: latest.finished_at,
+      duration_ms: latest.duration_ms,
+      status: latest.status,
+      diff: latest.summary?.diff || null,
+      errors_count: latest.errors?.length || 0,
+    });
+  });
+
   app.get("/api/run-status", authMiddleware, (_req: Request, res: Response) => {
     res.json(getRunStatus());
   });
