@@ -1,0 +1,69 @@
+You are my Replit engineer. Add an EXPLAINABILITY LAYER so every ranked company has a clear “why”.
+
+GOAL:
+When Opportunity Engine generates Today_Call_List, also compute and write:
+- Rank_Reason (short, 1–2 lines)
+- Rank_Evidence (bullets, 3–6 items)
+- Rank_Inputs_JSON (long text JSON for debugging/auditing)
+- Rank_Version (text, e.g. "v1")
+
+This must be industry-agnostic and rely on CFG + available signals.
+
+SCHEMA (Companies) — ensure/create fields:
+Rank_Reason (multilineText)
+Rank_Evidence (multilineText)
+Rank_Inputs_JSON (multilineText)
+Rank_Version (singleLineText)
+
+IMPLEMENTATION:
+Update server/opportunity-engine.ts to build an explainability object per company *after* scores/buckets are computed.
+
+Use these inputs (best effort):
+- Final_Priority
+- Priority_Score, Priority_Tier
+- Opportunity_Score, Opportunity_Type, Opportunity_Signal, evidence_keywords (if stored)
+- Engagement_Score
+- Times_Called, Last_Called, Last_Outcome
+- Followup_Due (if exists)
+- Primary_DM_Name/Title + DM email/phone availability
+- Gatekeeper_Name (if exists)
+- Bucket (Hot Follow-up / Working / Fresh)
+
+Generate:
+
+Rank_Reason (1–2 lines):
+Example templates:
+- "Hot follow-up due <date>. Prior engagement +<score>. DM: <name/title>."
+- "High opportunity score (<opp>) and A-tier. Not contacted in <days> days."
+- "Fresh lead (new in last 14d) with strong fit keywords: <k1>, <k2>."
+
+Rank_Evidence (3–6 bullets):
+- "Bucket: Hot Follow-up (overdue by 1 day)"
+- "Opportunity: Turnaround | score 88 | keywords: refinery, shutdown"
+- "Decision maker available: Safety Manager (email + phone)"
+- "Engagement: +10 (Decision Maker)"
+- "Not called in 6 days"
+- "Gatekeeper known: Susan"
+
+Rank_Inputs_JSON:
+A JSON string containing all inputs used for rank. This is for audit/debug.
+
+WRITEBACK RULES:
+- Only write explainability fields for companies with Today_Call_List=true.
+- Idempotent: don’t rewrite if content unchanged (compare existing Rank_Version + optionally hash).
+- Set Rank_Version="v1".
+
+CLI OUTPUT:
+Update server/run-opportunity-engine.ts and/or server/run-daily.ts preview rows to include:
+- Rank_Reason (truncate to 90 chars)
+Example columns:
+Company | Final | Bucket | Ask For | Gatekeeper | Rank Reason
+
+MINI TEST:
+1) Run opportunity engine top=10
+2) Confirm the 10 Today_Call_List companies have Rank_Reason and Rank_Evidence populated
+3) Re-run immediately: should produce minimal updates (idempotent)
+
+DELIVERABLE:
+Show code changes + example output from CLI.
+Update replit.md explaining “Rank Reasons” for trust.

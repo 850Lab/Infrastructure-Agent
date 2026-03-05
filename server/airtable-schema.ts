@@ -362,6 +362,10 @@ const COMPANIES_FIELDS: FieldSpec[] = [
     },
   },
   { name: "Gatekeeper_Notes", type: "multilineText" },
+  { name: "Rank_Reason", type: "multilineText" },
+  { name: "Rank_Evidence", type: "multilineText" },
+  { name: "Rank_Inputs_JSON", type: "multilineText" },
+  { name: "Rank_Version", type: "singleLineText" },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

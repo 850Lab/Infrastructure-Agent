@@ -27,6 +27,9 @@ interface CompanyRecord {
   primaryDMPhone: string;
   primaryDMConfidence: number;
   gatekeeperName: string;
+  opportunityType: string;
+  opportunitySignal: string;
+  existingRankVersion: string;
 }
 
 interface CallRecord {
@@ -138,6 +141,9 @@ async function fetchAllCompanies(): Promise<CompanyRecord[]> {
         primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
         primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
         gatekeeperName: String(f.Gatekeeper_Name || "").trim(),
+        opportunityType: String(f.Opportunity_Type || "").trim(),
+        opportunitySignal: String(f.Opportunity_Signal || "").trim(),
+        existingRankVersion: String(f.Rank_Version || "").trim(),
       });
     }
     offset = data.offset;
