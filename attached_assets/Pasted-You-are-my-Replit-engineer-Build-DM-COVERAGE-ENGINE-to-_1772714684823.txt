@@ -1,0 +1,82 @@
+You are my Replit engineer. Build DM COVERAGE ENGINE to ensure Today_Call_List companies always get Decision Makers enriched first.
+
+CURRENT STATE:
+- DM Resolver is working (74/74 resolved where DMs exist).
+- Problem: Today_Call_List top 25 have 0 DMs because DM enrichment hasn’t run on them yet.
+- DM enrichment pipeline exists: server/dm-enrichment.ts (Apollo primary, website fallback).
+- Apollo People Search may return 403 on free plan; website fallback must work.
+
+GOAL:
+After generating Today_Call_List, automatically enrich DMs for the selected companies that are missing DMs, then re-run DM resolution so Primary_DM_* fields populate before calling.
+
+REQUIRED BEHAVIOR:
+- Prioritize Today_Call_List companies first.
+- Only enrich companies missing DMs (avoid wasting time).
+- Idempotent: don’t re-enrich if company already has DMs updated recently.
+
+SCHEMA / FIELDS (ensure in Companies; create if missing):
+DM_Coverage_Status (single select: ["Missing","Queued","Enriching","Ready","Error"])
+DM_Last_Enriched (dateTime)
+DM_Count (number)
+
+(If Decision_Makers table already exists, do NOT recreate.)
+
+STEP 1 — Detect DM coverage gaps
+Implement server/dm-coverage.ts exporting:
+runDMCoverage({ top: number, limit: number })
+
+Logic:
+- Query Companies where Today_Call_List=true (limit=top).
+- For each, compute DM_Count:
+  - count Decision_Makers associated with company (link if available; otherwise match by company_name and Normalized_Domain like resolver does).
+- If DM_Count==0 OR DM_Last_Enriched empty OR DM_Last_Enriched older than 14 days:
+  mark DM_Coverage_Status="Queued"
+
+STEP 2 — Run DM enrichment only for queued companies
+For companies with DM_Coverage_Status="Queued":
+- Set status "Enriching"
+- Call existing pipeline entrypoint in server/dm-enrichment.ts for that company:
+   enrichDecisionMakersForCompany(company)
+  (If function does not exist, refactor dm-enrichment.ts to expose a single-company enrichment function while keeping batch support.)
+- On success:
+   set DM_Last_Enriched=now
+   recompute DM_Count
+   set DM_Coverage_Status="Ready" if DM_Count>0 else "Missing"
+- On failure:
+   set DM_Coverage_Status="Error" and write Notes append "DM_ENRICH_FAIL: <reason>"
+
+STEP 3 — Re-run resolver after coverage
+After enrichment finishes for this run:
+- call resolveAndWriteDMs() (from server/dm-resolver.ts) for Today_Call_List companies
+- print “DMs resolved now: X/Y”
+
+STEP 4 — CLI command
+Create server/run-dm-coverage.ts runnable via:
+npx tsx server/run-dm-coverage.ts --top=25 --limit=25
+
+This command should:
+1) run opportunity-engine (or assume it was run already; include a flag --runOpportunity=true/false default false)
+2) run DM coverage for Today_Call_List
+3) run resolver
+4) print a final call list preview with:
+   company_name | Final_Priority | Bucket | Primary_DM_Name | Primary_DM_Title | Primary_DM_Phone | Primary_DM_Email
+
+STEP 5 — Performance limits
+- limit default 25 so it’s safe for workday runs
+- add exponential backoff on website fetch and Apollo calls (reuse existing)
+
+MINI-TESTS:
+1) Choose 3 Today_Call_List companies with no DMs:
+   - DM_Coverage_Status becomes Queued → Enriching → Missing/Ready
+2) If website fallback finds at least 1 DM for any of those:
+   - resolver writes Primary_DM_* fields
+3) Re-run immediately:
+   - should enrich 0 companies (unless Missing and DM_Last_Enriched is empty/old)
+   - idempotent and fast
+
+DELIVERABLE:
+Show new files + command to run.
+Update replit.md with “Morning Runbook”:
+1) run opportunity-engine
+2) run dm-coverage
+3) call Today_Call_List

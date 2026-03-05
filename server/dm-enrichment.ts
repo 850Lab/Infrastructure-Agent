@@ -1,4 +1,4 @@
-import { log } from "./index";
+import { log } from "./logger";
 import OpenAI from "openai";
 import { enrichOrganization, searchPeopleByDomain, isApolloAvailable } from "./apollo";
 import type { ApolloPerson } from "./apollo";

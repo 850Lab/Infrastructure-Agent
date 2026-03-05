@@ -319,6 +319,29 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   { name: "Primary_DM_Seniority", type: "singleLineText" },
   { name: "Primary_DM_Source", type: "singleLineText" },
   { name: "Primary_DM_Confidence", type: "number", options: { precision: 0 } },
+  {
+    name: "DM_Coverage_Status",
+    type: "singleSelect",
+    options: {
+      choices: [
+        { name: "Missing", color: "redLight2" },
+        { name: "Queued", color: "yellowLight2" },
+        { name: "Enriching", color: "blueLight2" },
+        { name: "Ready", color: "greenLight2" },
+        { name: "Error", color: "redDark1" },
+      ],
+    },
+  },
+  {
+    name: "DM_Last_Enriched",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
+  { name: "DM_Count", type: "number", options: { precision: 0 } },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

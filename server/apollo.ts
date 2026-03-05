@@ -1,4 +1,4 @@
-import { log } from "./index";
+import { log } from "./logger";
 
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 

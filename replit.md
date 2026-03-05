@@ -66,6 +66,13 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Integrated into opportunity engine — runs automatically after Today_Call_List is computed
 - Companies fields: Primary_DM_Name, Primary_DM_Title, Primary_DM_Email, Primary_DM_Phone, Primary_DM_Seniority, Primary_DM_Source, Primary_DM_Confidence
 
+### DM Coverage Engine
+- `server/dm-coverage.ts` - Detects DM coverage gaps on Today_Call_List, enriches missing DMs via existing pipeline (Apollo → website fallback), re-runs resolver after enrichment
+- `server/run-dm-coverage.ts` - CLI runner: `npx tsx server/run-dm-coverage.ts --top=25 --limit=25 [--runOpportunity=true]`
+- Schema fields: DM_Coverage_Status (Missing/Queued/Enriching/Ready/Error), DM_Last_Enriched (dateTime), DM_Count (number)
+- Idempotent: skips companies enriched within last 14 days
+- `server/logger.ts` - Shared log utility (extracted from index.ts to avoid Express side-effects in CLI scripts)
+
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
 - `server/active-work-routes.ts` - API endpoints (config, generate-queries, score, batch, high-score, rotate)
@@ -152,6 +159,13 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 ## OpenAI Configuration
 - Whisper transcription uses direct OPENAI_API_KEY (Replit proxy doesn't support audio endpoints)
 - GPT-4o analysis uses AI_INTEGRATIONS proxy (supports text chat completions)
+
+## Morning Runbook
+1. `npx tsx server/run-opportunity-engine.ts --top=25` — Build today's prioritized call list (buckets + DM resolution)
+2. `npx tsx server/run-dm-coverage.ts --top=25 --limit=25` — Enrich missing DMs for today's companies, then re-resolve
+3. Call the Today_Call_List in Airtable — each company shows Primary_DM_Name/Title/Phone/Email
+
+Or single command: `npx tsx server/run-dm-coverage.ts --top=25 --limit=25 --runOpportunity=true` (runs opportunity engine first, then coverage)
 
 ## Dependencies
 - @neondatabase/serverless, drizzle-orm - Database
