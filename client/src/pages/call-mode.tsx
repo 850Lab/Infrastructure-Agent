@@ -150,7 +150,8 @@ export default function CallModePage() {
   const handleOutcome = useCallback((outcome: string) => {
     if (!company) return;
 
-    if (outcome === "Gatekeeper" && !company.gatekeeper_name) {
+    if (outcome === "Gatekeeper") {
+      setGkName(company.gatekeeper_name || "");
       setShowGkPrompt(true);
       return;
     }
@@ -649,7 +650,14 @@ export default function CallModePage() {
               style={{ background: "#1E293B", border: "1px solid rgba(255,255,255,0.1)" }}
               data-testid="modal-gatekeeper"
             >
-              <p className="text-sm font-bold mb-3" style={{ color: "#FFF" }}>Gatekeeper Name</p>
+              <p className="text-sm font-bold mb-2" style={{ color: "#FFF" }}>
+                {company?.gatekeeper_name ? "Confirm gatekeeper" : "Who answered?"}
+              </p>
+              {company?.gatekeeper_name && (
+                <p className="text-xs mb-3" style={{ color: MUTED }}>
+                  On file: <span style={{ color: "#FFF" }}>{company.gatekeeper_name}</span> — press Enter to confirm or type a new name.
+                </p>
+              )}
               <input
                 autoFocus
                 value={gkName}
