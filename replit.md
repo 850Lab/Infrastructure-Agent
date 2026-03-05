@@ -69,9 +69,10 @@ Three-column layout + bottom timeline:
 
 ### Dashboard + SSE
 - `server/events.ts` — EventBus: in-memory SSE pub/sub with 200-event ring buffer
-- `server/run-history.ts` — In-memory run history store (max 20 runs)
+- `server/run-history.ts` — Persistent run history with dual-storage (Airtable Run_History + data/run_history.json fallback), max 200 runs
+- `server/machine-metrics.ts` — Lifetime counters (companies, DMs, calls, wins, opportunities) from Airtable with 5-min cache
 - `server/run-daily-web.ts` — Instrumented daily orchestrator for web (publishes SSE events, prevents concurrent runs)
-- `server/dashboard-routes.ts` — API routes: /api/events (SSE), /api/auth/login, /api/run-daily, /api/run-history, /api/dashboard/stats
+- `server/dashboard-routes.ts` — API routes: /api/events (SSE), /api/auth/login, /api/run-daily, /api/run-history, /api/run-status, /api/machine-metrics, /api/dashboard/stats
 - `client/src/lib/auth.ts` — AuthContext + AuthProvider + ProtectedRoute
 - `client/src/lib/use-sse.ts` — SSE subscription hook with auto-reconnect
 - `client/src/components/app-layout.tsx` — Header (Texas Automation Systems + StatusPill + Logout) + Framer Motion page transitions

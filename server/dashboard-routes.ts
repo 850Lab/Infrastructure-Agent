@@ -2,7 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { eventBus } from "./events";
 import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
-import { getHistory, getRunById } from "./run-history";
+import { getHistory, getRunById, getRunStatus, loadHistory } from "./run-history";
+import { computeMachineMetrics } from "./machine-metrics";
 import { log } from "./logger";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
@@ -76,7 +77,8 @@ async function airtableCount(formula: string): Promise<number | null> {
   }
 }
 
-export function registerDashboardRoutes(app: Express): void {
+export async function registerDashboardRoutes(app: Express): Promise<void> {
+  await loadHistory().catch((e: any) => log(`Failed to load run history: ${e.message}`, "run-history"));
   app.post("/api/auth/login", (req: Request, res: Response) => {
     const { email, password } = req.body || {};
     const adminEmail = process.env.ADMIN_EMAIL;
@@ -152,6 +154,27 @@ export function registerDashboardRoutes(app: Express): void {
       return res.status(404).json({ error: "Run not found" });
     }
     res.json(run);
+  });
+
+  app.get("/api/run-status", authMiddleware, (_req: Request, res: Response) => {
+    res.json(getRunStatus());
+  });
+
+  app.get("/api/machine-metrics", authMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const metrics = await computeMachineMetrics();
+      res.json(metrics);
+    } catch (err: any) {
+      log(`Machine metrics error: ${err.message}`, "machine-metrics");
+      res.json({
+        companies_total: null,
+        dms_total: null,
+        calls_total: null,
+        wins_total: null,
+        opportunities_total: null,
+        computed_at: Date.now(),
+      });
+    }
   });
 
   app.get("/api/dashboard/stats", authMiddleware, async (_req: Request, res: Response) => {

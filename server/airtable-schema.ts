@@ -478,11 +478,49 @@ export async function ensureSchema(): Promise<SchemaReport> {
     },
   ];
 
+  const RUN_HISTORY_FIELDS: FieldSpec[] = [
+    { name: "run_id", type: "singleLineText" },
+    {
+      name: "started_at",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+    {
+      name: "finished_at",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+    {
+      name: "status",
+      type: "singleSelect",
+      options: {
+        choices: [
+          { name: "running", color: "yellowBright" },
+          { name: "success", color: "greenBright" },
+          { name: "error", color: "redBright" },
+        ],
+      },
+    },
+    { name: "steps_json", type: "multilineText" },
+    { name: "summary_json", type: "multilineText" },
+    { name: "errors_json", type: "multilineText" },
+    { name: "duration_ms", type: "number", options: { precision: 0 } },
+  ];
+
   const tableSpecs: Array<{ name: string; fields: FieldSpec[]; description?: string }> = [
     { name: "Search_Queries", fields: SEARCH_QUERIES_FIELDS, description: "Search queries for Outscraper lead generation" },
     { name: "Companies", fields: COMPANIES_FIELDS, description: "Companies/leads database" },
     { name: "Calls", fields: CALLS_FIELDS, description: "Call records and outcomes" },
     { name: "Decision_Makers", fields: DM_FIELDS, description: "Decision maker contacts for companies" },
+    { name: "Run_History", fields: RUN_HISTORY_FIELDS, description: "Persistent run history for the daily orchestrator" },
   ];
 
   for (const spec of tableSpecs) {

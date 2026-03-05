@@ -248,6 +248,19 @@ export default function DashboardPage() {
     enabled: !!token,
   });
 
+  const { data: machineMetrics } = useQuery<{
+    companies_total: number | null;
+    dms_total: number | null;
+    calls_total: number | null;
+    wins_total: number | null;
+    opportunities_total: number | null;
+    computed_at: number;
+  }>({
+    queryKey: ["/api/machine-metrics"],
+    enabled: !!token,
+    refetchInterval: 300000,
+  });
+
   const { data: runHistory } = useQuery<Array<{
     run_id: string;
     started_at: string;
@@ -378,6 +391,36 @@ export default function DashboardPage() {
                     <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>{kpi.label}</p>
                     <p className="text-lg font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`kpi-${kpi.label.toLowerCase().replace(/\s+/g, "-")}`}>
                       {kpi.value != null ? kpi.value : "\u2014"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              className="rounded-2xl p-5"
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #E2E8F0",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              }}
+              data-testid="card-machine-memory"
+            >
+              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
+                Machine Memory
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "Companies", value: machineMetrics?.companies_total },
+                  { label: "DMs", value: machineMetrics?.dms_total },
+                  { label: "Calls", value: machineMetrics?.calls_total },
+                  { label: "Wins", value: machineMetrics?.wins_total },
+                  { label: "Opps", value: machineMetrics?.opportunities_total },
+                ].map((m) => (
+                  <div key={m.label} className="rounded-lg p-2.5" style={{ background: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                    <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>{m.label}</p>
+                    <p className="text-lg font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`metric-${m.label.toLowerCase()}`}>
+                      {m.value != null ? m.value.toLocaleString() : "\u2014"}
                     </p>
                   </div>
                 ))}

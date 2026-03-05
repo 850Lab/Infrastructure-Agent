@@ -118,7 +118,7 @@ export async function registerRoutes(
   registerDMRoutes(app);
   registerOutscraperRoutes(app);
   registerLeadFeedRoutes(app);
-  registerDashboardRoutes(app);
+  await registerDashboardRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);
