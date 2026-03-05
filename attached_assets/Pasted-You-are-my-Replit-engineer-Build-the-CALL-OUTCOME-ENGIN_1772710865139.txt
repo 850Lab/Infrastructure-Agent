@@ -1,0 +1,134 @@
+You are my Replit engineer. Build the CALL OUTCOME ENGINE.
+
+CONTEXT:
+- Airtable schema already exists from bootstrap.
+- Calls table exists.
+- Companies table exists.
+- Lead Feed Runner exists and populates Companies.
+
+GOAL:
+Turn logged calls into structured pipeline signals and automatic follow-ups.
+
+FILES TO CREATE
+server/call-engine.ts
+server/run-call-engine.ts
+
+COMMAND
+npx tsx server/run-call-engine.ts
+
+--------------------------------------------------
+
+STEP 1 — Pull Recent Calls
+
+Fetch Calls records where:
+- Outcome is NOT empty
+- Call_Time exists
+- Processed field is empty
+
+(If Processed field does not exist, create it automatically in bootstrap as a checkbox)
+
+--------------------------------------------------
+
+STEP 2 — Update Company Status
+
+For each call:
+
+If Outcome = "Decision Maker"
+    Companies.Lead_Status → "Working"
+
+If Outcome = "Qualified"
+    Companies.Lead_Status → "Working"
+
+If Outcome = "Won"
+    Companies.Lead_Status → "Won"
+
+If Outcome = "Not Interested"
+    Companies.Lead_Status → "Lost"
+
+If Outcome = "Gatekeeper"
+    Companies.Lead_Status stays unchanged
+
+--------------------------------------------------
+
+STEP 3 — Follow-Up Scheduling
+
+Automatically set Next_Followup:
+
+Outcome: No Answer
+    followup = now + 2 days
+
+Outcome: Gatekeeper
+    followup = now + 7 days
+
+Outcome: Decision Maker
+    followup = now + 5 days
+
+Outcome: Qualified
+    followup = now + 3 days
+
+Outcome: Callback
+    followup = now + 1 day
+
+Outcome: Won
+    no followup
+
+Outcome: Not Interested
+    followup = now + 90 days
+
+Write Next_Followup back to the Calls record.
+
+--------------------------------------------------
+
+STEP 4 — Company Engagement Score
+
+Add a new field in Companies (if missing):
+
+Engagement_Score (number)
+
+Rules:
+
++10 Decision Maker
++20 Qualified
++40 Won
+-10 Not Interested
+
+Update the company's Engagement_Score.
+
+--------------------------------------------------
+
+STEP 5 — Mark Call Processed
+
+Set Calls.Processed = true
+
+--------------------------------------------------
+
+STEP 6 — CLI Report
+
+Print summary:
+
+calls_processed
+companies_updated
+followups_scheduled
+
+--------------------------------------------------
+
+MINI TEST
+
+Create 2 fake Calls:
+
+Outcome = Decision Maker
+Outcome = No Answer
+
+Run engine.
+
+Confirm:
+• company status updated
+• Next_Followup created
+• Engagement score updated
+• Processed = true
+
+--------------------------------------------------
+
+DELIVERABLE
+
+Show files created and command to run.
