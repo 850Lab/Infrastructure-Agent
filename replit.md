@@ -48,6 +48,10 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/airtable-schema.ts` - Meta API functions (getBaseSchema, ensureTable, ensureField, ensureSchema); idempotent table/field creation for Search_Queries, Companies, Calls
 - `server/bootstrap.ts` - CLI runner: `npx tsx server/bootstrap.ts` to bootstrap all Airtable tables/fields
 
+### Call Outcome Engine
+- `server/call-engine.ts` - Processes logged calls: updates Company Lead_Status (Decision Maker/Qualified→Working, Won→Won, Not Interested→Lost), schedules follow-ups (No Answer +2d, Gatekeeper +7d, DM +5d, Qualified +3d, Callback +1d, Not Interested +90d), updates Engagement_Score (+10 DM, +20 Qualified, +40 Won, -10 Not Interested), marks Processed=true
+- `server/run-call-engine.ts` - CLI runner: `npx tsx server/run-call-engine.ts`
+
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
 - `server/active-work-routes.ts` - API endpoints (config, generate-queries, score, batch, high-score, rotate)

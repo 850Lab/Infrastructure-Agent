@@ -1,0 +1,241 @@
+const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+
+interface CallRecord {
+  id: string;
+  company: string;
+  outcome: string;
+  callTime: string;
+  notes: string;
+}
+
+interface EngineResult {
+  calls_processed: number;
+  companies_updated: number;
+  followups_scheduled: number;
+  details: Array<{
+    callId: string;
+    company: string;
+    outcome: string;
+    leadStatusSet: string | null;
+    followupDate: string | null;
+    engagementDelta: number;
+    error?: string;
+  }>;
+}
+
+const OUTCOME_TO_LEAD_STATUS: Record<string, string | null> = {
+  "Decision Maker": "Working",
+  "Qualified": "Working",
+  "Won": "Won",
+  "Not Interested": "Lost",
+  "Gatekeeper": null,
+  "No Answer": null,
+  "Callback": null,
+  "Lost": "Lost",
+};
+
+const OUTCOME_FOLLOWUP_DAYS: Record<string, number | null> = {
+  "No Answer": 2,
+  "Gatekeeper": 7,
+  "Decision Maker": 5,
+  "Qualified": 3,
+  "Callback": 1,
+  "Won": null,
+  "Not Interested": 90,
+  "Lost": null,
+};
+
+const OUTCOME_ENGAGEMENT_DELTA: Record<string, number> = {
+  "Decision Maker": 10,
+  "Qualified": 20,
+  "Won": 40,
+  "Not Interested": -10,
+};
+
+function logEngine(message: string) {
+  const time = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  console.log(`${time} [call-engine] ${message}`);
+}
+
+async function airtableRequest(path: string, options: RequestInit = {}): Promise<any> {
+  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) throw new Error("Airtable credentials not configured");
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Airtable error (${res.status}): ${text.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+export async function fetchUnprocessedCalls(): Promise<CallRecord[]> {
+  const table = encodeURIComponent("Calls");
+  const formula = encodeURIComponent("AND({Outcome} != '', {Call_Time} != '', NOT({Processed}))");
+  const calls: CallRecord[] = [];
+  let offset: string | undefined;
+
+  do {
+    const params = new URLSearchParams({ filterByFormula: decodeURIComponent(formula), pageSize: "100" });
+    if (offset) params.set("offset", offset);
+    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`);
+
+    for (const rec of data.records || []) {
+      calls.push({
+        id: rec.id,
+        company: String(rec.fields.Company || "").trim(),
+        outcome: String(rec.fields.Outcome || "").trim(),
+        callTime: String(rec.fields.Call_Time || ""),
+        notes: String(rec.fields.Notes || ""),
+      });
+    }
+    offset = data.offset;
+  } while (offset);
+
+  return calls;
+}
+
+async function findCompanyByName(companyName: string): Promise<{ id: string; engagementScore: number } | null> {
+  if (!companyName) return null;
+
+  const table = encodeURIComponent("Companies");
+  const escaped = companyName.replace(/'/g, "\\'");
+  const formula = encodeURIComponent(`LOWER({company_name}) = LOWER('${escaped}')`);
+
+  try {
+    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`);
+    const rec = data.records?.[0];
+    if (!rec) return null;
+    return {
+      id: rec.id,
+      engagementScore: parseInt(rec.fields.Engagement_Score || "0", 10) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function addDays(fromDate: Date, days: number): string {
+  const d = new Date(fromDate);
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
+export async function processCall(call: CallRecord): Promise<{
+  leadStatusSet: string | null;
+  followupDate: string | null;
+  engagementDelta: number;
+  companyUpdated: boolean;
+}> {
+  const callTable = encodeURIComponent("Calls");
+  const compTable = encodeURIComponent("Companies");
+
+  const newLeadStatus = OUTCOME_TO_LEAD_STATUS[call.outcome] ?? null;
+  const followupDays = OUTCOME_FOLLOWUP_DAYS[call.outcome] ?? null;
+  const engagementDelta = OUTCOME_ENGAGEMENT_DELTA[call.outcome] || 0;
+
+  let followupDate: string | null = null;
+  if (followupDays !== null) {
+    const baseDate = call.callTime ? new Date(call.callTime) : new Date();
+    followupDate = addDays(baseDate, followupDays);
+  }
+
+  let companyUpdated = false;
+  if (call.company) {
+    const company = await findCompanyByName(call.company);
+    if (company) {
+      const compUpdate: Record<string, any> = {};
+
+      if (newLeadStatus) {
+        compUpdate.Lead_Status = newLeadStatus;
+      }
+
+      if (engagementDelta !== 0) {
+        const newScore = Math.max(0, company.engagementScore + engagementDelta);
+        compUpdate.Engagement_Score = newScore;
+      }
+
+      if (Object.keys(compUpdate).length > 0) {
+        await airtableRequest(`${compTable}/${company.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ fields: compUpdate }),
+        });
+        companyUpdated = true;
+      }
+    } else {
+      logEngine(`Company not found: "${call.company}"`);
+    }
+  }
+
+  const callUpdate: Record<string, any> = { Processed: true };
+  if (followupDate) {
+    callUpdate.Next_Followup = followupDate;
+  }
+
+  await airtableRequest(`${callTable}/${call.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: callUpdate }),
+  });
+
+  return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated };
+}
+
+export async function runEngine(): Promise<EngineResult> {
+  logEngine("Fetching unprocessed calls...");
+  const calls = await fetchUnprocessedCalls();
+  logEngine(`Found ${calls.length} unprocessed calls`);
+
+  const result: EngineResult = {
+    calls_processed: 0,
+    companies_updated: 0,
+    followups_scheduled: 0,
+    details: [],
+  };
+
+  for (const call of calls) {
+    try {
+      logEngine(`Processing: ${call.company} — ${call.outcome}`);
+      const outcome = await processCall(call);
+
+      result.calls_processed++;
+      if (outcome.companyUpdated) result.companies_updated++;
+      if (outcome.followupDate) result.followups_scheduled++;
+
+      result.details.push({
+        callId: call.id,
+        company: call.company,
+        outcome: call.outcome,
+        leadStatusSet: outcome.leadStatusSet,
+        followupDate: outcome.followupDate,
+        engagementDelta: outcome.engagementDelta,
+      });
+    } catch (e: any) {
+      logEngine(`Error processing call ${call.id}: ${e.message}`);
+      result.details.push({
+        callId: call.id,
+        company: call.company,
+        outcome: call.outcome,
+        leadStatusSet: null,
+        followupDate: null,
+        engagementDelta: 0,
+        error: e.message,
+      });
+    }
+
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  return result;
+}

@@ -266,6 +266,7 @@ const COMPANIES_FIELDS: FieldSpec[] = [
       ],
     },
   },
+  { name: "Engagement_Score", type: "number", options: { precision: 0 } },
   { name: "Opportunity_Score", type: "number", options: { precision: 0 } },
   { name: "Opportunity_Notes", type: "multilineText" },
   {
@@ -319,6 +320,7 @@ const CALLS_FIELDS: FieldSpec[] = [
       timeZone: "America/Chicago",
     },
   },
+  { name: "Processed", type: "checkbox", options: { color: "greenBright", icon: "check" } },
 ];
 
 export async function ensureSchema(): Promise<SchemaReport> {
