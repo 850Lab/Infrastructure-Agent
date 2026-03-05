@@ -1,0 +1,96 @@
+Upgrade the Opportunity Engine to include a CALL LIST AUDITOR that guarantees:
+- Fresh lead inflow daily
+- Follow-ups never slip
+- Working opportunities get revisited on cadence
+
+GOAL:
+When generating Today_Call_List, do NOT just take top N Final_Priority.
+Instead, build Today_Call_List from 3 buckets with quotas, then fill remaining slots by score.
+
+NEW/ENSURE FIELDS (Companies):
+First_Seen (dateTime)  // set when record created if missing
+Times_Called (number)  // derived from Calls count
+Last_Outcome (singleLineText) // last Calls.Outcome
+Followup_Due (dateTime) // derived from Calls.Next_Followup (nearest upcoming)
+Bucket (single select) options: ["Hot Follow-up","Working","Fresh","Hold"]
+
+Also ensure Calls has:
+Next_Followup (dateTime)  // already created
+Outcome (single select)   // already created
+
+STEP 1 — Derive engagement facts per company
+For each eligible company:
+- Times_Called = count of Calls linked/matched to company
+- Last_Called = max(Calls.Call_Time)
+- Last_Outcome = outcome from most recent call
+- Followup_Due = min(Calls.Next_Followup where Next_Followup >= now and Outcome not Won/Lost)
+
+If linking is hard, match Calls to Companies by:
+- company_name/company_name field (use the actual field name in this base)
+- fallback match by Normalized_Domain if exists
+
+STEP 2 — Define the 3 buckets
+Bucket A: Hot Follow-up
+- Followup_Due is within next 0–2 days (including overdue)
+- Lead_Status not in Won/Lost
+Bucket B: Working
+- Lead_Status in ("Working","Called","Enriched")
+- Opportunity_Score >= 60 OR Engagement_Score > 0 OR Priority_Tier="A"
+- Last_Called is empty OR older than 3 days
+Bucket C: Fresh
+- Lead_Status="New" OR Times_Called = 0
+- First_Seen within last 14 days OR Priority_Tier="A"
+- Last_Called is empty
+
+STEP 3 — Quota rules for Today_Call_List (default top=25)
+- 40% Hot Follow-up (10 of 25)
+- 35% Working (9 of 25)
+- 25% Fresh (6 of 25)
+
+Make these configurable CLI flags:
+--top=25
+--pctHot=0.4
+--pctWorking=0.35
+--pctFresh=0.25
+
+Selection method within each bucket:
+- Sort by Final_Priority desc
+- Take top K per bucket
+- If a bucket has fewer than K, roll leftover slots into the next bucket, then finally into overall top score fill.
+
+STEP 4 — Freshness enforcement
+If Fresh bucket count < required pctFresh:
+- log "FRESHNESS_ALERT" with required vs available
+- also set a boolean field in Search_Queries or write an alert record:
+  "Need more fresh leads — enqueue more queries"
+(Do not auto-generate queries yet unless you already have that system)
+
+STEP 5 — Slip prevention
+If Hot Follow-up bucket has any overdue (Followup_Due < now):
+- log "SLIP_ALERT" with count
+- ensure those overdue are force-included even if their Final_Priority is not top
+
+STEP 6 — Writeback
+For each company selected:
+- Today_Call_List = true
+- Bucket = bucket name
+For companies not selected:
+- Today_Call_List = false (only if field exists; do not thrash updates if unchanged)
+
+LOGGING (must print):
+top_requested
+hot_selected
+working_selected
+fresh_selected
+overdue_followups_included
+freshness_alert (true/false + counts)
+
+MINI-TESTS:
+1) Create 2 companies with Followup_Due overdue -> ensure they appear in Today_Call_List and Bucket="Hot Follow-up".
+2) Ensure at least some Fresh leads appear even if their score is lower than Working leads.
+3) Re-run: list should be stable unless new calls/followups change facts.
+
+DELIVERABLE:
+Update server/opportunity-engine.ts to include bucket logic.
+Update CLI runner to accept new flags.
+Update replit.md with "How to generate tomorrow's call list" steps.

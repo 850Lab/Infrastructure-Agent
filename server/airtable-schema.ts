@@ -278,6 +278,40 @@ const COMPANIES_FIELDS: FieldSpec[] = [
       timeZone: "America/Chicago",
     },
   },
+  {
+    name: "First_Seen",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
+  { name: "Times_Called", type: "number", options: { precision: 0 } },
+  { name: "Last_Outcome", type: "singleLineText" },
+  {
+    name: "Followup_Due",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
+  {
+    name: "Bucket",
+    type: "singleSelect",
+    options: {
+      choices: [
+        { name: "Hot Follow-up", color: "redLight2" },
+        { name: "Working", color: "orangeLight2" },
+        { name: "Fresh", color: "blueLight2" },
+        { name: "Hold", color: "grayLight2" },
+      ],
+    },
+  },
+  { name: "Final_Priority", type: "number", options: { precision: 0 } },
+  { name: "Today_Call_List", type: "checkbox", options: { color: "greenBright", icon: "check" } },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

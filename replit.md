@@ -52,6 +52,12 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - `server/call-engine.ts` - Processes logged calls: updates Company Lead_Status (Decision Maker/Qualified→Working, Won→Won, Not Interested→Lost), schedules follow-ups (No Answer +2d, Gatekeeper +7d, DM +5d, Qualified +3d, Callback +1d, Not Interested +90d), updates Engagement_Score (+10 DM, +20 Qualified, +40 Won, -10 Not Interested), marks Processed=true
 - `server/run-call-engine.ts` - CLI runner: `npx tsx server/run-call-engine.ts`
 
+### Opportunity Engine + Call List Auditor
+- `server/opportunity-engine.ts` - Bucket-based call list generator: derives engagement facts per company (Times_Called, Last_Outcome, Followup_Due from Calls), assigns 3 buckets (Hot Follow-up: overdue/due in 0-2d; Working: status Working/Called/Enriched with signals, last called >3d; Fresh: New/never called, first seen within 14d), fills Today_Call_List by quota (40% hot, 35% working, 25% fresh) with leftover rollover and score-fill, writes back Final_Priority/Bucket/Today_Call_List to Companies
+- `server/run-opportunity-engine.ts` - CLI runner: `npx tsx server/run-opportunity-engine.ts --top=25 --pctHot=0.4 --pctWorking=0.35 --pctFresh=0.25`
+- Alerts: FRESHNESS_ALERT (not enough fresh leads), SLIP_ALERT (overdue followups force-included)
+- Companies fields: First_Seen, Times_Called, Last_Outcome, Followup_Due, Bucket, Final_Priority, Today_Call_List
+
 ### Active Work Finder
 - `server/active-work.ts` - Query generation, website scoring via GPT-4o, Airtable sync
 - `server/active-work-routes.ts` - API endpoints (config, generate-queries, score, batch, high-score, rotate)
