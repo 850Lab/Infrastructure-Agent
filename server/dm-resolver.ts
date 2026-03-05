@@ -1,3 +1,5 @@
+import { getIndustryConfig } from "./config";
+
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
@@ -82,45 +84,22 @@ export async function fetchAllDecisionMakers(): Promise<DMCandidate[]> {
   return dms;
 }
 
-const TITLE_TIERS: Array<{ tier: number; patterns: RegExp[] }> = [
-  {
-    tier: 1,
-    patterns: [
-      /safety\s*(director|manager)/i,
-      /hse\s*manager/i,
-      /ehs\s*manager/i,
-      /health.*safety/i,
-    ],
-  },
-  {
-    tier: 2,
-    patterns: [
-      /project\s*manager/i,
-      /turnaround\s*manager/i,
-      /shutdown\s*manager/i,
-    ],
-  },
-  {
-    tier: 3,
-    patterns: [
-      /operations\s*manager/i,
-      /plant\s*manager/i,
-      /maintenance\s*manager/i,
-    ],
-  },
-  {
-    tier: 4,
-    patterns: [
-      /superintendent/i,
-      /general\s*manager/i,
-      /vp.*operations/i,
-      /vice\s*president.*operations/i,
-    ],
-  },
-];
+function buildTitleTiers(): Array<{ tier: number; patterns: RegExp[] }> {
+  const cfg = getIndustryConfig().decision_maker_titles;
+  function titlesToPatterns(titles: string[]): RegExp[] {
+    return titles.map(t => new RegExp(t.replace(/\s+/g, "\\s*"), "i"));
+  }
+  return [
+    { tier: 1, patterns: titlesToPatterns(cfg.tier1) },
+    { tier: 2, patterns: titlesToPatterns(cfg.tier2) },
+    { tier: 3, patterns: titlesToPatterns(cfg.tier3) },
+    { tier: 4, patterns: titlesToPatterns(cfg.tier4) },
+  ];
+}
 
 function getTitleTier(title: string): number {
-  for (const t of TITLE_TIERS) {
+  const tiers = buildTitleTiers();
+  for (const t of tiers) {
     for (const p of t.patterns) {
       if (p.test(title)) return t.tier;
     }

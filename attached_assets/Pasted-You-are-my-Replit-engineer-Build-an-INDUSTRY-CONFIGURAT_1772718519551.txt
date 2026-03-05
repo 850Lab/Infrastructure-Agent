@@ -1,0 +1,109 @@
+You are my Replit engineer. Build an INDUSTRY CONFIGURATION SYSTEM so the platform can run for multiple industries without changing core code.
+
+GOAL:
+Move industry-specific logic (keywords, categories, titles, scoring signals, query templates) into a configuration layer that can be swapped per deployment.
+
+Create folder:
+config/
+
+Create file:
+config/industry-default.ts
+
+Structure:
+
+export const IndustryConfig = {
+  name: "Industrial Contractors",
+  market: "Gulf Coast",
+
+  company_categories: [
+    "Scaffolding",
+    "Insulation",
+    "Industrial Maintenance",
+    "Turnaround",
+    "Tank Cleaning",
+    "Coatings",
+    "Mechanical",
+    "Construction"
+  ],
+
+  opportunity_keywords: [
+    "refinery",
+    "chemical plant",
+    "turnaround",
+    "shutdown",
+    "maintenance",
+    "outage"
+  ],
+
+  decision_maker_titles: [
+    "Safety Manager",
+    "Safety Director",
+    "HSE Manager",
+    "EHS Manager",
+    "Project Manager",
+    "Turnaround Manager",
+    "Operations Manager",
+    "Maintenance Manager"
+  ],
+
+  search_templates: [
+    "{category} contractors {city} refinery",
+    "{category} contractors {state} chemical plant",
+    "{category} companies {market}"
+  ],
+
+  scoring: {
+    opportunity_keyword: 30,
+    dm_email_bonus: 5,
+    dm_phone_bonus: 5,
+    engagement_bonus: 10
+  }
+}
+
+IMPLEMENTATION:
+
+1. Load this config globally:
+   server/config.ts
+
+2. Update the following systems to reference config values instead of hardcoded strings:
+
+- query-intel.ts
+- opportunity-engine.ts
+- dm-resolver.ts
+- lead-feed.ts
+
+3. Replace hardcoded keywords with:
+IndustryConfig.opportunity_keywords
+
+4. Replace DM title tiers with:
+IndustryConfig.decision_maker_titles
+
+5. Replace query templates with:
+IndustryConfig.search_templates
+
+6. Log active config at startup:
+
+console.log("Industry config loaded:", IndustryConfig.name)
+
+7. Allow override via environment variable:
+
+INDUSTRY_CONFIG=industrial
+INDUSTRY_CONFIG=saas
+INDUSTRY_CONFIG=real_estate
+
+If a config file exists in:
+
+config/industry-${INDUSTRY_CONFIG}.ts
+
+load that instead of default.
+
+MINI TEST
+
+Start system with:
+
+INDUSTRY_CONFIG=industrial
+
+Ensure logs show:
+"Industry config loaded: Industrial Contractors"
+
+Verify opportunity detection and query generation use config values.

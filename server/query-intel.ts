@@ -1,5 +1,6 @@
 import { log } from "./logger";
 import OpenAI from "openai";
+import { getIndustryConfig } from "./config";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -434,31 +435,14 @@ function generateColdStartQueries(
   market: string,
   count: number
 ): Array<{ query: string; category: string; market: string; rationale: string }> {
-  const templates = [
-    { query: "industrial scaffolding contractors", category: "Scaffolding", rationale: "COLD_START_MODE: baseline scaffolding query" },
-    { query: "refinery insulation contractors", category: "Insulation", rationale: "COLD_START_MODE: refinery insulation" },
-    { query: "turnaround maintenance services", category: "Turnaround", rationale: "COLD_START_MODE: turnaround services" },
-    { query: "tank cleaning services industrial", category: "Tank Cleaning", rationale: "COLD_START_MODE: tank cleaning" },
-    { query: "industrial coatings contractors", category: "Coatings", rationale: "COLD_START_MODE: coatings" },
-    { query: "plant maintenance contractors", category: "Industrial Maintenance", rationale: "COLD_START_MODE: plant maintenance" },
-    { query: "shutdown maintenance contractors", category: "Turnaround", rationale: "COLD_START_MODE: shutdown services" },
-    { query: "mechanical contractors industrial", category: "Mechanical", rationale: "COLD_START_MODE: mechanical" },
-    { query: "fireproofing contractors refinery", category: "Coatings", rationale: "COLD_START_MODE: fireproofing" },
-    { query: "industrial cleaning services chemical plant", category: "Tank Cleaning", rationale: "COLD_START_MODE: chemical plant cleaning" },
-    { query: "scaffolding erectors petrochemical", category: "Scaffolding", rationale: "COLD_START_MODE: petrochemical scaffolding" },
-    { query: "heat tracing contractors", category: "Mechanical", rationale: "COLD_START_MODE: heat tracing" },
-    { query: "abrasive blasting contractors", category: "Coatings", rationale: "COLD_START_MODE: blasting" },
-    { query: "refractory contractors industrial", category: "Industrial Maintenance", rationale: "COLD_START_MODE: refractory" },
-    { query: "industrial insulation removal asbestos", category: "Insulation", rationale: "COLD_START_MODE: insulation removal" },
-    { query: "rope access industrial services", category: "Industrial Maintenance", rationale: "COLD_START_MODE: rope access" },
-    { query: "hydro blasting services refinery", category: "Tank Cleaning", rationale: "COLD_START_MODE: hydro blasting" },
-    { query: "catalyst handling services", category: "Turnaround", rationale: "COLD_START_MODE: catalyst handling" },
-    { query: "pipe fitting contractors industrial", category: "Mechanical", rationale: "COLD_START_MODE: pipe fitting" },
-    { query: "industrial construction general contractors", category: "Construction", rationale: "COLD_START_MODE: general industrial construction" },
-  ];
+  const cfg = getIndustryConfig();
+  const templates = cfg.cold_start_queries.map(q => ({
+    query: q.query,
+    category: q.category,
+    rationale: `COLD_START_MODE: ${q.category.toLowerCase()}`,
+  }));
 
-  const cities = ["houston", "beaumont", "lake charles", "port arthur", "baton rouge",
-    "texas city", "pasadena tx", "baytown", "deer park", "la porte"];
+  const cities = cfg.geo.cities;
 
   const result: Array<{ query: string; category: string; market: string; rationale: string }> = [];
   const seen = new Set<string>();
@@ -495,9 +479,7 @@ async function generateIntelligentQueries(
     if (w.city) cityCounts[w.city] = (cityCounts[w.city] || 0) + 1;
 
     const text = `${w.companyName} ${w.notes}`.toLowerCase();
-    const kws = ["refinery", "turnaround", "shutdown", "scaffold", "insulation",
-      "tank cleaning", "coatings", "plant services", "petrochemical", "chemical plant",
-      "mechanical", "maintenance", "fireproofing", "blasting", "pipe"];
+    const kws = getIndustryConfig().opportunity_keywords;
     for (const kw of kws) {
       if (text.includes(kw)) keywords.push(kw);
     }
@@ -515,21 +497,21 @@ async function generateIntelligentQueries(
 
   const topKeywords = [...new Set(keywords)].slice(0, 10);
 
-  const prompt = `You are a B2B lead generation expert for Gulf Coast industrial contractors.
+  const cfg = getIndustryConfig();
+  const defaultCategories = cfg.company_categories.slice(0, 3).join(", ");
+  const defaultCities = cfg.geo.cities.slice(0, 3).join(", ");
+  const defaultKeywords = cfg.opportunity_keywords.slice(0, 4).join(", ");
+
+  const prompt = `You are a B2B lead generation expert for ${cfg.name} in ${cfg.market}.
 
 Based on these winning patterns from our best leads:
-- Top categories: ${topCategories.join(", ") || "Scaffolding, Insulation, Industrial Maintenance"}
-- Top cities: ${topCities.join(", ") || "Houston, Beaumont, Lake Charles"}
-- Common keywords: ${topKeywords.join(", ") || "refinery, turnaround, insulation, scaffolding"}
+- Top categories: ${topCategories.join(", ") || defaultCategories}
+- Top cities: ${topCities.join(", ") || defaultCities}
+- Common keywords: ${topKeywords.join(", ") || defaultKeywords}
 - Market: ${market}
 
-Generate exactly ${count} unique Google Maps search queries to find industrial contractors.
+Generate exactly ${count} unique Google Maps search queries to find ${cfg.name.toLowerCase()}.
 Each query should combine: category + location + 1-2 industry keywords.
-
-Examples of good queries:
-"scaffolding contractors houston refinery turnaround"
-"industrial insulation contractors beaumont shutdown"
-"tank cleaning contractors lake charles chemical plant"
 
 Return strict JSON only:
 {
@@ -539,7 +521,7 @@ Return strict JSON only:
   ]
 }
 
-Valid categories: Scaffolding, Insulation, Industrial Maintenance, Turnaround, Tank Cleaning, Coatings, Mechanical, Construction, Other`;
+Valid categories: ${cfg.company_categories.join(", ")}`;
 
   try {
     const response = await proxyClient.chat.completions.create({

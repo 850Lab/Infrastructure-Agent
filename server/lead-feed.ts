@@ -1,6 +1,7 @@
-import { log } from "./index";
+import { log } from "./logger";
 import OpenAI from "openai";
 import { searchGoogleMaps } from "./outscraper";
+import { getIndustryConfig } from "./config";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -13,23 +14,14 @@ const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const QUERIES_TABLE = "Search Queries";
 const COMPANIES_TABLE = "Companies";
 
-const HIGH_VALUE_CATEGORIES = new Set([
-  "industrial maintenance",
-  "scaffolding",
-  "insulation",
-  "turnaround",
-  "tank cleaning",
-  "industrial painting/coatings",
-  "industrial painting",
-  "industrial coatings",
-  "industrial construction",
-]);
+function getHighValueCategories(): Set<string> {
+  const cfg = getIndustryConfig();
+  return new Set(cfg.lead_feed.high_value_categories.map(c => c.toLowerCase()));
+}
 
-const INDUSTRIAL_KEYWORDS = [
-  "refinery", "plant", "industrial", "turnaround", "shutdown",
-  "petrochemical", "chemical plant", "pipeline", "tank",
-  "scaffolding", "insulation", "hydroblasting", "abatement",
-];
+function getIndustrialKeywords(): string[] {
+  return getIndustryConfig().lead_feed.industrial_keywords;
+}
 
 const RESIDENTIAL_KEYWORDS = [
   "residential only", "home remodeling", "kitchen remodel",
@@ -37,37 +29,19 @@ const RESIDENTIAL_KEYWORDS = [
   "lawn care", "pool cleaning", "handyman",
 ];
 
-const GULF_COAST_MARKETS = [
-  "Houston TX", "Baytown TX", "Deer Park TX", "Pasadena TX", "La Porte TX",
-  "Texas City TX", "Galveston TX", "Freeport TX", "Channelview TX",
-  "Port Arthur TX", "Beaumont TX", "Orange TX", "Nederland TX",
-  "Lake Charles LA", "Sulphur LA", "Westlake LA",
-  "Baton Rouge LA", "Plaquemine LA", "Geismar LA",
-  "Corpus Christi TX", "Victoria TX",
-];
+function getMarkets(): string[] {
+  const cfg = getIndustryConfig();
+  const markets: string[] = [];
+  for (const city of cfg.geo.cities) {
+    const state = cfg.geo.states[0] || "TX";
+    markets.push(`${city} ${state}`);
+  }
+  return markets;
+}
 
-const SEARCH_CATEGORIES = [
-  "industrial scaffolding contractor",
-  "industrial insulation contractor",
-  "turnaround contractor",
-  "refinery maintenance contractor",
-  "industrial painting contractor",
-  "tank cleaning services",
-  "hydroblasting services",
-  "industrial cleaning contractor",
-  "mechanical insulation contractor",
-  "fireproofing contractor",
-  "abatement contractor industrial",
-  "plant maintenance contractor",
-  "shutdown contractor",
-  "petrochemical construction contractor",
-  "industrial coatings contractor",
-  "refractory contractor",
-  "industrial sandblasting",
-  "heat exchanger cleaning",
-  "industrial vacuum services",
-  "plant turnaround services",
-];
+function getSearchCategories(): string[] {
+  return getIndustryConfig().lead_feed.query_seeds;
+}
 
 async function airtableRequest(path: string, options: RequestInit = {}): Promise<any> {
   if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) throw new Error("Airtable credentials not configured");
