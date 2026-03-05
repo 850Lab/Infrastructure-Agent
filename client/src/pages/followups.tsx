@@ -16,7 +16,7 @@ export default function FollowupsPage() {
     <AppLayout showBackToChip>
       <div className="p-6 space-y-6">
         <div className="flex items-center gap-3 mb-1">
-          <span className="text-xs font-mono tracking-wider uppercase" style={{ color: "rgba(45,212,191,0.5)" }}>Call Engine</span>
+          <span className="text-xs font-mono tracking-wider uppercase" style={{ color: "#94A3B8" }}>Call Engine</span>
         </div>
         <h1 className="text-2xl font-bold glow-text" data-testid="text-page-title">Follow-ups</h1>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

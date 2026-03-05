@@ -28,12 +28,16 @@ Three-column layout + bottom timeline:
 - **Section nav**: 5 pill buttons (Today, Follow-ups, Lead Engine, Contacts, Analytics) that glow when their related steps are active
 
 ### Color Palette
-- Background: #070B12
-- Primary neon (standby): #2DD4BF (teal)
-- Active firing: #22D3EE (electric cyan)
-- Signal pulse: #38BDF8 (signal blue)
+- Background: #FFFFFF (white)
+- Foreground / bold text: #0F172A (near black)
+- Primary accent: #10B981 (emerald green)
+- Active/running accent: #059669 (darker emerald)
 - Error: #EF4444 (red)
-- Glass panels: rgba(255,255,255,0.02) bg + rgba(255,255,255,0.06) border + backdrop blur
+- Muted text: #94A3B8 (slate-400)
+- Secondary text: #64748B (slate-500)
+- Card backgrounds: #FFFFFF with #E2E8F0 borders
+- Subtle backgrounds: #F8FAFC
+- Buttons: bold black (#0F172A) primary, emerald for accents
 
 ### SSE State Mapping
 - RUN_STARTED → runStatus=running, set lastRunId

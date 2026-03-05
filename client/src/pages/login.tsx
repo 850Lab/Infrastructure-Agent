@@ -30,10 +30,10 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card className="w-full max-w-md glow-card" data-testid="login-card">
+      <Card className="w-full max-w-md" style={{ border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }} data-testid="login-card">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <svg width="32" height="32" viewBox="0 0 32 32" className="text-primary">
+          <div className="mx-auto mb-4 w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "rgba(16,185,129,0.08)" }}>
+            <svg width="32" height="32" viewBox="0 0 32 32" style={{ color: "#10B981" }}>
               <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeWidth="2" />
               <circle cx="16" cy="16" r="6" fill="currentColor" opacity="0.6" />
               <line x1="16" y1="2" x2="16" y2="8" stroke="currentColor" strokeWidth="2" />
@@ -42,8 +42,8 @@ export default function LoginPage() {
               <line x1="24" y1="16" x2="30" y2="16" stroke="currentColor" strokeWidth="2" />
             </svg>
           </div>
-          <CardTitle className="text-2xl font-bold glow-text">Neural OS</CardTitle>
-          <p className="text-muted-foreground text-sm mt-1">Lead Engine Command Center</p>
+          <CardTitle className="text-2xl font-bold" style={{ color: "#0F172A" }}>Neural OS</CardTitle>
+          <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>Lead Engine Command Center</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -57,7 +57,6 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 data-testid="input-email"
-                className="bg-muted/50 border-border"
               />
             </div>
             <div className="space-y-2">
@@ -65,12 +64,11 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 data-testid="input-password"
-                className="bg-muted/50 border-border"
               />
             </div>
             {error && (
@@ -80,7 +78,8 @@ export default function LoginPage() {
             )}
             <Button
               type="submit"
-              className="w-full bg-primary hover:bg-primary/90 glow-border"
+              className="w-full font-bold"
+              style={{ background: "#0F172A", color: "#FFFFFF" }}
               disabled={loading}
               data-testid="button-login"
             >

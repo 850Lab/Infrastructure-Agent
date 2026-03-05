@@ -11,14 +11,14 @@ interface StatusPillProps {
 
 function StatusPill({ status }: StatusPillProps) {
   const config = {
-    standby: { label: "Standby", color: "#2DD4BF", bg: "rgba(45,212,191,0.1)", border: "rgba(45,212,191,0.2)" },
-    running: { label: "Running", color: "#22D3EE", bg: "rgba(34,211,238,0.15)", border: "rgba(34,211,238,0.3)" },
-    error: { label: "Error", color: "#EF4444", bg: "rgba(239,68,68,0.15)", border: "rgba(239,68,68,0.3)" },
+    standby: { label: "Standby", color: "#10B981", bg: "rgba(16,185,129,0.06)", border: "rgba(16,185,129,0.2)" },
+    running: { label: "Running", color: "#059669", bg: "rgba(5,150,105,0.08)", border: "rgba(5,150,105,0.25)" },
+    error: { label: "Error", color: "#EF4444", bg: "rgba(239,68,68,0.06)", border: "rgba(239,68,68,0.2)" },
   };
   const { label, color, bg, border } = config[status];
   return (
     <span
-      className={`px-3 py-1 rounded-full text-xs font-medium font-mono ${status === "running" ? "animate-pulse" : ""}`}
+      className={`px-3 py-1 rounded-full text-xs font-semibold ${status === "running" ? "animate-pulse" : ""}`}
       style={{ background: bg, color, border: `1px solid ${border}` }}
       data-testid="status-pill"
     >
@@ -44,23 +44,23 @@ export default function AppLayout({ children, runStatus = "standby", showBackToC
   const { logout } = useAuth();
 
   return (
-    <div className="min-h-screen" style={{ background: "#070B12" }}>
-      <nav className="sticky top-0 z-50" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(7,11,18,0.88)", backdropFilter: "blur(16px)" }}>
+    <div className="min-h-screen bg-background">
+      <nav className="sticky top-0 z-50 bg-white" style={{ borderBottom: "1px solid #E2E8F0" }}>
         <div className="max-w-[1400px] mx-auto px-4 flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             {showBackToChip && location !== "/dashboard" ? (
               <Link href="/dashboard">
-                <Button variant="outline" size="sm" style={{ color: "#2DD4BF", borderColor: "rgba(45,212,191,0.25)", background: "rgba(45,212,191,0.05)" }} data-testid="button-back-to-chip">
-                  <Activity className="w-4 h-4 mr-1.5" />
+                <Button variant="outline" size="sm" className="font-semibold" style={{ color: "#0F172A", borderColor: "#E2E8F0" }} data-testid="button-back-to-chip">
+                  <Activity className="w-4 h-4 mr-1.5" style={{ color: "#10B981" }} />
                   Back to Dashboard
                 </Button>
               </Link>
             ) : (
               <Link href="/dashboard" className="flex items-center gap-2.5" data-testid="link-home">
-                <Activity className="w-5 h-5" style={{ color: "#2DD4BF" }} />
+                <Activity className="w-5 h-5" style={{ color: "#10B981" }} />
                 <div className="flex flex-col">
-                  <span className="font-bold text-base tracking-tight leading-none" style={{ color: "#2DD4BF" }}>Neural OS</span>
-                  <span className="text-xs font-mono leading-none mt-0.5" style={{ color: "rgba(255,255,255,0.25)" }}>Command Center</span>
+                  <span className="font-bold text-base tracking-tight leading-none" style={{ color: "#0F172A" }}>Neural OS</span>
+                  <span className="text-xs leading-none mt-0.5" style={{ color: "#94A3B8" }}>Command Center</span>
                 </div>
               </Link>
             )}
@@ -73,7 +73,7 @@ export default function AppLayout({ children, runStatus = "standby", showBackToC
               variant="ghost"
               size="sm"
               onClick={logout}
-              style={{ color: "rgba(255,255,255,0.35)" }}
+              style={{ color: "#64748B" }}
               className="hover:text-foreground"
               data-testid="button-logout"
             >
