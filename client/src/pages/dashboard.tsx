@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useSSE } from "@/lib/use-sse";
 import { useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/app-layout";
+import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
 import { Play, ChevronDown, ChevronUp, FileText } from "lucide-react";
 
@@ -42,132 +43,6 @@ const EMERALD = "#10B981";
 const EMERALD_DARK = "#059669";
 const ERROR_RED = "#EF4444";
 
-function PulseReactor({ runStatus, shockwave, burst }: {
-  runStatus: "standby" | "running" | "error";
-  shockwave: number;
-  burst: number;
-}) {
-  const ringColor = runStatus === "error" ? ERROR_RED : runStatus === "running" ? EMERALD_DARK : EMERALD;
-  const innerGlow = runStatus === "error" ? "rgba(239,68,68,0.08)" : runStatus === "running" ? "rgba(16,185,129,0.08)" : "rgba(16,185,129,0.04)";
-
-  return (
-    <div className="relative flex items-center justify-center" style={{ width: "100%", aspectRatio: "1" }}>
-      <AnimatePresence>
-        {shockwave > 0 && (
-          <motion.div
-            key={`shock-${shockwave}`}
-            className="absolute rounded-full"
-            style={{ border: `2px solid ${ringColor}` }}
-            initial={{ width: "40%", height: "40%", opacity: 0.7 }}
-            animate={{ width: "110%", height: "110%", opacity: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {burst > 0 && (
-          <motion.div
-            key={`burst-${burst}`}
-            className="absolute rounded-full"
-            style={{ background: `radial-gradient(circle, ${ringColor}20 0%, transparent 70%)` }}
-            initial={{ width: "50%", height: "50%", opacity: 0.5 }}
-            animate={{ width: "90%", height: "90%", opacity: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          />
-        )}
-      </AnimatePresence>
-
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          width: "85%",
-          height: "85%",
-          border: "1px solid rgba(16,185,129,0.1)",
-        }}
-        animate={{ scale: runStatus === "running" ? [1, 1.03, 1] : [1, 1.01, 1] }}
-        transition={{ duration: runStatus === "running" ? 1.5 : 3, repeat: Infinity, ease: "easeInOut" }}
-      />
-
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          width: "65%",
-          height: "65%",
-          border: "1px solid rgba(16,185,129,0.12)",
-        }}
-        animate={{ scale: runStatus === "running" ? [1, 1.05, 1] : [1, 1.02, 1] }}
-        transition={{ duration: runStatus === "running" ? 1.2 : 2.8, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
-      />
-
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          width: "50%",
-          height: "50%",
-          background: innerGlow,
-          boxShadow: `0 0 40px ${ringColor}15, 0 0 80px ${ringColor}08`,
-        }}
-        animate={{
-          scale: runStatus === "running" ? [1, 1.08, 1] : runStatus === "error" ? [1, 1.1, 0.95, 1] : [1, 1.03, 1],
-          opacity: runStatus === "error" ? [0.6, 1, 0.4, 0.8] : undefined,
-        }}
-        transition={{
-          duration: runStatus === "running" ? 1 : runStatus === "error" ? 0.6 : 3,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
-      />
-
-      {runStatus === "running" && (
-        <motion.div
-          className="absolute rounded-full"
-          style={{
-            width: "50%",
-            height: "50%",
-            background: `conic-gradient(from 0deg, transparent 0deg, ${ringColor}20 30deg, transparent 60deg)`,
-          }}
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-        />
-      )}
-
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          width: "48%",
-          height: "48%",
-          border: `2px solid ${ringColor}`,
-          boxShadow: `0 0 12px ${ringColor}25`,
-        }}
-        animate={{
-          scale: runStatus === "running" ? [1, 1.04, 1] : [1, 1.015, 1],
-          borderColor: runStatus === "error" ? [ERROR_RED, "#EF444480", ERROR_RED] : undefined,
-        }}
-        transition={{
-          duration: runStatus === "running" ? 1 : 3.2,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
-      />
-
-      <div className="absolute flex flex-col items-center justify-center text-center z-10">
-        <span className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-          reactor
-        </span>
-        <span
-          className="text-lg font-bold font-mono tracking-wider mt-1"
-          style={{ color: ringColor }}
-          data-testid="reactor-status"
-        >
-          {runStatus === "running" ? "ACTIVE" : runStatus === "error" ? "FAULT" : "IDLE"}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function StepTimeline({ activeNodes, doneSteps, runStatus }: {
   activeNodes: Set<string>;
@@ -227,7 +102,9 @@ export default function DashboardPage() {
   const [shockwave, setShockwave] = useState(0);
   const [burst, setBurst] = useState(0);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [eventRate, setEventRate] = useState(0);
   const lastEventCount = useRef(0);
+  const eventTimestamps = useRef<number[]>([]);
 
   const { data: stats } = useQuery<{
     today_list_count: number | null;
@@ -267,8 +144,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (recentEvents.length === 0 || recentEvents.length === lastEventCount.current) return;
+    const newCount = recentEvents.length - lastEventCount.current;
     lastEventCount.current = recentEvents.length;
     const last = recentEvents[recentEvents.length - 1];
+
+    const now = Date.now();
+    for (let i = 0; i < newCount; i++) eventTimestamps.current.push(now);
+    eventTimestamps.current = eventTimestamps.current.filter(t => now - t < 3000);
+    setEventRate(eventTimestamps.current.length / 3);
 
     if (last.type === "STEP_STARTED") {
       setShockwave((s) => s + 1);
@@ -284,6 +167,15 @@ export default function DashboardPage() {
       setDoneSteps(new Set());
     }
   }, [recentEvents]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      eventTimestamps.current = eventTimestamps.current.filter(t => now - t < 3000);
+      setEventRate(eventTimestamps.current.length / 3);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleRunNow = useCallback(async () => {
     if (runStatus === "running" || runLoading) return;
@@ -308,7 +200,7 @@ export default function DashboardPage() {
       : "Listening for triggers";
 
   const displayEvents = recentEvents.slice(-30).reverse();
-  const displayHistory = (runHistory || []).slice(0, 10);
+  const displayHistory = (runHistory || []).slice(0, 5);
 
   const kpis = [
     { label: "Today List", value: stats?.today_list_count },
@@ -449,8 +341,21 @@ export default function DashboardPage() {
           </div>
 
           <div className="lg:col-span-2 flex items-center justify-center">
-            <div className="w-full max-w-md">
-              <PulseReactor runStatus={runStatus} shockwave={shockwave} burst={burst} />
+            <div className="w-full max-w-lg">
+              <NeuralNetwork
+                runStatus={runStatus}
+                activeNodes={activeNodes}
+                doneSteps={doneSteps}
+                shockwave={shockwave}
+                burst={burst}
+                machineMetrics={machineMetrics ? {
+                  wins_total: machineMetrics.wins_total,
+                  calls_total: machineMetrics.calls_total,
+                } : null}
+                runHistory={runHistory ?? null}
+                eventRate={eventRate}
+                onNodeClick={(route) => navigate(route)}
+              />
             </div>
           </div>
 

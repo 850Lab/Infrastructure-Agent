@@ -22,7 +22,7 @@ A B2B lead generation and call management system targeting Gulf Coast industrial
 ### Dashboard Layout
 Three-column layout + bottom timeline:
 - **Left column**: System Status card (STANDBY/RUNNING/ERROR + KPIs) + Run Now button
-- **Center column**: Pulse Reactor (animated concentric rings — breathing standby, rotating sweep running, red flicker error, shockwave on STEP_STARTED, burst on TRIGGER_FIRED)
+- **Center column**: Neural Network (8-node SVG graph — Market Discovery, Lead Feed, Opportunity Engine, DM Mapping, Offer Fit Engine, Playbook Generator, Call Intelligence, Learning Engine; standby breathing, trigger node spikes + edge pulses, learning mode confidence glow + edge weight, brainwave strip, clickable nodes navigate to pages)
 - **Right column**: Run History (expandable, last 10 runs) + Event Log (latest 30 SSE events)
 - **Bottom row**: Step Timeline chips (bootstrap → opportunity_engine → dm_coverage → dm_fit → playbooks → call_engine → query_intel → lead_feed)
 - **Section nav**: 5 pill buttons (Today, Follow-ups, Lead Engine, Contacts, Analytics) that glow when their related steps are active
