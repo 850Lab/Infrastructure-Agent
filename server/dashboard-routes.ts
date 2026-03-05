@@ -53,7 +53,7 @@ function validateToken(token: string): boolean {
   return true;
 }
 
-function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
