@@ -1,7 +1,7 @@
 import { useLocation, Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
-import { LogOut, Cpu } from "lucide-react";
+import { LogOut, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
 
@@ -11,13 +11,17 @@ interface StatusPillProps {
 
 function StatusPill({ status }: StatusPillProps) {
   const config = {
-    standby: { label: "Standby", className: "bg-muted text-muted-foreground" },
-    running: { label: "Running", className: "bg-primary/20 text-primary animate-pulse" },
-    error: { label: "Error", className: "bg-destructive/20 text-destructive" },
+    standby: { label: "Standby", bg: "rgba(45,212,191,0.1)", color: "#2DD4BF", border: "rgba(45,212,191,0.2)" },
+    running: { label: "Running", bg: "rgba(34,211,238,0.15)", color: "#22D3EE", border: "rgba(34,211,238,0.3)" },
+    error: { label: "Error", bg: "rgba(239,68,68,0.15)", color: "#EF4444", border: "rgba(239,68,68,0.3)" },
   };
-  const { label, className } = config[status];
+  const { label, bg, color, border } = config[status];
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium ${className}`} data-testid="status-pill">
+    <span
+      className={`px-3 py-1 rounded-full text-xs font-medium ${status === "running" ? "animate-pulse" : ""}`}
+      style={{ background: bg, color, border: `1px solid ${border}` }}
+      data-testid="status-pill"
+    >
       {label}
     </span>
   );
@@ -40,21 +44,22 @@ export default function AppLayout({ children, runStatus = "standby", showBackToC
   const { logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-background">
-      <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
+    <div className="min-h-screen" style={{ background: "#070B12" }}>
+      <nav className="sticky top-0 z-50" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(7,11,18,0.85)", backdropFilter: "blur(12px)" }}>
         <div className="max-w-[1400px] mx-auto px-4 flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             {showBackToChip && location !== "/dashboard" ? (
               <Link href="/dashboard">
-                <Button variant="outline" size="sm" className="text-primary border-primary/30" data-testid="button-back-to-chip">
-                  <Cpu className="w-4 h-4 mr-1" />
-                  Back to Chip
+                <Button variant="outline" size="sm" style={{ color: "#2DD4BF", borderColor: "rgba(45,212,191,0.3)" }} data-testid="button-back-to-chip">
+                  <Brain className="w-4 h-4 mr-1" />
+                  Back to Brain
                 </Button>
               </Link>
             ) : (
-              <Link href="/dashboard" className="text-primary font-bold text-lg tracking-tight flex items-center gap-2" data-testid="link-home">
-                <Cpu className="w-5 h-5" />
-                Motherboard
+              <Link href="/dashboard" className="font-bold text-lg tracking-tight flex items-center gap-2" style={{ color: "#2DD4BF" }} data-testid="link-home">
+                <Brain className="w-5 h-5" />
+                <span>Neural OS</span>
+                <span className="text-xs font-normal" style={{ color: "rgba(255,255,255,0.3)" }}>Motherboard</span>
               </Link>
             )}
           </div>
@@ -66,7 +71,8 @@ export default function AppLayout({ children, runStatus = "standby", showBackToC
               variant="ghost"
               size="sm"
               onClick={logout}
-              className="text-muted-foreground hover:text-foreground"
+              style={{ color: "rgba(255,255,255,0.4)" }}
+              className="hover:text-foreground"
               data-testid="button-logout"
             >
               <LogOut className="w-4 h-4" />

@@ -220,6 +220,16 @@
   100% { filter: drop-shadow(0 0 4px hsl(0 84% 60% / 0.4)); }
 }
 
+@keyframes node-flicker {
+  0% { opacity: 1; filter: drop-shadow(0 0 4px #EF4444); }
+  15% { opacity: 0.4; filter: drop-shadow(0 0 12px #EF4444); }
+  30% { opacity: 1; filter: drop-shadow(0 0 6px #EF4444); }
+  45% { opacity: 0.5; filter: drop-shadow(0 0 14px #EF4444); }
+  60% { opacity: 1; filter: drop-shadow(0 0 8px #EF4444); }
+  75% { opacity: 0.6; filter: drop-shadow(0 0 10px #EF4444); }
+  100% { opacity: 1; filter: drop-shadow(0 0 4px #EF4444); }
+}
+
 .chip-perspective {
   perspective: 1200px;
   perspective-origin: center center;

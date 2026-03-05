@@ -1,23 +1,52 @@
-# Motherboard — Lead Engine Command Center
+# Neural OS — Lead Engine Command Center
 
 ## Overview
-A B2B lead generation and call management system targeting Gulf Coast industrial contractors with multi-industry extensibility. Includes a real-time "Motherboard" dashboard with SSE event streaming, dark theme with neon accents, and a 7-page React frontend.
+A B2B lead generation and call management system targeting Gulf Coast industrial contractors with multi-industry extensibility. Features a real-time "Neural OS" brain dashboard with SSE event streaming, anatomical brain visualization, dark neon theme, and a 7-page React frontend.
 
 ## Architecture
 - **Backend**: Express + TypeScript server on port 5000
-- **Frontend**: React + Shadcn UI + Framer Motion, dark theme with neon cyan/teal accent
+- **Frontend**: React + Shadcn UI + Framer Motion, dark theme (#070B12) with neon teal (#2DD4BF) accent
 - **Database**: PostgreSQL (Replit built-in) for webhook processing logs
 - **External Services**: Airtable REST API, OpenAI (Whisper + GPT), Make.com API, Apollo.io, Outscraper
 - **Real-time**: Server-Sent Events (SSE) for live dashboard updates
 
 ## Frontend Pages (7 routes)
 - `/login` — Auth page (validates against ADMIN_EMAIL + ADMIN_PASSWORD)
-- `/dashboard` — Motherboard visualization (SVG circuit board with 8 engine nodes, event log, brainwave strip)
-- `/today` — Today's Call List (placeholder with metric cards + table)
-- `/followups` — Follow-ups (placeholder)
-- `/lead-engine` — Lead Engine (placeholder)
-- `/contacts` — Contacts (placeholder)
-- `/analytics` — Analytics (placeholder)
+- `/dashboard` — Neural OS Brain Motherboard (anatomical brain SVG with neural nodes, synapses, event log, EEG strip)
+- `/today` — Today's Call List (Frontal Lobe)
+- `/followups` — Follow-ups (Cerebellum)
+- `/lead-engine` — Lead Engine (Parietal · Occipital Lobe)
+- `/contacts` — Contacts (Temporal Lobe)
+- `/analytics` — Analytics (Brainstem)
+
+### Brain Region → Page Mapping
+| Node ID | Brain Region | cx,cy | Route |
+|---------|-------------|-------|-------|
+| bootstrap | Brainstem | 210,520 | /analytics |
+| lead_feed | Parietal mid-left | 260,315 | /lead-engine |
+| opportunity_engine | Frontal top-front | 360,240 | /today |
+| dm_coverage | Temporal mid | 430,355 | /contacts |
+| dm_fit | Frontal/temporal boundary | 480,270 | /contacts |
+| playbooks | Frontal front-mid | 560,240 | /today |
+| call_engine | Cerebellum | 320,500 | /followups |
+| query_intel | Occipital/parietal back | 210,430 | /lead-engine |
+
+### Region Click Navigation
+- Frontal region → /today
+- Temporal region → /contacts
+- Parietal/Occipital region → /lead-engine
+- Cerebellum region → /followups
+- Brainstem region → /analytics
+
+### Color Palette
+- Background: #070B12
+- Primary neon (standby): #2DD4BF (teal)
+- Active firing: #22D3EE (electric cyan)
+- Signal pulse: #38BDF8 (signal blue)
+- Error: #EF4444 (red)
+- Brain outline stroke: rgba(255,255,255,0.14)
+- Internal gyri: rgba(255,255,255,0.06)
+- Region fills: teal/cyan at 0.08-0.12 opacity
 
 ### Auth Flow
 - POST /api/auth/login → returns UUID token with 24h expiry (email comparison is case-insensitive)
@@ -28,16 +57,22 @@ A B2B lead generation and call management system targeting Gulf Coast industrial
 - Cross-tab sync via `storage` event listener (logout in one tab logs out all tabs)
 - SSE endpoint accepts `?token=` query param (EventSource can't set headers)
 - Protected routes redirect to /login if not authenticated
-- Query cache: staleTime 5 min, gcTime 10 min — data persists while navigating pages but refreshes periodically
+- Query cache: staleTime 5 min, gcTime 10 min
 
-### Motherboard Dashboard
-- 8 SVG nodes: bootstrap, lead_feed, opportunity_engine, dm_coverage, dm_fit, playbooks, call_engine, query_intel
-- Edges showing pipeline flow with exact SVG path coordinates
-- Standby: nodes pulse/breathe (opacity 0.70→0.92→0.70, 3s cycle)
-- Active: STEP_STARTED → cyan glow; STEP_DONE → returns to standby; TRIGGER_FIRED → traveling dot along edge
-- Event log panel (right): latest 30 events with icons and timestamps
-- Brainwave strip (bottom): 40 bars scaling with event frequency
+### Brain Dashboard
+- Anatomical side-view brain SVG with recognizable lobes (frontal, parietal, temporal, occipital, cerebellum, brainstem)
+- 8 neural nodes as circles positioned in anatomically correct brain regions
+- 8 curved synapses connecting nodes (cubic bezier paths — no straight lines)
+- 3D parallax tilt (CSS perspective 1200px, rotateX ±6°, rotateY ±8°)
+- Standby: brain group scales 1.0→1.01→1.0 over 3.2s, nodes breathe
+- Active: STEP_STARTED → cyan bloom; STEP_DONE → cool down; ERROR → red flicker 1.2s
+- TRIGGER_FIRED → traveling pulse dot along synapse (getTotalLength/getPointAtLength, 800ms, r=5, #38BDF8)
+- Lobe region fills: subtle (8-12% opacity), clickable for navigation
+- Hover tooltips on lobe regions
+- Event Log panel (right): latest 30 events with icons (⏵⏹▶✓⚡⛔)
+- EEG strip (bottom): 40 bars scaling with event frequency
 - Run Now button: triggers POST /api/run-daily
+- Navigation: click nodes or lobe regions to navigate to mapped pages
 
 ### SSE Event Types
 - `RUN_STARTED` / `RUN_DONE` — run lifecycle
@@ -48,15 +83,15 @@ A B2B lead generation and call management system targeting Gulf Coast industrial
 
 ## Key Files
 
-### Dashboard + SSE (NEW)
+### Dashboard + SSE
 - `server/events.ts` — EventBus: in-memory SSE pub/sub with 200-event ring buffer
 - `server/run-history.ts` — In-memory run history store (max 20 runs)
 - `server/run-daily-web.ts` — Instrumented daily orchestrator for web (publishes SSE events, prevents concurrent runs)
 - `server/dashboard-routes.ts` — API routes: /api/events (SSE), /api/auth/login, /api/run-daily, /api/run-history, /api/dashboard/stats
 - `client/src/lib/auth.ts` — AuthContext + AuthProvider + ProtectedRoute
 - `client/src/lib/use-sse.ts` — SSE subscription hook with auto-reconnect
-- `client/src/components/app-layout.tsx` — Top nav + status pill + Framer Motion page transitions
-- `client/src/pages/dashboard.tsx` — Motherboard SVG visualization
+- `client/src/components/app-layout.tsx` — Top nav (Neural OS + Brain icon + StatusPill + Logout) + Framer Motion page transitions
+- `client/src/pages/dashboard.tsx` — Neural OS Brain Motherboard SVG visualization
 
 ### Voice Memo Analyzer
 - `shared/schema.ts` - Data models (webhookLogs table, validation schemas)
@@ -131,7 +166,7 @@ A B2B lead generation and call management system targeting Gulf Coast industrial
 
 ## API Endpoints
 
-### Dashboard + Auth (NEW)
+### Dashboard + Auth
 - `POST /api/auth/login` — Login (public); returns `{token, expires_in}`
 - `GET /api/events` — SSE stream; accepts `?token=` query param
 - `POST /api/run-daily` — Start daily orchestrator (protected); returns `{run_id}` or 409
@@ -188,7 +223,7 @@ npx tsx server/run-daily.ts --top=25
 ```
 
 ### Web Dashboard Run
-Click "Run Now" on the Motherboard dashboard, or:
+Click "Run Now" on the Neural OS Brain Motherboard, or:
 ```
 curl -X POST http://localhost:5000/api/run-daily -H "Authorization: Bearer <token>"
 ```
