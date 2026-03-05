@@ -4,6 +4,7 @@ import { runEngine as runCallEngine } from "./call-engine";
 import { runQueryIntel, type QueryIntelResult } from "./query-intel";
 import { ensureSchema, formatReport } from "./airtable-schema";
 import { log } from "./logger";
+import { getIndustryConfig } from "./config";
 
 interface DailyConfig {
   top: number;
@@ -69,7 +70,9 @@ async function main() {
   console.log("║        DAILY ORCHESTRATOR            ║");
   console.log("╚══════════════════════════════════════╝");
   console.log("");
-  console.log(`Config: top=${config.top} limit=${config.limit} targetFresh=${config.targetFresh} generate=${config.generate} market="${config.market}" bootstrap=${config.bootstrap}`);
+  const industryCfg = getIndustryConfig();
+  console.log(`Config: ${industryCfg.name} | Market: ${industryCfg.market}`);
+  console.log(`Params: top=${config.top} limit=${config.limit} targetFresh=${config.targetFresh} generate=${config.generate} market="${config.market}" bootstrap=${config.bootstrap}`);
   console.log("");
 
   const steps: StepResult[] = [];

@@ -1,0 +1,106 @@
+You are my Replit engineer. Implement the INDUSTRY CONFIG LAYER so the platform supports multiple industries with no code edits.
+
+GOAL:
+All industry-specific logic must come from config files under /config and be selectable via:
+INDUSTRY_CONFIG=<name>
+
+Create:
+config/
+  industry-default.ts
+  industry-industrial.ts
+  industry-saas.ts
+  industry-real-estate.ts
+  industry-agency.ts
+
+Define a strict TypeScript type:
+config/types.ts
+export type IndustryConfig = {
+  name: string
+  market: string
+  markets?: string[]
+  company_categories: string[]
+  opportunity_keywords: string[]
+  negative_keywords?: string[]
+  decision_maker_titles_tiers: {
+    tier1: string[]   // highest priority
+    tier2: string[]
+    tier3: string[]
+    tier4: string[]
+    other?: string[]
+  }
+  search_templates: string[]
+  scoring: {
+    keyword_hit: number
+    opp_base: number
+    dm_email_bonus: number
+    dm_phone_bonus: number
+    engagement_weight: number
+    priority_weight: number
+    opportunity_weight: number
+    recency_bonus: number
+  }
+  call_list: {
+    pctHot: number
+    pctWorking: number
+    pctFresh: number
+    topDefault: number
+    staleDaysWorking: number
+    staleDaysNoCall: number
+  }
+}
+
+IMPLEMENT server/config.ts
+- Export loadIndustryConfig(): IndustryConfig
+- Reads process.env.INDUSTRY_CONFIG
+- Default to "default"
+- Loads `config/industry-${name}.ts` using ESM dynamic import
+- Validates basic shape (throw if missing required keys)
+- Exports a singleton:
+  export const CFG = loadIndustryConfig()
+
+WIRING (replace hardcoded values with CFG):
+1) server/query-intel.ts
+- Use CFG.search_templates, CFG.company_categories, CFG.opportunity_keywords
+- Use CFG.market for Market field
+- Use CFG.negative_keywords if present
+2) server/opportunity-engine.ts
+- Use CFG.opportunity_keywords and CFG.scoring.* weights
+- Use CFG.call_list pct + stale windows as defaults
+3) server/dm-resolver.ts
+- Replace title tiers with CFG.decision_maker_titles_tiers
+- Tier precedence remains strict: tier first, then bonuses
+4) server/lead-feed.ts (or lead feed runner)
+- Replace category list + negative keyword logic using CFG.company_categories and CFG.negative_keywords
+5) server/run-daily.ts
+- Print active config in the health report header:
+  "Config: <CFG.name> | Market: <CFG.market>"
+
+CONFIG CONTENT (provide sane defaults):
+A) industry-industrial.ts:
+- use your existing industrial categories/keywords/titles
+B) industry-saas.ts:
+- categories: ["B2B SaaS","Software","Tech Services","IT Consulting"]
+- opportunity_keywords: ["hiring","series a","series b","sales development","outbound","revops","pipeline"]
+- dm titles tiers emphasize: VP Sales, Head of Growth, RevOps, SDR Manager, CEO (small)
+- search templates for SaaS: "b2b saas {city} hiring sales", "revops consulting {market}", etc.
+C) industry-real-estate.ts:
+- keywords: "brokerage","leasing","tenant rep","property management","multifamily","commercial"
+- dm titles: Managing Broker, Broker Owner, Director of Leasing, Property Manager
+D) industry-agency.ts:
+- keywords: "marketing agency","lead gen","performance marketing","ppc","seo","web design"
+- dm titles: Founder, Owner, Director of Growth, Account Director
+
+MINI TESTS:
+1) Run:
+INDUSTRY_CONFIG=industrial npx tsx server/run-daily.ts --top=10
+Ensure the header prints industrial config and call list still builds.
+2) Run:
+INDUSTRY_CONFIG=saas npx tsx server/run-query-intel.ts --generate=5 --targetFresh=9999 --market="Houston"
+Ensure it generates SaaS-style queries (not industrial).
+3) Run:
+INDUSTRY_CONFIG=real-estate npx tsx server/run-opportunity-engine.ts --top=10
+Ensure opportunity keywords come from that config.
+
+DELIVERABLE:
+Show all config files + updated modules + replit.md section:
+"Switching industries: set INDUSTRY_CONFIG=..."

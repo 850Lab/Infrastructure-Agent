@@ -99,6 +99,7 @@ function computePriorityScore(category: string, description: string, website: st
   let score = 0;
 
   const catLower = (category || "").toLowerCase();
+  const HIGH_VALUE_CATEGORIES = getHighValueCategories();
   for (const hvc of HIGH_VALUE_CATEGORIES) {
     if (catLower.includes(hvc)) {
       score += 20;
@@ -107,6 +108,7 @@ function computePriorityScore(category: string, description: string, website: st
   }
 
   const descLower = (description || "").toLowerCase();
+  const INDUSTRIAL_KEYWORDS = getIndustrialKeywords();
   const kwMatches = INDUSTRIAL_KEYWORDS.filter(kw => descLower.includes(kw) || catLower.includes(kw));
   if (kwMatches.length > 0) {
     score += Math.min(kwMatches.length * 5, 10);
@@ -169,32 +171,24 @@ export async function generateQueries(count: number = 20): Promise<{
   const existingQueries = await fetchExistingQueries();
   log(`Found ${existingQueries.size} existing queries`, "lead-feed");
 
-  const marketSample = GULF_COAST_MARKETS.sort(() => Math.random() - 0.5).slice(0, 8);
-  const categorySample = SEARCH_CATEGORIES.sort(() => Math.random() - 0.5).slice(0, 10);
+  const cfg = getIndustryConfig();
+  const allMarkets = cfg.markets || getMarkets();
+  const marketSample = [...allMarkets].sort(() => Math.random() - 0.5).slice(0, 8);
+  const categorySample = [...getSearchCategories()].sort(() => Math.random() - 0.5).slice(0, 10);
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
       {
         role: "system",
-        content: `You generate Google Maps search queries to find industrial contractors along the Gulf Coast (TX/LA). These queries will be used with Outscraper's Google Maps API.
-
-Target contractor types: scaffolding, insulation, turnaround/shutdown, tank cleaning, industrial painting/coatings, hydroblasting, fireproofing, refractory, mechanical insulation, industrial cleaning, plant maintenance.
-
-Target geography: Gulf Coast Texas and Louisiana refinery corridor.
+        content: `${cfg.lead_feed.gpt_prompt_context}
 
 Generate queries that combine a service category with a city/market. Format: "{service} {city} {state}"
-
-Examples:
-- "industrial scaffolding contractor Beaumont TX"
-- "turnaround services Lake Charles LA"
-- "refinery maintenance contractor Houston TX"
-- "tank cleaning services Baton Rouge LA"
 
 Rules:
 - Each query should be a realistic Google Maps search
 - Mix different service types and different cities
-- Include both specific services and broader industrial terms
+- Include both specific services and broader industry terms
 - Vary the phrasing naturally (contractor, services, company, etc.)
 
 Return ONLY a JSON array of query strings, no other text.`,
@@ -240,8 +234,10 @@ Return a JSON array of ${count} query strings.`,
   for (let i = 0; i < newQueries.length; i += 10) {
     const batch = newQueries.slice(i, i + 10);
 
-    const marketPattern = new RegExp(`(${GULF_COAST_MARKETS.map(m => m.split(" ")[0]).join("|")})`, "i");
-    const categoryPattern = new RegExp(`(${SEARCH_CATEGORIES.map(c => c.split(" ")[0]).join("|")})`, "i");
+    const allMkts = cfg.markets || getMarkets();
+    const allSeeds = getSearchCategories();
+    const marketPattern = new RegExp(`(${allMkts.map(m => m.split(" ")[0]).join("|")})`, "i");
+    const categoryPattern = new RegExp(`(${allSeeds.map(c => c.split(" ")[0]).join("|")})`, "i");
 
     const records = batch.map(q => {
       const marketMatch = q.match(marketPattern);
@@ -249,8 +245,8 @@ Return a JSON array of ${count} query strings.`,
       return {
         fields: {
           query_text: q,
-          market: marketMatch ? marketMatch[0] : "Gulf Coast",
-          category: catMatch ? catMatch[0] : "Industrial",
+          market: marketMatch ? marketMatch[0] : cfg.market,
+          category: catMatch ? catMatch[0] : cfg.company_categories[0] || "Other",
           status: "Queued",
           results_count: 0,
         },

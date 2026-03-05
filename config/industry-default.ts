@@ -1,105 +1,40 @@
-export interface IndustryConfigType {
-  name: string;
-  market: string;
+import type { IndustryConfig } from "./types";
 
-  company_categories: string[];
-
-  opportunity_keywords: string[];
-
-  decision_maker_titles: {
-    tier1: string[];
-    tier2: string[];
-    tier3: string[];
-    tier4: string[];
-  };
-
-  search_templates: string[];
-
-  cold_start_queries: Array<{
-    query: string;
-    category: string;
-  }>;
-
-  scoring: {
-    opportunity_keyword: number;
-    dm_email_bonus: number;
-    dm_phone_bonus: number;
-    engagement_bonus: number;
-  };
-
-  geo: {
-    cities: string[];
-    states: string[];
-    industrial_types: string[];
-  };
-
-  lead_feed: {
-    high_value_categories: string[];
-    industrial_keywords: string[];
-    query_seeds: string[];
-    gpt_prompt_context: string;
-  };
-}
-
-export const IndustryConfig: IndustryConfigType = {
+export const IndustryConfig: IndustryConfig = {
   name: "Industrial Contractors",
   market: "Gulf Coast",
+  markets: [
+    "Houston TX", "Baytown TX", "Deer Park TX", "Pasadena TX", "La Porte TX",
+    "Texas City TX", "Galveston TX", "Freeport TX", "Channelview TX",
+    "Port Arthur TX", "Beaumont TX", "Orange TX", "Nederland TX",
+    "Lake Charles LA", "Sulphur LA", "Westlake LA",
+    "Baton Rouge LA", "Plaquemine LA", "Geismar LA",
+    "Corpus Christi TX", "Victoria TX",
+  ],
 
   company_categories: [
-    "Scaffolding",
-    "Insulation",
-    "Industrial Maintenance",
-    "Turnaround",
-    "Tank Cleaning",
-    "Coatings",
-    "Mechanical",
-    "Construction",
-    "Other",
+    "Scaffolding", "Insulation", "Industrial Maintenance", "Turnaround",
+    "Tank Cleaning", "Coatings", "Mechanical", "Construction", "Other",
   ],
 
   opportunity_keywords: [
-    "refinery",
-    "chemical plant",
-    "turnaround",
-    "shutdown",
-    "maintenance",
-    "outage",
-    "petrochemical",
-    "plant services",
-    "scaffolding",
-    "insulation",
-    "hydroblasting",
-    "industrial cleaning",
-    "mechanical contractor",
-    "tank cleaning",
-    "coatings",
-    "fireproofing",
-    "blasting",
-    "pipe",
+    "refinery", "chemical plant", "turnaround", "shutdown", "maintenance",
+    "outage", "petrochemical", "plant services", "scaffolding", "insulation",
+    "hydroblasting", "industrial cleaning", "mechanical contractor",
+    "tank cleaning", "coatings", "fireproofing", "blasting", "pipe",
   ],
 
-  decision_maker_titles: {
-    tier1: [
-      "Safety Director",
-      "Safety Manager",
-      "HSE Manager",
-      "EHS Manager",
-    ],
-    tier2: [
-      "Project Manager",
-      "Turnaround Manager",
-      "Shutdown Manager",
-    ],
-    tier3: [
-      "Operations Manager",
-      "Plant Manager",
-      "Maintenance Manager",
-    ],
-    tier4: [
-      "Superintendent",
-      "General Manager",
-      "VP Operations",
-    ],
+  negative_keywords: [
+    "residential only", "home remodeling", "kitchen remodel",
+    "bathroom remodel", "home improvement", "landscaping",
+    "lawn care", "pool cleaning", "handyman",
+  ],
+
+  decision_maker_titles_tiers: {
+    tier1: ["Safety Director", "Safety Manager", "HSE Manager", "EHS Manager"],
+    tier2: ["Project Manager", "Turnaround Manager", "Shutdown Manager"],
+    tier3: ["Operations Manager", "Plant Manager", "Maintenance Manager"],
+    tier4: ["Superintendent", "General Manager", "VP Operations"],
   },
 
   search_templates: [
@@ -134,10 +69,23 @@ export const IndustryConfig: IndustryConfigType = {
   ],
 
   scoring: {
-    opportunity_keyword: 30,
+    keyword_hit: 5,
+    opp_base: 30,
     dm_email_bonus: 5,
     dm_phone_bonus: 5,
-    engagement_bonus: 10,
+    engagement_weight: 40,
+    priority_weight: 1,
+    opportunity_weight: 30,
+    recency_bonus: 10,
+  },
+
+  call_list: {
+    pctHot: 0.4,
+    pctWorking: 0.35,
+    pctFresh: 0.25,
+    topDefault: 25,
+    staleDaysWorking: 3,
+    staleDaysNoCall: 14,
   },
 
   geo: {
@@ -146,7 +94,7 @@ export const IndustryConfig: IndustryConfigType = {
       "texas city", "pasadena tx", "baytown", "deer park", "la porte",
     ],
     states: ["TX", "LA"],
-    industrial_types: [
+    industry_types: [
       "refinery", "chemical", "petrochemical", "industrial", "energy",
       "oil", "gas", "manufacturing", "construction",
     ],
@@ -156,30 +104,21 @@ export const IndustryConfig: IndustryConfigType = {
     high_value_categories: [
       "scaffolding", "insulation", "turnaround", "tank cleaning", "coatings",
     ],
-    industrial_keywords: [
+    industry_keywords: [
       "refinery", "plant", "industrial", "turnaround", "shutdown",
       "chemical", "petrochemical", "energy", "offshore",
       "scaffolding", "insulation", "hydroblasting", "abatement",
     ],
     query_seeds: [
-      "industrial scaffolding contractor",
-      "industrial insulation contractor",
-      "turnaround contractor",
-      "refinery maintenance contractor",
-      "tank cleaning services",
-      "industrial coatings contractor",
-      "hydroblasting services",
-      "mechanical insulation contractor",
-      "fireproofing contractor",
-      "industrial painting services",
-      "refractory contractor",
-      "shutdown contractor",
-      "abrasive blasting services",
-      "pipe insulation contractor",
-      "catalytic converter cleaning",
-      "industrial vacuum services",
-      "heat exchanger cleaning",
-      "plant turnaround services",
+      "industrial scaffolding contractor", "industrial insulation contractor",
+      "turnaround contractor", "refinery maintenance contractor",
+      "tank cleaning services", "industrial coatings contractor",
+      "hydroblasting services", "mechanical insulation contractor",
+      "fireproofing contractor", "industrial painting services",
+      "refractory contractor", "shutdown contractor",
+      "abrasive blasting services", "pipe insulation contractor",
+      "catalytic converter cleaning", "industrial vacuum services",
+      "heat exchanger cleaning", "plant turnaround services",
     ],
     gpt_prompt_context: "You generate Google Maps search queries to find industrial contractors along the Gulf Coast (TX/LA). These queries will be used with Outscraper's Google Maps API.\n\nTarget contractor types: scaffolding, insulation, turnaround/shutdown, tank cleaning, industrial painting/coatings, hydroblasting, fireproofing, refractory, mechanical insulation, industrial cleaning, plant maintenance.\n\nTarget geography: Gulf Coast Texas and Louisiana refinery corridor.",
   },

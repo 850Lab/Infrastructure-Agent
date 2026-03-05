@@ -181,8 +181,13 @@ A webhook-based voice memo processing system that receives Airtable record IDs, 
 - Continues past errors (collects them), exits 1 if any step failed
 
 ### Industry Configuration
-- `config/industry-default.ts` - Industry-specific config: categories, keywords, DM title tiers, search templates, cold-start queries, scoring, geo, lead-feed settings
-- `server/config.ts` - Config loader with `getIndustryConfig()` function; currently loads default config statically
+- `config/types.ts` - TypeScript type definition for IndustryConfig (categories, keywords, DM title tiers, scoring, call_list, geo, lead_feed, etc.)
+- `config/industry-default.ts` - Default config (Industrial Contractors, Gulf Coast)
+- `config/industry-industrial.ts` - Alias for default (Industrial Contractors)
+- `config/industry-saas.ts` - B2B SaaS Companies config (US Tech Hubs; VP Sales/CRO/Head of Growth titles; hiring/series a/revops keywords)
+- `config/industry-real-estate.ts` - Commercial Real Estate config (Major Metro; Managing Broker/Director of Leasing titles; brokerage/leasing/multifamily keywords)
+- `config/industry-agency.ts` - Marketing Agencies config (US Metro; Founder/Owner/Director of Growth titles; ppc/seo/lead gen keywords)
+- `server/config.ts` - Config loader: reads INDUSTRY_CONFIG env var, validates shape, exports `getIndustryConfig()` singleton
 
 ## One Command Daily Runbook
 ```
@@ -206,6 +211,20 @@ npx tsx server/run-daily.ts --top=25 --bootstrap=true
 - If freshness is low (< 100 fresh leads): `npx tsx server/run-query-intel.ts --generate=20 --targetFresh=100 --market="Gulf Coast"`
   - Generates new search queries from winning patterns, retires low performers
   - Then run lead-feed to pull leads from queued queries: `POST /api/lead-feed/run-all`
+
+## Switching Industries
+Set the `INDUSTRY_CONFIG` environment variable to switch the entire platform to a different industry:
+```
+INDUSTRY_CONFIG=industrial npx tsx server/run-daily.ts --top=25    # Industrial Contractors (default)
+INDUSTRY_CONFIG=saas npx tsx server/run-daily.ts --top=20          # B2B SaaS Companies
+INDUSTRY_CONFIG=real-estate npx tsx server/run-daily.ts --top=25   # Commercial Real Estate
+INDUSTRY_CONFIG=agency npx tsx server/run-daily.ts --top=20        # Marketing Agencies
+```
+This changes: opportunity keywords, DM title tier priorities, search templates, cold-start queries, scoring weights, call list percentages, stale day windows, GPT prompt context, and geo targeting. No code changes needed.
+
+Available configs: `default`, `industrial`, `saas`, `real-estate`, `agency`
+
+To add a new industry: create `config/industry-{name}.ts` implementing the `IndustryConfig` type from `config/types.ts`, then add the import to `server/config.ts`.
 
 ## Dependencies
 - @neondatabase/serverless, drizzle-orm - Database

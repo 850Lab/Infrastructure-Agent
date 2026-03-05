@@ -85,7 +85,7 @@ export async function fetchAllDecisionMakers(): Promise<DMCandidate[]> {
 }
 
 function buildTitleTiers(): Array<{ tier: number; patterns: RegExp[] }> {
-  const cfg = getIndustryConfig().decision_maker_titles;
+  const cfg = getIndustryConfig().decision_maker_titles_tiers;
   function titlesToPatterns(titles: string[]): RegExp[] {
     return titles.map(t => new RegExp(t.replace(/\s+/g, "\\s*"), "i"));
   }

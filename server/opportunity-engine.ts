@@ -1,4 +1,5 @@
 import { resolveAndWriteDMs, type DMResolutionSummary } from "./dm-resolver";
+import { getIndustryConfig } from "./config";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -206,11 +207,12 @@ function deriveEngagementFacts(companyName: string, calls: CallRecord[]): Engage
 }
 
 function computeFinalPriority(c: CompanyRecord): number {
-  let score = c.priorityScore;
-  score += Math.min(c.engagementScore, 40);
-  score += Math.min(c.opportunityScore, 30);
+  const cfg = getIndustryConfig().scoring;
+  let score = Math.floor(c.priorityScore * cfg.priority_weight);
+  score += Math.min(c.engagementScore, cfg.engagement_weight);
+  score += Math.min(c.opportunityScore, cfg.opportunity_weight);
   score += Math.min(Math.floor(c.activeWorkScore / 3), 20);
-  if (c.phone && c.phone.length > 5) score += 10;
+  if (c.phone && c.phone.length > 5) score += cfg.dm_phone_bonus * 2;
   if (c.priorityTier === "A") score += 15;
   else if (c.priorityTier === "B") score += 5;
   return Math.max(0, Math.min(score, 200));
@@ -240,7 +242,8 @@ function assignBucket(
       const lastCalledDaysAgo = facts.lastCalled
         ? (now.getTime() - new Date(facts.lastCalled).getTime()) / (1000 * 60 * 60 * 24)
         : Infinity;
-      if (lastCalledDaysAgo > 3 || !facts.lastCalled) {
+      const staleDaysWorking = getIndustryConfig().call_list.staleDaysWorking;
+      if (lastCalledDaysAgo > staleDaysWorking || !facts.lastCalled) {
         return "Working";
       }
     }
@@ -252,7 +255,8 @@ function assignBucket(
       const daysSinceFirstSeen = firstSeenDate
         ? (now.getTime() - firstSeenDate.getTime()) / (1000 * 60 * 60 * 24)
         : 0;
-      if (daysSinceFirstSeen <= 14 || c.priorityTier === "A") {
+      const staleDaysNoCall = getIndustryConfig().call_list.staleDaysNoCall;
+      if (daysSinceFirstSeen <= staleDaysNoCall || c.priorityTier === "A") {
         return "Fresh";
       }
     }
