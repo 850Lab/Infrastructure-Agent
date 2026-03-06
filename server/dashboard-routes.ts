@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
+import { z } from "zod";
 import { eventBus } from "./events";
 import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
 import { getHistory, getRunById, getRunStatus, loadHistory, completeRun } from "./run-history";
@@ -360,6 +361,59 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         return res.status(409).json({ error: "RUN_ALREADY_ACTIVE" });
       }
       res.status(500).json({ error: "Failed to start build" });
+    }
+  });
+
+  const ALLOWED_MARKETS = ["industrial", "saas", "real-estate", "agency", "custom"] as const;
+
+  const machineSettingsSchema = z.object({
+    machine_name: z.string().min(1).max(100).optional(),
+    geo: z.string().min(1).max(200).optional(),
+    decision_maker_focus: z.string().min(1).max(200).optional(),
+    opportunity: z.string().min(1).max(200).optional(),
+    market: z.enum(ALLOWED_MARKETS).optional(),
+  });
+
+  app.patch("/api/machine-settings", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const token = extractToken(req);
+      const email = token ? getEmailFromToken(token) : null;
+      if (!email) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+
+      const parsed = machineSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten().fieldErrors });
+      }
+
+      const existing = await getUserConfig(email);
+      if (!existing) {
+        return res.status(404).json({ error: "No machine config found. Complete onboarding first." });
+      }
+
+      const { machine_name, geo, decision_maker_focus, market, opportunity } = parsed.data;
+      const marketChanged = market && market !== existing.market;
+
+      const updated: MachineConfig = {
+        ...existing,
+        machine_name: machine_name ?? existing.machine_name,
+        geo: geo ?? existing.geo,
+        decision_maker_focus: decision_maker_focus ?? existing.decision_maker_focus,
+        opportunity: opportunity ?? existing.opportunity,
+      };
+
+      if (marketChanged) {
+        updated.market = market!;
+        updated.industry_config_selected = mapToIndustryConfig(market!);
+      }
+
+      const saved = await saveUserConfig(updated);
+      log(`Machine settings updated for ${email}: ${saved.machine_name}`, "settings");
+      res.json({ success: true, config: saved, industry_changed: !!marketChanged });
+    } catch (err: any) {
+      log(`Machine settings update error: ${err.message}`, "settings");
+      res.status(500).json({ error: "Failed to update machine settings" });
     }
   });
 

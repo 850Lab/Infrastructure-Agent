@@ -22,7 +22,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 
 ### Technical Implementations
 **Backend**: Developed with Express and TypeScript, providing a robust and scalable API layer.
-**Frontend**: A 9-page React application for various operational views (Dashboard, Today's Call List, Follow-ups, Lead Engine, Contacts, Analytics, Pipeline, Call Mode).
+**Frontend**: A 10-page React application for various operational views (Dashboard, Today's Call List, Follow-ups, Lead Engine, Contacts, Analytics, Pipeline, Call Mode, Machine Settings).
 **Database**: PostgreSQL is utilized for storing webhook processing logs.
 **Authentication**: Token-based authentication with UUID tokens, 24-hour expiry, and automatic token management. Cross-tab synchronization ensures consistent login states.
 **Real-time Communication**: Server-Sent Events (SSE) provide live updates for dashboard components, including run status, step progress, and event logs. An in-memory EventBus manages SSE pub/sub.
@@ -46,6 +46,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 **Query Intelligence Engine**: Evolves search queries based on outcomes and discovery.
 **DM Coverage Engine**: Identifies and fills gaps in decision-maker coverage for call lists.
 **Rank Explainability Layer**: Provides transparency on lead ranking decisions.
+**Machine Identity & Settings**: Dashboard shows machine name plaque with config line ("Configured for: X | Target: Y | Territory: Z") loaded from /api/me. Edit page at /machine-settings allows changing machine name, geo, DM focus, opportunity (safe edits) and market/industry config (requires confirmation modal). API: PATCH /api/machine-settings updates User_Config in Airtable + local JSON. Config stored in `server/user-config.ts` MachineConfig interface.
 **Onboarding Wizard**: A multi-step process for first-time users to configure market, opportunity, geography, and DM focus.
 
 ## External Dependencies

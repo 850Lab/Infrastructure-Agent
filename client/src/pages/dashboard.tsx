@@ -8,7 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import AppLayout from "@/components/app-layout";
 import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2 } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings } from "lucide-react";
 
 const STEP_ORDER = [
   "bootstrap",
@@ -94,6 +94,15 @@ function StepTimeline({ activeNodes, doneSteps, runStatus }: {
   );
 }
 
+interface MachineConfigData {
+  machine_name: string;
+  market: string;
+  opportunity: string;
+  decision_maker_focus: string;
+  geo: string;
+  industry_config_selected: string;
+}
+
 export default function DashboardPage() {
   const { getToken } = useAuth();
   const token = getToken();
@@ -108,6 +117,14 @@ export default function DashboardPage() {
   const [eventRate, setEventRate] = useState(0);
   const lastEventCount = useRef(0);
   const eventTimestamps = useRef<number[]>([]);
+
+  const { data: meData } = useQuery<{ email: string; machine_config: MachineConfigData | null }>({
+    queryKey: ["/api/me"],
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const mc = meData?.machine_config;
 
   const { data: stats } = useQuery<{
     today_list_count: number | null;
@@ -279,6 +296,34 @@ export default function DashboardPage() {
   return (
     <AppLayout runStatus={runStatus}>
       <div className="p-4 md:p-6" style={{ minHeight: "calc(100vh - 56px)" }}>
+        {mc && (
+          <div className="flex items-center justify-between mb-5" data-testid="machine-identity">
+            <div>
+              <h1
+                className="text-xl font-bold font-mono tracking-tight"
+                style={{ color: "#0F172A" }}
+                data-testid="text-machine-name"
+              >
+                {mc.machine_name}
+              </h1>
+              <p className="text-xs font-mono mt-0.5" style={{ color: "#94A3B8" }} data-testid="text-machine-config-line">
+                Configured for: {mc.opportunity} | Target: {mc.decision_maker_focus} | Territory: {mc.geo}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/machine-settings")}
+              className="gap-1.5 text-xs font-mono"
+              style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}
+              data-testid="button-machine-settings"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              Settings
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2 mb-6" data-testid="section-nav">
           {SECTION_BUTTONS.map((sec) => {
             const isStepActive = sec.steps.some((s) => activeNodes.has(s));

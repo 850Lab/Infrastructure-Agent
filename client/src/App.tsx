@@ -16,6 +16,7 @@ import ContactsPage from "@/pages/contacts";
 import AnalyticsPage from "@/pages/analytics";
 import PipelinePage from "@/pages/pipeline";
 import CallModePage from "@/pages/call-mode";
+import MachineSettingsPage from "@/pages/machine-settings";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
@@ -101,6 +102,9 @@ function Router() {
         </Route>
         <Route path="/call-mode">
           <ProtectedRoute><CallModePage /></ProtectedRoute>
+        </Route>
+        <Route path="/machine-settings">
+          <ProtectedRoute><MachineSettingsPage /></ProtectedRoute>
         </Route>
         <Route path="/">
           <Redirect to="/dashboard" />
