@@ -54,6 +54,9 @@ A 4-layer evidence-based learning system runs in parallel with the existing play
 ### Feature Specifications
 Key features include a **Command Center Dashboard** with real-time visualizations, a **Lead Engine** for lead generation and enrichment, **DM Enrichment** using external services, and a **Playbook Generator** for dynamic outreach scripts. A **Run Diff** feature tracks changes between daily runs, while a **Revert Last Run** capability allows rolling back specific categories of changes. The **Call Outcome Engine** processes call logs, updates lead statuses, and manages follow-ups, automatically creating opportunities. An **Opportunities Pipeline** tracks deals through various stages with auto-generated actions. **Call Mode** provides a dedicated interface for rapid call sessions. **Machine Feedback** uses narrative micro-interactions for system labels and toast notifications. A **Rank Explainability Layer** offers transparency into lead ranking. **Machine Identity & Settings** allow configuration via the dashboard. The system also includes a **First-Run Cinematic** and an **Onboarding Wizard** for new users, alongside an **Admin Platform** for client and platform management.
 
+### Auth & Client Context
+The `authMiddleware` in `server/auth.ts` resolves `clientId` for platform_admin users via three fallback layers: (1) explicit `?clientId=` query param, (2) `clientId` in request body, (3) auto-resolve from first active client in the database. This ensures all API endpoints work for platform admins without needing explicit client context on every request.
+
 ### Production Safety
 The application is wrapped in a React **Error Boundary**. The server includes **Process Guards** for unhandled rejections and exceptions. **Concurrency Guards** prevent duplicate pipeline runs. The system incorporates **Rate Limit Handling** and **Fetch Timeouts** for external API calls, and new companies include **Source Attribution** for traceability.
 

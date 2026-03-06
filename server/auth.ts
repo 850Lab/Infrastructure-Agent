@@ -69,8 +69,24 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     if (entry) {
       let effectiveClientId = entry.clientId;
       if (entry.role === "platform_admin" && !effectiveClientId) {
-        const override = req.query.clientId as string | undefined;
+        const override = (req.query.clientId as string | undefined)
+          || (req.body?.clientId as string | undefined);
         if (override) effectiveClientId = override;
+      }
+      if (entry.role === "platform_admin" && !effectiveClientId) {
+        storage.getAllClients().then(clients => {
+          const active = clients.find(c => c.status === "active") || clients[0];
+          (req as any).user = {
+            email: entry.email,
+            role: entry.role,
+            clientId: active?.id || null,
+          };
+          next();
+        }).catch(() => {
+          (req as any).user = { email: entry.email, role: entry.role, clientId: null };
+          next();
+        });
+        return;
       }
       (req as any).user = {
         email: entry.email,
