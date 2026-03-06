@@ -47,6 +47,10 @@ interface TodayCompany {
   website: string;
   city: string;
   gatekeeper_name: string;
+  playbook_strategy_notes: string;
+  playbook_applied_patches: string;
+  playbook_confidence: number;
+  playbook_learning_version: string;
 }
 
 const OUTCOMES = [
@@ -579,6 +583,41 @@ export default function CallModePage() {
                       </p>
                     </div>
                   )}
+                  {company.playbook_learning_version && (
+                    <div
+                      className="rounded-xl p-4"
+                      style={{ background: "rgba(16,185,129,0.06)", border: `1px solid ${EMERALD}30` }}
+                      data-testid="card-learning-intel"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Brain className="w-4 h-4" style={{ color: EMERALD }} />
+                        <p className="text-xs font-mono uppercase tracking-widest" style={{ color: EMERALD }}>Learning Active</p>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs" style={{ color: MUTED }}>
+                        <span>{company.playbook_learning_version}</span>
+                        {company.playbook_confidence > 0 && (
+                          <span
+                            className="px-2 py-0.5 rounded-full text-xs font-bold"
+                            style={{
+                              background: `${EMERALD}20`,
+                              color: EMERALD,
+                            }}
+                            data-testid="badge-confidence"
+                          >
+                            {company.playbook_confidence}% confidence
+                          </span>
+                        )}
+                        {(() => {
+                          try {
+                            const patches = JSON.parse(company.playbook_applied_patches || "[]");
+                            return patches.length > 0 ? (
+                              <span>{patches.length} patches applied</span>
+                            ) : null;
+                          } catch { return null; }
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -655,6 +694,63 @@ export default function CallModePage() {
                       <p className="text-sm leading-relaxed" style={{ color: "#94A3B8" }} data-testid="text-script-sms">
                         {company.playbook_followup}
                       </p>
+                    </div>
+                  )}
+                  {company.playbook_strategy_notes && (
+                    <div
+                      className="rounded-xl p-4"
+                      style={{ background: "rgba(16,185,129,0.06)", border: `1px solid ${EMERALD}30` }}
+                      data-testid="card-learning-notes"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <Brain className="w-4 h-4" style={{ color: EMERALD }} />
+                        <p className="text-xs font-mono uppercase tracking-widest" style={{ color: EMERALD }}>Machine Learning Notes</p>
+                        {company.playbook_confidence > 0 && (
+                          <span
+                            className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold"
+                            style={{ background: `${EMERALD}20`, color: EMERALD }}
+                            data-testid="badge-learning-confidence"
+                          >
+                            {company.playbook_confidence}%
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm leading-relaxed mb-3" style={{ color: "#E2E8F0" }} data-testid="text-strategy-notes">
+                        {company.playbook_strategy_notes}
+                      </p>
+                      {company.playbook_applied_patches && (() => {
+                        try {
+                          const patches = JSON.parse(company.playbook_applied_patches);
+                          if (!Array.isArray(patches) || patches.length === 0) return null;
+                          return (
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-mono uppercase tracking-widest" style={{ color: MUTED }}>Applied Patches</p>
+                              {patches.map((p: { type?: string; title?: string; priority?: string }, i: number) => (
+                                <div
+                                  key={i}
+                                  className="flex items-center gap-2 text-xs px-2 py-1 rounded-lg"
+                                  style={{ background: "rgba(255,255,255,0.04)" }}
+                                  data-testid={`patch-item-${i}`}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                    style={{
+                                      background: p.priority === "High" ? ERROR_RED : p.priority === "Medium" ? WARN : MUTED,
+                                    }}
+                                  />
+                                  <span style={{ color: "#E2E8F0" }}>{p.title || p.type}</span>
+                                  <span style={{ color: MUTED }} className="ml-auto">{p.priority}</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        } catch { return null; }
+                      })()}
+                      {company.playbook_learning_version && (
+                        <p className="text-xs mt-2" style={{ color: MUTED }} data-testid="text-learning-version">
+                          Version: {company.playbook_learning_version}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

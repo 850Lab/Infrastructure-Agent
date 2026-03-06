@@ -148,6 +148,10 @@ export interface TodayCompany {
   website: string;
   city: string;
   gatekeeper_name: string;
+  playbook_strategy_notes: string;
+  playbook_applied_patches: string;
+  playbook_confidence: number;
+  playbook_learning_version: string;
 }
 
 function companyFields(): string[] {
@@ -158,6 +162,8 @@ function companyFields(): string[] {
     "Playbook_Call_Opener", "Playbook_Gatekeeper_Ask", "Playbook_Voicemail",
     "Playbook_Followup_Text", "Playbook_Email_Subject", "Playbook_Email_Body",
     "Followup_Due", "Website", "City", "Gatekeeper_Name",
+    "Playbook_Strategy_Notes", "Playbook_Applied_Patches",
+    "Playbook_Confidence", "Playbook_Learning_Version",
   ];
 }
 
@@ -188,6 +194,10 @@ function mapCompany(rec: AirtableRecord): TodayCompany {
     website: String(f.Website || ""),
     city: String(f.City || ""),
     gatekeeper_name: String(f.Gatekeeper_Name || ""),
+    playbook_strategy_notes: String(f.Playbook_Strategy_Notes || ""),
+    playbook_applied_patches: String(f.Playbook_Applied_Patches || ""),
+    playbook_confidence: parseInt(f.Playbook_Confidence || "0", 10) || 0,
+    playbook_learning_version: String(f.Playbook_Learning_Version || ""),
   };
 }
 

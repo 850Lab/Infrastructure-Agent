@@ -398,6 +398,10 @@ const COMPANIES_FIELDS: FieldSpec[] = [
       timeZone: "America/Chicago",
     },
   },
+  { name: "Playbook_Strategy_Notes", type: "multilineText" },
+  { name: "Playbook_Learning_Version", type: "singleLineText" },
+  { name: "Playbook_Applied_Patches", type: "multilineText" },
+  { name: "Playbook_Confidence", type: "number", options: { precision: 0 } },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [
@@ -769,6 +773,30 @@ export async function ensureSchema(): Promise<SchemaReport> {
     { name: "Call_Learning", fields: CALL_LEARNING_FIELDS, description: "Interpreted analysis and learning signals per call" },
     { name: "Pattern_Insights", fields: PATTERN_INSIGHTS_FIELDS, description: "Aggregated patterns across multiple calls" },
     { name: "Script_Patches", fields: SCRIPT_PATCHES_FIELDS, description: "Structured script modification recommendations" },
+    {
+      name: "Script_Versions",
+      fields: [
+        { name: "Client_ID", type: "singleLineText" },
+        { name: "Company_ID", type: "singleLineText" },
+        { name: "Company_Name", type: "singleLineText" },
+        { name: "Bucket", type: "singleLineText" },
+        { name: "Version_Label", type: "singleLineText" },
+        { name: "Applied_Patches", type: "multilineText" },
+        { name: "Source_Insight_IDs", type: "multilineText" },
+        { name: "Script_Snapshot_JSON", type: "multilineText" },
+        { name: "Confidence", type: "number", options: { precision: 0 } },
+        {
+          name: "Created_At",
+          type: "dateTime",
+          options: {
+            dateFormat: { name: "iso" },
+            timeFormat: { name: "24hour" },
+            timeZone: "America/Chicago",
+          },
+        },
+      ],
+      description: "Versioned script snapshots with applied patches and confidence",
+    },
   ];
 
   for (const spec of tableSpecs) {

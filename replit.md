@@ -33,7 +33,14 @@ A 4-layer evidence-based learning system runs in parallel with the existing play
 - **Optimization Engine** (`optimization-engine.ts`): Generates structured `Script_Patches` from patterns and learning records. 12 patch types: add_gatekeeper_redirect_line, strengthen_value_prop, simplify_opener, add_qualifying_question, add_objection_handler, shorten_response_after_deflection, reposition_authority_redirect, add_followup_email_angle, increase/decrease_targeting_weight, route_to_email_sequence, escalate_to_decision_maker_role_request. Source always "Rule Engine" or "Pattern Insight" (never GPT). Deduplicates by trigger_pattern + patch_type.
 - **Pipeline Runner** (`run-sales-learning.ts`): Fetches unprocessed calls (Transcription present, Sales_Learning_Processed=false), runs all 4 layers, marks calls processed. Integrated into daily run as `sales_learning` step after `call_engine`. Non-blocking — failures logged but don't stop pipeline. Flag: `salesLearning` (default true).
 
-**Airtable Tables**: Call_Observations, Call_Learning, Pattern_Insights, Script_Patches (all with Client_ID for multi-tenant scoping). Schema bootstrapped via `server/airtable-schema.ts`.
+**Script Evolution Layer** (`server/sales-learning/`):
+- **Script Evolution** (`script-evolution.ts`): Consumes active Script_Patches and Pattern_Insights, filters by company/bucket/industry, ranks by priority, builds structured prompt injection text organized by 9 patch categories. Returns `ScriptEvolutionContext` with `promptInjection`, `appliedPatches`, `confidence`, `strategyNotes`, `learningVersion`.
+- **Script Recommendations** (`script-recommendations.ts`): Produces operator-facing recommendations per company/bucket. 5 recommendation slots: opener, first_redirect, qualifying_question, objection_response, followup_sequence. Picks best by priority × confidence. No GPT.
+- **Script Versioning** (`script-versioning.ts`): Tracks playbook evolution via `Script_Versions` table. `saveScriptVersion()` stores a new record only if content changed materially (MD5 hash comparison). Auto-generates version labels (v1.0, v1.1...). `getVersionHistory()` for retrieval.
+- **Playbook Integration**: `buildScriptEvolutionContext()` called per-bucket during `generatePlaybooksForTodayList()`. Learning context injected into GPT prompt as structured instructions. New fields written to Companies: `Playbook_Strategy_Notes`, `Playbook_Learning_Version`, `Playbook_Applied_Patches`, `Playbook_Confidence`. Non-blocking — if learning fetch fails, base playbook generates normally. Script versions saved after generation when patches applied.
+- **Call Mode UI**: Intel tab shows "Learning Active" card with version, confidence badge, patch count. Scripts tab shows "Machine Learning Notes" section with strategy notes, applied patches list with priority indicators, and learning version.
+
+**Airtable Tables**: Call_Observations, Call_Learning, Pattern_Insights, Script_Patches, Script_Versions (all with Client_ID for multi-tenant scoping). Schema bootstrapped via `server/airtable-schema.ts`.
 
 **API Endpoints** (`sales-learning-routes.ts`):
 - GET /api/sales-learning/observations — paginated observations
@@ -41,6 +48,8 @@ A 4-layer evidence-based learning system runs in parallel with the existing play
 - GET /api/sales-learning/patterns — active pattern insights
 - GET /api/sales-learning/patches — active script patches
 - GET /api/sales-learning/summary — aggregated counts, top failure/strength modes, top actions
+- GET /api/sales-learning/recommendations — per-company or per-bucket script recommendations
+- GET /api/sales-learning/versions — script version history
 
 ### Feature Specifications
 Key features include a **Command Center Dashboard** with real-time visualizations, a **Lead Engine** for lead generation and enrichment, **DM Enrichment** using external services, and a **Playbook Generator** for dynamic outreach scripts. A **Run Diff** feature tracks changes between daily runs, while a **Revert Last Run** capability allows rolling back specific categories of changes. The **Call Outcome Engine** processes call logs, updates lead statuses, and manages follow-ups, automatically creating opportunities. An **Opportunities Pipeline** tracks deals through various stages with auto-generated actions. **Call Mode** provides a dedicated interface for rapid call sessions. **Machine Feedback** uses narrative micro-interactions for system labels and toast notifications. A **Rank Explainability Layer** offers transparency into lead ranking. **Machine Identity & Settings** allow configuration via the dashboard. The system also includes a **First-Run Cinematic** and an **Onboarding Wizard** for new users, alongside an **Admin Platform** for client and platform management.

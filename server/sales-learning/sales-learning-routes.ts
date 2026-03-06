@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { authMiddleware } from "../dashboard-routes";
 import { scopedFormula } from "../airtable-scoped";
+import { getScriptRecommendations } from "./script-recommendations";
+import { getVersionHistory } from "./script-versioning";
 
 function log(msg: string) {
   const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
@@ -137,6 +139,39 @@ export function registerSalesLearningRoutes(app: Express) {
       });
     } catch (e: any) {
       log(`Error fetching patches: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sales-learning/recommendations", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(403).json({ error: "No client context" });
+
+      const companyId = req.query.company_id as string | undefined;
+      const bucket = req.query.bucket as string | undefined;
+
+      const recommendations = await getScriptRecommendations(clientId, { companyId, bucket });
+      res.json(recommendations);
+    } catch (e: any) {
+      log(`Error fetching recommendations: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sales-learning/versions", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(403).json({ error: "No client context" });
+
+      const companyName = req.query.company_name as string | undefined;
+      const versions = await getVersionHistory(clientId, companyName);
+      res.json({
+        count: versions.length,
+        versions,
+      });
+    } catch (e: any) {
+      log(`Error fetching versions: ${e.message}`);
       res.status(500).json({ error: e.message });
     }
   });

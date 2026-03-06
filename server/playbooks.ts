@@ -3,6 +3,8 @@ import { getIndustryConfig } from "./config";
 import { log } from "./logger";
 import type { IndustryConfig } from "../config/types";
 import { scopedFormula } from "./airtable-scoped";
+import { buildScriptEvolutionContext, type ScriptEvolutionContext } from "./sales-learning/script-evolution";
+import { saveScriptVersion } from "./sales-learning/script-versioning";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -52,6 +54,7 @@ interface PlaybookCompany {
   rankVersion: string;
   configName: string;
   lastCallAnalysis: CallAnalysisContext | null;
+  evolutionContext: ScriptEvolutionContext | null;
 }
 
 interface PlaybookOutput {
@@ -191,6 +194,7 @@ async function fetchTodayListCompanies(clientId?: string): Promise<PlaybookCompa
         rankVersion: String(f.Rank_Version || "").trim(),
         configName: String(f._Playbook_Config || "").trim(),
         lastCallAnalysis: null,
+        evolutionContext: null,
       });
     }
     offset = data.offset;
@@ -270,6 +274,11 @@ function buildPrompt(c: PlaybookCompany, cfg: IndustryConfig): string {
     }
   }
 
+  let evolutionSection = "";
+  if (c.evolutionContext?.promptInjection) {
+    evolutionSection = c.evolutionContext.promptInjection;
+  }
+
   return `You are a B2B sales script writer for the ${cfg.name} industry (${cfg.market} market).
 Write outreach scripts for calling ${c.companyName}.
 
@@ -279,7 +288,7 @@ ${gkSection}
 ${bucketGuidance}
 ${evidenceSection}
 ${opportunitySection}
-${notesSection}${callAnalysisSection}
+${notesSection}${callAnalysisSection}${evolutionSection}
 Engagement score: ${c.engagementScore}. Times called: ${c.timesCalled}.
 
 TONE: Confident, concise, operator voice. Industry-specific language for ${cfg.name}.
@@ -323,25 +332,48 @@ async function generatePlaybook(c: PlaybookCompany, cfg: IndustryConfig): Promis
   };
 }
 
-async function writePlaybook(companyId: string, playbook: PlaybookOutput, configName: string): Promise<void> {
+async function writePlaybook(
+  companyId: string,
+  playbook: PlaybookOutput,
+  configName: string,
+  evolutionCtx?: ScriptEvolutionContext | null
+): Promise<void> {
   const table = encodeURIComponent("Companies");
+  const fields: Record<string, any> = {
+    Playbook_Call_Opener: playbook.call_opener,
+    Playbook_Gatekeeper_Ask: playbook.gatekeeper_ask,
+    Playbook_Voicemail: playbook.voicemail,
+    Playbook_Email_Subject: playbook.email_subject,
+    Playbook_Email_Body: playbook.email_body,
+    Playbook_Followup_Text: playbook.followup_text,
+    Playbook_Version: PLAYBOOK_VERSION,
+    Playbook_Last_Generated: new Date().toISOString(),
+  };
+
+  if (evolutionCtx && evolutionCtx.promptInjection) {
+    fields.Playbook_Strategy_Notes = evolutionCtx.strategyNotes;
+    fields.Playbook_Learning_Version = evolutionCtx.learningVersion;
+    fields.Playbook_Applied_Patches = evolutionCtx.appliedPatches.length > 0
+      ? JSON.stringify(
+          evolutionCtx.appliedPatches.map(p => ({
+            type: p.patchType,
+            title: p.patchTitle,
+            priority: p.priority,
+            source: p.source,
+          }))
+        )
+      : "";
+    fields.Playbook_Confidence = evolutionCtx.confidence;
+  } else {
+    fields.Playbook_Strategy_Notes = "";
+    fields.Playbook_Learning_Version = "";
+    fields.Playbook_Applied_Patches = "";
+    fields.Playbook_Confidence = 0;
+  }
+
   await airtableRequest(table, {
     method: "PATCH",
-    body: JSON.stringify({
-      records: [{
-        id: companyId,
-        fields: {
-          Playbook_Call_Opener: playbook.call_opener,
-          Playbook_Gatekeeper_Ask: playbook.gatekeeper_ask,
-          Playbook_Voicemail: playbook.voicemail,
-          Playbook_Email_Subject: playbook.email_subject,
-          Playbook_Email_Body: playbook.email_body,
-          Playbook_Followup_Text: playbook.followup_text,
-          Playbook_Version: PLAYBOOK_VERSION,
-          Playbook_Last_Generated: new Date().toISOString(),
-        },
-      }],
-    }),
+    body: JSON.stringify({ records: [{ id: companyId, fields }] }),
   });
 }
 
@@ -374,6 +406,33 @@ export async function generatePlaybooksForTodayList(options: {
     logPB(`Matched call analysis context for ${analysisMatched} companies`);
   }
 
+  if (effectiveClientId) {
+    try {
+      let matched = 0;
+      for (const c of companies) {
+        try {
+          const ctx = await buildScriptEvolutionContext(
+            effectiveClientId,
+            c.companyName,
+            c.bucket,
+            c.opportunityType || undefined
+          );
+          if (ctx.promptInjection) {
+            c.evolutionContext = ctx;
+            matched++;
+          }
+        } catch (companyErr: any) {
+          logPB(`Evolution context for ${c.companyName} failed (non-blocking): ${companyErr.message}`);
+        }
+      }
+      if (matched > 0) {
+        logPB(`Script evolution context loaded for ${matched} companies`);
+      }
+    } catch (e: any) {
+      logPB(`Script evolution context failed (non-blocking): ${e.message}`);
+    }
+  }
+
   const result: PlaybookResult = {
     generated: 0,
     skipped: 0,
@@ -394,7 +453,7 @@ export async function generatePlaybooksForTodayList(options: {
     try {
       logPB(`Generating playbook for ${c.companyName} (${c.bucket})...`);
       const playbook = await generatePlaybook(c, cfg);
-      await writePlaybook(c.id, playbook, cfg.name);
+      await writePlaybook(c.id, playbook, cfg.name, c.evolutionContext);
       result.generated++;
       result.details.push({
         companyName: c.companyName,
@@ -403,6 +462,23 @@ export async function generatePlaybooksForTodayList(options: {
         gatekeeperAsk: playbook.gatekeeper_ask,
       });
       logPB(`Playbook written for ${c.companyName}`);
+
+      if (effectiveClientId && c.evolutionContext && c.evolutionContext.promptInjection) {
+        try {
+          await saveScriptVersion(
+            effectiveClientId,
+            c.companyName,
+            c.bucket,
+            playbook,
+            c.evolutionContext.appliedPatches.map(p => ({ patchType: p.patchType, title: p.patchTitle, priority: p.priority })),
+            c.evolutionContext.appliedPatches.map(p => p.id),
+            c.evolutionContext.confidence,
+            c.id
+          );
+        } catch (vErr: any) {
+          logPB(`Script version save failed for ${c.companyName} (non-blocking): ${vErr.message}`);
+        }
+      }
     } catch (e: any) {
       result.errors++;
       result.details.push({ companyName: c.companyName, status: "error" });
