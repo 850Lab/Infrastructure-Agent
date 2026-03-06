@@ -195,6 +195,7 @@ export function registerTodayRoutes(app: Express) {
 
   app.post("/api/calls/log", authMiddleware, async (req: Request, res: Response) => {
     try {
+      const clientId = (req as any).user?.clientId;
       const { company_name, outcome, notes, gatekeeper_name } = req.body;
       if (!company_name || !outcome) {
         return res.status(400).json({ error: "company_name and outcome are required" });
@@ -212,6 +213,7 @@ export function registerTodayRoutes(app: Express) {
       };
       if (notes) callFields.Notes = notes;
       if (gatekeeper_name) callFields.Gatekeeper_Name = gatekeeper_name;
+      if (clientId) callFields.Client_ID = clientId;
 
       const created = await airtableCreate("Calls", callFields);
       if (!created) {
@@ -229,12 +231,12 @@ export function registerTodayRoutes(app: Express) {
           callTime: callFields.Call_Time,
           notes: notes || "",
           gatekeeperName: gatekeeper_name || "",
-        });
+        }, clientId);
       } catch (e: any) {
         log(`Call engine processing error for ${company_name}: ${e.message}`, "today");
       }
 
-      log(`Call logged: ${company_name} → ${outcome}`, "today");
+      log(`Call logged: ${company_name} → ${outcome} (client: ${clientId || 'global'})`, "today");
 
       res.json({
         call_id: created.id,

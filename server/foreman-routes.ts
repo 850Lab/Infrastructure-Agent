@@ -21,15 +21,20 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function getClientId(req: Request): string | undefined {
+  return (req as any).user?.clientId || (req.query.clientId as string) || undefined;
+}
+
 export function registerForemanRoutes(app: Express) {
   app.get("/api/foreman/call-pack/preview", async (req: Request, res: Response) => {
     const count = parseInt(String(req.query.count || "20"), 10);
     const minEmployee = parseInt(String(req.query.min_employee || "0"), 10);
     const geo = String(req.query.geo || "gulf_coast");
     const mode = String(req.query.mode || "blind_mobilization");
+    const clientId = getClientId(req);
 
     try {
-      const candidates = await fetchCandidates();
+      const candidates = await fetchCandidates("Companies", clientId);
       const { selected, filtered } = rankAndSelect(candidates, count, minEmployee, geo);
       const callPack = buildCallPack(selected, mode);
 
@@ -49,9 +54,10 @@ export function registerForemanRoutes(app: Express) {
 
   app.post("/api/foreman/call-pack/generate", requireInternalAuth, async (req: Request, res: Response) => {
     const { count = 20, min_employee = 0, geo = "gulf_coast", mode = "blind_mobilization" } = req.body || {};
+    const clientId = getClientId(req);
 
     try {
-      const candidates = await fetchCandidates();
+      const candidates = await fetchCandidates("Companies", clientId);
       const { selected, filtered } = rankAndSelect(candidates, count, min_employee, geo);
       const callPack = buildCallPack(selected, mode);
 
@@ -89,9 +95,10 @@ export function registerForemanRoutes(app: Express) {
 
   app.post("/api/foreman/call-pack/generate-and-tag", requireInternalAuth, async (req: Request, res: Response) => {
     const { count = 20, min_employee = 0, geo = "gulf_coast", mode = "blind_mobilization" } = req.body || {};
+    const clientId = getClientId(req);
 
     try {
-      const candidates = await fetchCandidates();
+      const candidates = await fetchCandidates("Companies", clientId);
       const { selected, filtered } = rankAndSelect(candidates, count, min_employee, geo);
       const callPack = buildCallPack(selected, mode);
 

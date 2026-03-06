@@ -1,4 +1,5 @@
 import { log } from "./logger";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -203,13 +204,16 @@ async function airtableRequest(path: string, options: RequestInit = {}): Promise
   return res.json();
 }
 
-export async function fetchCandidates(tableName = "Companies"): Promise<ForemanCandidate[]> {
+export async function fetchCandidates(tableName = "Companies", clientId?: string): Promise<ForemanCandidate[]> {
   const encoded = encodeURIComponent(tableName);
   const candidates: ForemanCandidate[] = [];
   let offset: string | undefined;
 
   do {
     const params = new URLSearchParams({ pageSize: "100" });
+    if (clientId) {
+      params.set("filterByFormula", scopedFormula(clientId));
+    }
     if (offset) params.set("offset", offset);
 
     const data = await airtableRequest(`${encoded}?${params.toString()}`);
@@ -256,9 +260,10 @@ export async function fetchCandidates(tableName = "Companies"): Promise<ForemanC
 
       let dmOffset: string | undefined;
       do {
-        const url = dmOffset
-          ? `${dmTable}?pageSize=100&offset=${dmOffset}`
-          : `${dmTable}?pageSize=100`;
+        const dmParams = new URLSearchParams({ pageSize: "100" });
+        if (clientId) dmParams.set("filterByFormula", scopedFormula(clientId));
+        if (dmOffset) dmParams.set("offset", dmOffset);
+        const url = `${dmTable}?${dmParams.toString()}`;
         const dmData = await airtableRequest(url);
 
         for (const rec of dmData.records || []) {
