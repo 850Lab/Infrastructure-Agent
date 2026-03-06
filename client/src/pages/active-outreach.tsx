@@ -13,11 +13,16 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  MessageSquare,
   XCircle,
   ThumbsUp,
   Send,
   Clock,
+  Eye,
+  MousePointer,
+  Settings,
+  MailCheck,
+  MailX,
+  AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,6 +32,8 @@ const MUTED = "#94A3B8";
 const BORDER = "#E2E8F0";
 const SUBTLE = "#F8FAFC";
 const AMBER = "#F59E0B";
+const BLUE = "#3B82F6";
+const ERROR = "#EF4444";
 
 interface OutreachItem {
   id: number;
@@ -58,20 +65,35 @@ interface OutreachResponse {
   items: OutreachItem[];
 }
 
+interface EmailSendRecord {
+  id: number;
+  touchNumber: number;
+  contactEmail: string;
+  contactName: string | null;
+  subject: string;
+  status: string;
+  sentAt: string;
+  openCount: number;
+  firstOpenedAt: string | null;
+  clickCount: number;
+  firstClickedAt: string | null;
+  errorMessage: string | null;
+}
+
 const TOUCH_LABELS = [
-  { num: 1, label: "Email", icon: Mail, day: 1 },
-  { num: 2, label: "Call", icon: Phone, day: 3 },
-  { num: 3, label: "Email", icon: Mail, day: 5 },
-  { num: 4, label: "Call", icon: Phone, day: 7 },
-  { num: 5, label: "Email", icon: Mail, day: 10 },
-  { num: 6, label: "Call", icon: Phone, day: 14 },
+  { num: 1, label: "Email", icon: Mail, day: 1, isEmail: true },
+  { num: 2, label: "Call", icon: Phone, day: 3, isEmail: false },
+  { num: 3, label: "Email", icon: Mail, day: 5, isEmail: true },
+  { num: 4, label: "Call", icon: Phone, day: 7, isEmail: false },
+  { num: 5, label: "Email", icon: Mail, day: 10, isEmail: true },
+  { num: 6, label: "Call", icon: Phone, day: 14, isEmail: false },
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   ACTIVE: { bg: "rgba(16,185,129,0.08)", text: EMERALD, border: "rgba(16,185,129,0.3)" },
   COMPLETED: { bg: "rgba(148,163,184,0.08)", text: MUTED, border: BORDER },
-  RESPONDED: { bg: "rgba(59,130,246,0.08)", text: "#3B82F6", border: "rgba(59,130,246,0.3)" },
-  NOT_INTERESTED: { bg: "rgba(239,68,68,0.08)", text: "#EF4444", border: "rgba(239,68,68,0.3)" },
+  RESPONDED: { bg: "rgba(59,130,246,0.08)", text: BLUE, border: "rgba(59,130,246,0.3)" },
+  NOT_INTERESTED: { bg: "rgba(239,68,68,0.08)", text: ERROR, border: "rgba(239,68,68,0.3)" },
 };
 
 function TouchTimeline({ touchesCompleted }: { touchesCompleted: number }) {
@@ -110,14 +132,168 @@ function TouchTimeline({ touchesCompleted }: { touchesCompleted: number }) {
   );
 }
 
+function TrackingBadge({ send }: { send: EmailSendRecord }) {
+  if (send.status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+        style={{ background: "rgba(239,68,68,0.08)", color: ERROR, border: `1px solid rgba(239,68,68,0.3)` }}
+        title={send.errorMessage || "Send failed"}
+        data-testid={`badge-failed-${send.id}`}
+      >
+        <MailX className="w-3 h-3" /> Failed
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+        style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: `1px solid rgba(16,185,129,0.3)` }}
+        data-testid={`badge-sent-${send.id}`}
+      >
+        <MailCheck className="w-3 h-3" /> Sent
+      </span>
+      {send.openCount > 0 ? (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+          style={{ background: "rgba(59,130,246,0.08)", color: BLUE, border: `1px solid rgba(59,130,246,0.3)` }}
+          title={send.firstOpenedAt ? `First opened: ${new Date(send.firstOpenedAt).toLocaleString()}` : ""}
+          data-testid={`badge-opened-${send.id}`}
+        >
+          <Eye className="w-3 h-3" /> Opened ({send.openCount})
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+          style={{ background: SUBTLE, color: MUTED, border: `1px solid ${BORDER}` }}
+          data-testid={`badge-not-opened-${send.id}`}
+        >
+          <Eye className="w-3 h-3" /> Not Opened
+        </span>
+      )}
+      {send.clickCount > 0 && (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+          style={{ background: "rgba(168,85,247,0.08)", color: "#A855F7", border: `1px solid rgba(168,85,247,0.3)` }}
+          title={send.firstClickedAt ? `First click: ${new Date(send.firstClickedAt).toLocaleString()}` : ""}
+          data-testid={`badge-clicked-${send.id}`}
+        >
+          <MousePointer className="w-3 h-3" /> {send.clickCount} clicks
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SendEmailButton({
+  item,
+  touchNumber,
+  existingSend,
+}: {
+  item: OutreachItem;
+  touchNumber: number;
+  existingSend?: EmailSendRecord;
+}) {
+  const { toast } = useToast();
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [showInput, setShowInput] = useState(false);
+
+  const sendMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/email/send", {
+        outreachPipelineId: item.id,
+        touchNumber,
+        recipientEmail,
+        recipientName: item.contactName || undefined,
+        companyId: item.companyId,
+        companyName: item.companyName,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/sends", item.id] });
+      setShowInput(false);
+      toast({ title: "Email sent", description: `Touch ${touchNumber} email sent to ${recipientEmail}` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Send failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (existingSend && existingSend.status === "sent") {
+    return <TrackingBadge send={existingSend} />;
+  }
+
+  if (existingSend && existingSend.status === "failed") {
+    return (
+      <div className="flex items-center gap-2">
+        <TrackingBadge send={existingSend} />
+        <button
+          onClick={() => setShowInput(true)}
+          className="text-[10px] font-semibold underline"
+          style={{ color: EMERALD }}
+          data-testid={`button-retry-send-${touchNumber}-${item.id}`}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!showInput) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setShowInput(true)}
+        className="gap-1 text-xs h-7"
+        style={{ borderColor: "rgba(16,185,129,0.3)", color: EMERALD }}
+        data-testid={`button-send-email-${touchNumber}-${item.id}`}
+      >
+        <Send className="w-3 h-3" /> Send
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <input
+        type="email"
+        value={recipientEmail}
+        onChange={(e) => setRecipientEmail(e.target.value)}
+        placeholder="recipient@email.com"
+        className="text-xs px-2 py-1.5 rounded-md flex-1"
+        style={{ border: `1px solid ${BORDER}`, outline: "none", color: TEXT, background: "#FFFFFF" }}
+        autoFocus
+        data-testid={`input-recipient-${touchNumber}-${item.id}`}
+      />
+      <Button
+        size="sm"
+        disabled={sendMutation.isPending || !recipientEmail}
+        onClick={() => sendMutation.mutate()}
+        className="gap-1 text-xs h-7"
+        style={{ background: EMERALD, color: "#FFFFFF" }}
+        data-testid={`button-confirm-send-${touchNumber}-${item.id}`}
+      >
+        {sendMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+        Send
+      </Button>
+      <button
+        onClick={() => setShowInput(false)}
+        className="text-xs"
+        style={{ color: MUTED }}
+        data-testid={`button-cancel-send-${touchNumber}-${item.id}`}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 function OutreachCard({
   item,
   onStatusChange,
   isUpdating,
+  emailSettings,
 }: {
   item: OutreachItem;
   onStatusChange: (id: number, status: string) => void;
   isUpdating: boolean;
+  emailSettings: any;
 }) {
   const [expanded, setExpanded] = useState(false);
   const statusStyle = STATUS_COLORS[item.pipelineStatus] || STATUS_COLORS.ACTIVE;
@@ -125,6 +301,20 @@ function OutreachCard({
   const nextTouchInfo = TOUCH_LABELS[item.touchesCompleted] || null;
   const nextDate = new Date(item.nextTouchDate);
   const isOverdue = item.pipelineStatus === "ACTIVE" && nextDate <= new Date();
+
+  const { data: emailSends } = useQuery<EmailSendRecord[]>({
+    queryKey: ["/api/email/sends", item.id],
+    enabled: expanded,
+  });
+
+  const sendsByTouch: Record<number, EmailSendRecord> = {};
+  if (emailSends) {
+    for (const send of emailSends) {
+      if (!sendsByTouch[send.touchNumber] || new Date(send.sentAt) > new Date(sendsByTouch[send.touchNumber].sentAt)) {
+        sendsByTouch[send.touchNumber] = send;
+      }
+    }
+  }
 
   function getTouchContent(touchNum: number): string | null {
     switch (touchNum) {
@@ -207,6 +397,7 @@ function OutreachCard({
               const done = touch.num <= item.touchesCompleted;
               const current = touch.num === nextTouch && item.pipelineStatus === "ACTIVE";
               const Icon = touch.icon;
+              const existingSend = sendsByTouch[touch.num];
               return (
                 <div
                   key={touch.num}
@@ -217,14 +408,33 @@ function OutreachCard({
                   }}
                   data-testid={`touch-${touch.num}-${item.id}`}
                 >
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Icon className="w-3.5 h-3.5" style={{ color: done ? EMERALD : current ? AMBER : MUTED }} />
-                    <span className="text-xs font-semibold" style={{ color: done ? EMERALD : current ? AMBER : TEXT }}>
-                      Touch {touch.num} — {touch.label} (Day {touch.day})
-                    </span>
-                    {done && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: EMERALD }} />}
-                    {current && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.1)", color: AMBER }}>NEXT</span>}
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <Icon className="w-3.5 h-3.5" style={{ color: done ? EMERALD : current ? AMBER : MUTED }} />
+                      <span className="text-xs font-semibold" style={{ color: done ? EMERALD : current ? AMBER : TEXT }}>
+                        Touch {touch.num} — {touch.label} (Day {touch.day})
+                      </span>
+                      {done && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: EMERALD }} />}
+                      {current && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.1)", color: AMBER }}>NEXT</span>}
+                    </div>
+                    {touch.isEmail && content && emailSettings && (
+                      <SendEmailButton
+                        item={item}
+                        touchNumber={touch.num}
+                        existingSend={existingSend}
+                      />
+                    )}
                   </div>
+                  {existingSend && (
+                    <div className="flex items-center gap-2 mb-1.5 text-[10px]" style={{ color: MUTED }}>
+                      Sent to {existingSend.contactEmail} on {new Date(existingSend.sentAt).toLocaleString()}
+                      {existingSend.firstOpenedAt && (
+                        <span className="flex items-center gap-0.5" style={{ color: BLUE }}>
+                          <Eye className="w-3 h-3" /> First opened {new Date(existingSend.firstOpenedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {content && (
                     <pre
                       className="text-xs whitespace-pre-wrap font-sans leading-relaxed"
@@ -247,7 +457,7 @@ function OutreachCard({
                 disabled={isUpdating}
                 onClick={() => onStatusChange(item.id, "RESPONDED")}
                 className="gap-1 text-xs"
-                style={{ borderColor: "rgba(59,130,246,0.3)", color: "#3B82F6" }}
+                style={{ borderColor: "rgba(59,130,246,0.3)", color: BLUE }}
                 data-testid={`button-responded-${item.id}`}
               >
                 <ThumbsUp className="w-3 h-3" />
@@ -259,7 +469,7 @@ function OutreachCard({
                 disabled={isUpdating}
                 onClick={() => onStatusChange(item.id, "NOT_INTERESTED")}
                 className="gap-1 text-xs"
-                style={{ borderColor: "rgba(239,68,68,0.3)", color: "#EF4444" }}
+                style={{ borderColor: "rgba(239,68,68,0.3)", color: ERROR }}
                 data-testid={`button-not-interested-${item.id}`}
               >
                 <XCircle className="w-3 h-3" />
@@ -297,6 +507,11 @@ export default function ActiveOutreachPage() {
     refetchInterval: 30000,
   });
 
+  const { data: emailSettings } = useQuery({
+    queryKey: ["/api/email/settings"],
+    enabled: !!token,
+  });
+
   const runMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/outreach/run"),
     onSuccess: () => {
@@ -327,8 +542,8 @@ export default function ActiveOutreachPage() {
   const statCards = [
     { label: "Active", value: stats.active, color: EMERALD },
     { label: "Completed", value: stats.completed, color: MUTED },
-    { label: "Responded", value: stats.responded, color: "#3B82F6" },
-    { label: "Not Interested", value: stats.notInterested, color: "#EF4444" },
+    { label: "Responded", value: stats.responded, color: BLUE },
+    { label: "Not Interested", value: stats.notInterested, color: ERROR },
   ];
 
   const filterOptions = [
@@ -365,17 +580,58 @@ export default function ActiveOutreachPage() {
               6-touch outreach sequences for qualified companies
             </p>
           </div>
-          <Button
-            onClick={() => runMutation.mutate()}
-            disabled={runMutation.isPending}
-            className="gap-2 text-sm font-semibold"
-            style={{ background: EMERALD, color: "#FFFFFF" }}
-            data-testid="button-run-outreach"
-          >
-            {runMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            {runMutation.isPending ? "Running..." : "Run Outreach Engine"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/machine/email-settings")}
+              className="gap-1.5 text-xs"
+              style={{ borderColor: BORDER, color: emailSettings ? EMERALD : MUTED }}
+              data-testid="button-email-settings"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              Email Settings
+              {emailSettings && (
+                <CheckCircle2 className="w-3 h-3" style={{ color: EMERALD }} />
+              )}
+            </Button>
+            <Button
+              onClick={() => runMutation.mutate()}
+              disabled={runMutation.isPending}
+              className="gap-2 text-sm font-semibold"
+              style={{ background: EMERALD, color: "#FFFFFF" }}
+              data-testid="button-run-outreach"
+            >
+              {runMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              {runMutation.isPending ? "Running..." : "Run Outreach Engine"}
+            </Button>
+          </div>
         </div>
+
+        {!emailSettings && (
+          <div
+            className="rounded-xl p-4 flex items-start gap-3 mb-6"
+            style={{ background: "rgba(245,158,11,0.05)", border: `1px solid rgba(245,158,11,0.2)` }}
+            data-testid="email-settings-warning"
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: AMBER }} />
+            <div>
+              <p className="text-xs font-semibold" style={{ color: TEXT }}>Email sending not configured</p>
+              <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>
+                Set up your SMTP connection in{" "}
+                <button
+                  onClick={() => navigate("/machine/email-settings")}
+                  className="underline font-medium"
+                  style={{ color: EMERALD }}
+                  data-testid="link-email-settings"
+                >
+                  Email Settings
+                </button>{" "}
+                to send outreach emails directly from this page.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-4 gap-3 mb-6" data-testid="stats-grid">
           {statCards.map((card) => (
@@ -434,6 +690,7 @@ export default function ActiveOutreachPage() {
                 item={item}
                 onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
                 isUpdating={statusMutation.isPending}
+                emailSettings={emailSettings}
               />
             ))}
           </div>

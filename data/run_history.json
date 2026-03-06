@@ -1,7 +1,51 @@
 [
   {
+    "run_id": "run_1772818509333_3ieg1e",
+    "started_at": 1772818509333,
+    "steps": [
+      {
+        "step": "recovery_engine",
+        "started_at": 1772818510467,
+        "status": "running"
+      }
+    ],
+    "errors": [],
+    "status": "running",
+    "clientId": "3dfe54de-caca-40de-a47a-7b825118738d",
+    "_airtable_id": "recXDAwGBPknTrMVd"
+  },
+  {
+    "run_id": "run_1772818433983_u8dqvy",
+    "started_at": 1772818433984,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "recmSZTOLZ0V96fVE"
+  },
+  {
+    "run_id": "run_1772818391894_2t7ehx",
+    "started_at": 1772818391895,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "rec3YiCnNDrrHh1mt"
+  },
+  {
+    "run_id": "run_1772818281166_15fofp",
+    "started_at": 1772818281167,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "recPnMe8jSRRJPg33"
+  },
+  {
     "run_id": "run_1772816879114_sfvaxh",
     "started_at": 1772816879114,
+    "finished_at": 1772817065179,
+    "status": "success",
     "steps": [
       {
         "step": "recovery_engine",
@@ -935,12 +979,6 @@
         }
       }
     ],
-    "errors": [],
-    "status": "completed",
-    "clientId": "dea22a4e-03df-46d7-929b-4b50b10a8f69",
-    "_airtable_id": "recZ7y3BoxtqBthlo",
-    "finished_at": 1772817065179,
-    "duration_ms": 186065,
     "summary": {
       "errors_count": 0,
       "warnings_count": 0,
@@ -1602,11 +1640,16 @@
         ],
         "reverted": false
       }
-    }
+    },
+    "errors": [],
+    "duration_ms": 186065,
+    "_airtable_id": "recZ7y3BoxtqBthlo"
   },
   {
     "run_id": "run_1772816649088_pvui70",
     "started_at": 1772816649088,
+    "finished_at": 1772816873959,
+    "status": "success",
     "steps": [
       {
         "step": "recovery_engine",
@@ -2536,12 +2579,6 @@
         }
       }
     ],
-    "errors": [],
-    "status": "completed",
-    "clientId": "3dfe54de-caca-40de-a47a-7b825118738d",
-    "_airtable_id": "recHsZFBDKoWToeBs",
-    "finished_at": 1772816873959,
-    "duration_ms": 224871,
     "summary": {
       "errors_count": 0,
       "warnings_count": 0,
@@ -3203,7 +3240,10 @@
         ],
         "reverted": false
       }
-    }
+    },
+    "errors": [],
+    "duration_ms": 224871,
+    "_airtable_id": "recHsZFBDKoWToeBs"
   },
   {
     "run_id": "run_1772816601859_m6llo3",

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -183,3 +183,66 @@ export const outreachPipeline = pgTable("outreach_pipeline", {
 export const insertOutreachPipelineSchema = createInsertSchema(outreachPipeline).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOutreachPipeline = z.infer<typeof insertOutreachPipelineSchema>;
 export type OutreachPipeline = typeof outreachPipeline.$inferSelect;
+
+export const clientEmailSettings = pgTable("client_email_settings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull().unique(),
+  smtpHost: text("smtp_host").notNull(),
+  smtpPort: integer("smtp_port").notNull().default(587),
+  smtpUser: text("smtp_user").notNull(),
+  smtpPass: text("smtp_pass").notNull(),
+  smtpSecure: boolean("smtp_secure").notNull().default(false),
+  fromName: text("from_name").notNull(),
+  fromEmail: text("from_email").notNull(),
+  signature: text("signature"),
+  dailyLimit: integer("daily_limit").notNull().default(50),
+  sentToday: integer("sent_today").notNull().default(0),
+  lastResetDate: text("last_reset_date"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertClientEmailSettingsSchema = createInsertSchema(clientEmailSettings).omit({ id: true, createdAt: true, updatedAt: true, sentToday: true, lastResetDate: true });
+export type InsertClientEmailSettings = z.infer<typeof insertClientEmailSettingsSchema>;
+export type ClientEmailSettings = typeof clientEmailSettings.$inferSelect;
+
+export const emailSends = pgTable("email_sends", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  outreachPipelineId: integer("outreach_pipeline_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name"),
+  contactEmail: text("contact_email").notNull(),
+  contactName: text("contact_name"),
+  touchNumber: integer("touch_number").notNull(),
+  subject: text("subject").notNull(),
+  bodyHtml: text("body_html").notNull(),
+  trackingId: varchar("tracking_id").notNull().default(sql`gen_random_uuid()`),
+  status: text("status").notNull().default("sent"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  errorMessage: text("error_message"),
+  openCount: integer("open_count").notNull().default(0),
+  firstOpenedAt: timestamp("first_opened_at"),
+  clickCount: integer("click_count").notNull().default(0),
+  firstClickedAt: timestamp("first_clicked_at"),
+});
+
+export const insertEmailSendSchema = createInsertSchema(emailSends).omit({ id: true, sentAt: true, openCount: true, firstOpenedAt: true, clickCount: true, firstClickedAt: true });
+export type InsertEmailSend = z.infer<typeof insertEmailSendSchema>;
+export type EmailSend = typeof emailSends.$inferSelect;
+
+export const emailTrackingEvents = pgTable("email_tracking_events", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  emailSendId: integer("email_send_id").notNull(),
+  trackingId: varchar("tracking_id").notNull(),
+  eventType: text("event_type").notNull(),
+  linkUrl: text("link_url"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertEmailTrackingEventSchema = createInsertSchema(emailTrackingEvents).omit({ id: true, createdAt: true });
+export type InsertEmailTrackingEvent = z.infer<typeof insertEmailTrackingEventSchema>;
+export type EmailTrackingEvent = typeof emailTrackingEvents.$inferSelect;
