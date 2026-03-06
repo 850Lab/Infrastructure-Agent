@@ -14,12 +14,14 @@ export interface SSEEvent {
   type: EventType;
   payload: Record<string, any>;
   ts: number;
+  seq: number;
 }
 
 class EventBus {
   private subscribers: Set<Response> = new Set();
   private buffer: SSEEvent[] = [];
   private readonly maxBuffer = 200;
+  private seq = 0;
 
   subscribe(res: Response): void {
     this.subscribers.add(res);
@@ -34,13 +36,20 @@ class EventBus {
     return this.buffer.slice(-count);
   }
 
+  getEventsSince(sinceSeq: number, limit = 50): SSEEvent[] {
+    const events = this.buffer.filter((e) => e.seq > sinceSeq);
+    return events.slice(-limit);
+  }
+
   publish(type: EventType, payload: Record<string, any>): void {
     const ts = Date.now();
+    this.seq++;
     const narrative = toNarrative(type, { ...payload, ts: payload.ts ?? ts });
 
     const enrichedPayload = {
       ...payload,
       ts: payload.ts ?? ts,
+      seq: this.seq,
       raw_type: narrative.raw_type,
       raw_step: narrative.raw_step,
       raw_trigger: narrative.raw_trigger,
@@ -49,11 +58,13 @@ class EventBus {
       severity: narrative.severity,
     };
 
-    const event: SSEEvent = { type, payload: enrichedPayload, ts };
+    const event: SSEEvent = { type, payload: enrichedPayload, ts, seq: this.seq };
 
-    this.buffer.push(event);
-    if (this.buffer.length > this.maxBuffer) {
-      this.buffer = this.buffer.slice(-this.maxBuffer);
+    if (type !== "HEARTBEAT") {
+      this.buffer.push(event);
+      if (this.buffer.length > this.maxBuffer) {
+        this.buffer = this.buffer.slice(-this.maxBuffer);
+      }
     }
 
     const data = `event: ${type}\ndata: ${JSON.stringify(enrichedPayload)}\n\n`;
@@ -65,6 +76,21 @@ class EventBus {
         this.subscribers.delete(res);
       }
     }
+  }
+
+  sendHeartbeatTo(res: Response): void {
+    this.seq++;
+    const payload = { ts: Date.now(), seq: this.seq };
+    const data = `event: HEARTBEAT\ndata: ${JSON.stringify(payload)}\n\n`;
+    try {
+      res.write(data);
+    } catch {
+      this.subscribers.delete(res);
+    }
+  }
+
+  getCurrentSeq(): number {
+    return this.seq;
   }
 }
 

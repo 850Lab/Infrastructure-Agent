@@ -106,7 +106,7 @@ interface MachineConfigData {
 export default function DashboardPage() {
   const { getToken } = useAuth();
   const token = getToken();
-  const { recentEvents, activeNodes, runStatus, connected } = useSSE(token);
+  const { recentEvents, activeNodes, runStatus, connected, connectionStatus } = useSSE(token);
   const [, navigate] = useLocation();
   const [runLoading, setRunLoading] = useState(false);
   const [doneSteps, setDoneSteps] = useState<Set<string>>(new Set());
@@ -373,12 +373,26 @@ export default function DashboardPage() {
                 {statusSub}
               </p>
 
-              {connected && (
-                <div className="flex items-center gap-1.5 mb-4">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: EMERALD }} />
-                  <span className="text-xs font-mono" style={{ color: "#94A3B8" }} data-testid="text-sse-status">SSE Connected</span>
-                </div>
-              )}
+              <div className="flex items-center gap-1.5 mb-4" data-testid="sse-status-indicator">
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{
+                    background: connectionStatus === "connected"
+                      ? EMERALD
+                      : connectionStatus === "reconnecting"
+                        ? "#F59E0B"
+                        : "#EF4444",
+                    animation: connectionStatus === "reconnecting" ? "pulse 1.5s ease-in-out infinite" : "none",
+                  }}
+                />
+                <span className="text-xs font-mono" style={{ color: "#94A3B8" }} data-testid="text-sse-status">
+                  {connectionStatus === "connected"
+                    ? "Connected"
+                    : connectionStatus === "reconnecting"
+                      ? "Reconnecting\u2026"
+                      : "Offline"}
+                </span>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 {kpis.map((kpi) => (

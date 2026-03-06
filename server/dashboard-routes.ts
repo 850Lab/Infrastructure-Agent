@@ -125,6 +125,8 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const sinceSeq = parseInt(req.query.since_seq as string, 10) || 0;
+
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -133,8 +135,11 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     });
     res.flushHeaders();
 
-    const recent = eventBus.getRecentEvents(50);
-    for (const event of recent) {
+    const backfill = sinceSeq > 0
+      ? eventBus.getEventsSince(sinceSeq, 50)
+      : eventBus.getRecentEvents(50);
+
+    for (const event of backfill) {
       res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
     }
 
@@ -142,7 +147,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
     const heartbeatInterval = setInterval(() => {
       try {
-        eventBus.publish("HEARTBEAT", { ts: Date.now() });
+        eventBus.sendHeartbeatTo(res);
       } catch {
         clearInterval(heartbeatInterval);
       }
