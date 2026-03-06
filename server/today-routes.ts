@@ -6,6 +6,8 @@ import { authMiddleware } from "./dashboard-routes";
 import { log } from "./logger";
 import { processCall } from "./call-engine";
 import { scopedFormula } from "./airtable-scoped";
+import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic } from "./openai";
+import { eventBus } from "./events";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -340,16 +342,66 @@ export function registerTodayRoutes(app: Express) {
 
       log(`Recording attached to call ${callId}: ${file.originalname} (${(file.size / 1024).toFixed(0)}KB)`, "today");
 
-      setTimeout(() => {
-        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch {}
-      }, 5 * 60 * 1000);
+      const clientId = (req as any).user?.clientId;
 
       res.json({
         ok: true,
         call_id: callId,
         filename: file.originalname,
         size: file.size,
+        processing: true,
       });
+
+      (async () => {
+        try {
+          const audioBuffer = fs.readFileSync(file.path);
+          log(`Transcribing recording for call ${callId}...`, "today");
+          const transcription = await transcribeAudio(audioBuffer, file.originalname);
+
+          const deterministicResult = analyzeContainmentDeterministic(transcription);
+          log(`Deterministic analysis: problem=${deterministicResult.problem_detected || "none"}, confidence=${deterministicResult.confidence || "n/a"}`, "today");
+
+          log(`Running GPT containment analysis for call ${callId}...`, "today");
+          const analysis = await analyzeContainment(transcription);
+
+          const writebackFields: Record<string, any> = {
+            Transcription: transcription,
+            Analysis: analysis,
+            Analysis_JSON: JSON.stringify(deterministicResult),
+          };
+          if (deterministicResult.problem_detected) {
+            writebackFields.Problem_Detected = deterministicResult.problem_detected;
+            writebackFields.Proposed_Patch_Type = deterministicResult.proposed_patch_type;
+            writebackFields.Analysis_Confidence = deterministicResult.confidence;
+          }
+
+          const writebackUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${encodeURIComponent("Calls")}/${callId}`;
+          await fetch(writebackUrl, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${AIRTABLE_API_KEY()}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ fields: writebackFields }),
+          });
+
+          log(`Transcription + analysis complete for call ${callId} (${transcription.length} chars)`, "today");
+
+          eventBus.publish("CALL_ANALYSIS_COMPLETE", {
+            callId,
+            transcription: transcription.slice(0, 2000),
+            analysis,
+            problemDetected: deterministicResult.problem_detected || null,
+            proposedPatchType: deterministicResult.proposed_patch_type || null,
+            confidence: deterministicResult.confidence || null,
+            ts: Date.now(),
+          }, clientId);
+        } catch (e: any) {
+          log(`Transcription pipeline error for call ${callId}: ${e.message}`, "today");
+        } finally {
+          try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch {}
+        }
+      })();
     } catch (err: any) {
       log(`Recording upload error: ${err.message}`, "today");
       if (req.file && fs.existsSync(req.file.path)) {

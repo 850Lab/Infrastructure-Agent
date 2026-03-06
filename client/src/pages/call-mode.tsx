@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   Phone, Copy, Check, ChevronLeft, ChevronRight, X, Mail, Globe,
   MapPin, User, Shield, FileText, MessageSquare, Loader2, Calendar,
-  ArrowLeft, Zap, ClipboardList, Mic, Upload, CheckCircle2,
+  ArrowLeft, Zap, ClipboardList, Mic, Upload, CheckCircle2, AlertTriangle, Brain,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -95,6 +95,15 @@ export default function CallModePage() {
   const [lastCallIds, setLastCallIds] = useState<Map<string, string>>(new Map());
   const [uploadedCallIds, setUploadedCallIds] = useState<Set<string>>(new Set());
   const [uploadingCallId, setUploadingCallId] = useState<string | null>(null);
+  const [analyzingCallIds, setAnalyzingCallIds] = useState<Set<string>>(new Set());
+  const [analysisResults, setAnalysisResults] = useState<Map<string, {
+    transcription: string;
+    analysis: string;
+    problemDetected: string | null;
+    proposedPatchType: string | null;
+    confidence: string | null;
+  }>>(new Map());
+  const [showAnalysis, setShowAnalysis] = useState<string | null>(null);
 
   const { data: todayData, isLoading } = useQuery<{ companies: TodayCompany[]; count: number }>({
     queryKey: ["/api/today-list"],
@@ -211,13 +220,51 @@ export default function CallModePage() {
         throw new Error(err.error || "Upload failed");
       }
       setUploadedCallIds(prev => new Set(prev).add(companyId));
-      toast({ title: "Recording uploaded", description: `${file.name} attached to Airtable.`, duration: 3000 });
+      setAnalyzingCallIds(prev => new Set(prev).add(companyId));
+      toast({ title: "Recording uploaded", description: `Analyzing transcription...`, duration: 3000 });
     } catch (e: any) {
       toast({ title: "Upload failed", description: e.message, variant: "destructive", duration: 4000 });
     } finally {
       setUploadingCallId(null);
     }
   }, [token, toast]);
+
+  useEffect(() => {
+    if (!token) return;
+    const es = new EventSource(`/api/events?token=${token}`);
+    const handler = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "CALL_ANALYSIS_COMPLETE" && data.payload) {
+          const p = data.payload;
+          const callId = p.callId;
+          const companyEntry = [...lastCallIds.entries()].find(([, cid]) => cid === callId);
+          if (companyEntry) {
+            const companyId = companyEntry[0];
+            setAnalyzingCallIds(prev => {
+              const next = new Set(prev);
+              next.delete(companyId);
+              return next;
+            });
+            setAnalysisResults(prev => new Map(prev).set(companyId, {
+              transcription: p.transcription || "",
+              analysis: p.analysis || "",
+              problemDetected: p.problemDetected || null,
+              proposedPatchType: p.proposedPatchType || null,
+              confidence: p.confidence || null,
+            }));
+            toast({
+              title: p.problemDetected ? "Problem detected" : "Analysis complete",
+              description: p.problemDetected || "Call transcribed and analyzed.",
+              duration: 4000,
+            });
+          }
+        }
+      } catch {}
+    };
+    es.addEventListener("message", handler);
+    return () => { es.close(); };
+  }, [token, lastCallIds, toast]);
 
   const copyToClipboard = useCallback((text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -667,9 +714,78 @@ export default function CallModePage() {
                 <Mic className="w-3 h-3 inline mr-1" /> Recording
               </p>
               {uploadedCallIds.has(company.id) ? (
-                <div className="flex items-center gap-2 py-2" data-testid="recording-uploaded">
-                  <CheckCircle2 className="w-4 h-4" style={{ color: EMERALD }} />
-                  <span className="text-xs font-mono" style={{ color: EMERALD }}>Recording uploaded</span>
+                <div data-testid="recording-uploaded">
+                  <div className="flex items-center gap-2 py-2">
+                    <CheckCircle2 className="w-4 h-4" style={{ color: EMERALD }} />
+                    <span className="text-xs font-mono" style={{ color: EMERALD }}>Recording uploaded</span>
+                  </div>
+                  {analyzingCallIds.has(company.id) && (
+                    <div className="flex items-center gap-2 py-1" data-testid="analysis-in-progress">
+                      <Loader2 className="w-3 h-3 animate-spin" style={{ color: BLUE }} />
+                      <span className="text-xs font-mono" style={{ color: MUTED }}>Transcribing + analyzing...</span>
+                    </div>
+                  )}
+                  {analysisResults.has(company.id) && (
+                    <div className="mt-2" data-testid="analysis-results">
+                      {analysisResults.get(company.id)!.problemDetected ? (
+                        <div
+                          className="rounded-lg p-2 mb-2"
+                          style={{ background: `${ERROR_RED}15`, border: `1px solid ${ERROR_RED}40` }}
+                          data-testid="analysis-problem"
+                        >
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <AlertTriangle className="w-3.5 h-3.5" style={{ color: ERROR_RED }} />
+                            <span className="text-xs font-bold" style={{ color: ERROR_RED }}>Problem Detected</span>
+                          </div>
+                          <p className="text-xs font-mono" style={{ color: "#FFF" }}>
+                            {analysisResults.get(company.id)!.problemDetected}
+                          </p>
+                          <p className="text-xs mt-1" style={{ color: MUTED }}>
+                            Patch: {analysisResults.get(company.id)!.proposedPatchType} · Confidence: {analysisResults.get(company.id)!.confidence}
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          className="rounded-lg p-2 mb-2"
+                          style={{ background: `${EMERALD}15`, border: `1px solid ${EMERALD}40` }}
+                          data-testid="analysis-clean"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+                            <span className="text-xs font-bold" style={{ color: EMERALD }}>No containment issues</span>
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setShowAnalysis(showAnalysis === company.id ? null : company.id)}
+                        className="text-xs font-mono underline"
+                        style={{ color: BLUE }}
+                        data-testid="button-toggle-analysis"
+                      >
+                        {showAnalysis === company.id ? "Hide details" : "View analysis"}
+                      </button>
+                      {showAnalysis === company.id && (
+                        <div className="mt-2 space-y-2" data-testid="analysis-detail">
+                          <div>
+                            <p className="text-xs font-bold mb-1" style={{ color: MUTED }}>
+                              <Brain className="w-3 h-3 inline mr-1" />Analysis
+                            </p>
+                            <p className="text-xs font-mono whitespace-pre-wrap" style={{ color: "#FFF" }}>
+                              {analysisResults.get(company.id)!.analysis || "No analysis available"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold mb-1" style={{ color: MUTED }}>
+                              <FileText className="w-3 h-3 inline mr-1" />Transcription
+                            </p>
+                            <p className="text-xs font-mono whitespace-pre-wrap max-h-40 overflow-y-auto" style={{ color: "rgba(255,255,255,0.7)" }}>
+                              {analysisResults.get(company.id)!.transcription || "No transcription available"}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : uploadingCallId === company.id ? (
                 <div className="flex items-center gap-2 py-2">

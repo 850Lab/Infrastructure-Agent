@@ -48,6 +48,70 @@ function getMimeType(filename: string): string {
   return mimeTypes[ext || ""] || "audio/mpeg";
 }
 
+export interface DeterministicAnalysis {
+  containment_hit: string | null;
+  containment_line_index: number | null;
+  next_lines: string[];
+  redirect_found: boolean;
+  problem_detected: string | null;
+  proposed_patch_type: string | null;
+  confidence: string | null;
+}
+
+const CONTAINMENT_PHRASES = [
+  "send it", "send info", "send me info", "pass it", "pass along",
+  "email it", "shoot it over", "forward it", "send me something",
+  "send that over", "just send", "drop me an email", "send a brochure",
+  "send me your info", "send over some info", "mail me something",
+  "leave your info", "drop off some info", "give me your card",
+  "send your information", "put something in the mail",
+];
+
+const AUTHORITY_REDIRECT_PHRASES = [
+  "who handles that", "who oversees", "who is responsible",
+  "who do i speak with", "right desk", "handled by someone else",
+  "best person", "point person", "who should i talk to",
+  "who makes that decision", "who's in charge", "who would i speak with",
+  "who manages", "who runs", "who's the decision maker",
+  "who typically handles", "right person", "who do i need to talk to",
+];
+
+export function analyzeContainmentDeterministic(transcription: string): DeterministicAnalysis {
+  const lines = transcription.includes("\n")
+    ? transcription.split("\n").map(l => l.trim()).filter(Boolean)
+    : transcription.split(/[.!?]+/).map(l => l.trim()).filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const lower = lines[i].toLowerCase();
+    const hitPhrase = CONTAINMENT_PHRASES.find(p => lower.includes(p));
+    if (!hitPhrase) continue;
+
+    const nextLines = lines.slice(i + 1, i + 3);
+    const nextText = nextLines.join(" ").toLowerCase();
+    const redirectFound = AUTHORITY_REDIRECT_PHRASES.some(p => nextText.includes(p));
+
+    return {
+      containment_hit: lines[i],
+      containment_line_index: i,
+      next_lines: nextLines,
+      redirect_found: redirectFound,
+      problem_detected: redirectFound ? null : "Authority containment accepted",
+      proposed_patch_type: redirectFound ? null : "add_gatekeeper_redirect_line",
+      confidence: redirectFound ? null : "high",
+    };
+  }
+
+  return {
+    containment_hit: null,
+    containment_line_index: null,
+    next_lines: [],
+    redirect_found: false,
+    problem_detected: null,
+    proposed_patch_type: null,
+    confidence: null,
+  };
+}
+
 export async function analyzeContainment(transcription: string): Promise<string> {
   log("Analyzing containment language...", "openai");
 

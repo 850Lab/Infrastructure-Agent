@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { webhookPayloadSchema } from "@shared/schema";
 import { fetchAirtableRecord, extractAudioAttachment, downloadAudio, updateAirtableRecord } from "./airtable";
-import { transcribeAudio, analyzeContainment } from "./openai";
+import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic } from "./openai";
 import { registerMakeRoutes } from "./make-routes";
 import { registerActiveWorkRoutes } from "./active-work-routes";
 import { registerForemanRoutes } from "./foreman-routes";
@@ -67,11 +67,20 @@ async function handleWebhook(req: Request, res: Response) {
       transcription,
     });
     const analysis = await analyzeContainment(transcription);
+    const deterministicResult = analyzeContainmentDeterministic(transcription);
 
-    await updateAirtableRecord(recordId, {
+    const writebackFields: Record<string, any> = {
       Transcription: transcription,
       Analysis: analysis,
-    });
+      Analysis_JSON: JSON.stringify(deterministicResult),
+    };
+    if (deterministicResult.problem_detected) {
+      writebackFields.Problem_Detected = deterministicResult.problem_detected;
+      writebackFields.Proposed_Patch_Type = deterministicResult.proposed_patch_type;
+      writebackFields.Analysis_Confidence = deterministicResult.confidence;
+    }
+
+    await updateAirtableRecord(recordId, writebackFields);
 
     const processingTimeMs = Date.now() - startTime;
     await storage.updateWebhookLog(logEntry.id, {

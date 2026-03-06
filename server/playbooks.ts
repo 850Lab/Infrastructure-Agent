@@ -14,6 +14,15 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+interface CallAnalysisContext {
+  transcription: string;
+  analysis: string;
+  problemDetected: string | null;
+  proposedPatchType: string | null;
+  confidence: string | null;
+  outcome: string;
+}
+
 interface PlaybookCompany {
   id: string;
   companyName: string;
@@ -42,6 +51,7 @@ interface PlaybookCompany {
   playbookLastGenerated: string | null;
   rankVersion: string;
   configName: string;
+  lastCallAnalysis: CallAnalysisContext | null;
 }
 
 interface PlaybookOutput {
@@ -87,6 +97,57 @@ async function airtableRequest(path: string, options: RequestInit = {}): Promise
   return res.json();
 }
 
+async function fetchCallAnalysisForCompanies(companyNames: string[], clientId?: string): Promise<Map<string, CallAnalysisContext>> {
+  const map = new Map<string, CallAnalysisContext>();
+  if (companyNames.length === 0) return map;
+
+  try {
+    const table = encodeURIComponent("Calls");
+    const baseFormula = `AND({Transcription}!='',{Analysis}!='',{Company}!='')`;
+    const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+    const fields = ["Company", "Transcription", "Analysis", "Problem_Detected", "Proposed_Patch_Type", "Analysis_Confidence", "Outcome", "Call_Time"];
+    const fieldParams = fields.map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
+
+    let offset: string | undefined;
+    const allCalls: Array<{ company: string; callTime: string; ctx: CallAnalysisContext }> = [];
+
+    do {
+      let url = `${table}?pageSize=100&filterByFormula=${formula}&sort[0][field]=Call_Time&sort[0][direction]=desc&${fieldParams}`;
+      if (offset) url += `&offset=${offset}`;
+      const data = await airtableRequest(url);
+
+      for (const rec of data.records || []) {
+        const f = rec.fields;
+        const company = String(f.Company || "").trim().toLowerCase();
+        if (!company) continue;
+        allCalls.push({
+          company,
+          callTime: String(f.Call_Time || ""),
+          ctx: {
+            transcription: String(f.Transcription || ""),
+            analysis: String(f.Analysis || ""),
+            problemDetected: f.Problem_Detected || null,
+            proposedPatchType: f.Proposed_Patch_Type || null,
+            confidence: f.Analysis_Confidence || null,
+            outcome: String(f.Outcome || ""),
+          },
+        });
+      }
+      offset = data.offset;
+    } while (offset);
+
+    for (const call of allCalls) {
+      if (!map.has(call.company)) {
+        map.set(call.company, call.ctx);
+      }
+    }
+  } catch (e: any) {
+    logPB(`Failed to fetch call analysis context: ${e.message}`);
+  }
+
+  return map;
+}
+
 async function fetchTodayListCompanies(clientId?: string): Promise<PlaybookCompany[]> {
   const table = encodeURIComponent("Companies");
   const baseFormula = `{Today_Call_List}=TRUE()`;
@@ -129,6 +190,7 @@ async function fetchTodayListCompanies(clientId?: string): Promise<PlaybookCompa
         playbookLastGenerated: f.Playbook_Last_Generated || null,
         rankVersion: String(f.Rank_Version || "").trim(),
         configName: String(f._Playbook_Config || "").trim(),
+        lastCallAnalysis: null,
       });
     }
     offset = data.offset;
@@ -142,6 +204,8 @@ function shouldGenerate(c: PlaybookCompany, force: boolean, currentConfigName: s
   if (c.playbookVersion !== PLAYBOOK_VERSION) return true;
   if (c.rankVersion && c.configName && c.configName !== currentConfigName) return true;
   if (!c.playbookLastGenerated) return true;
+
+  if (c.lastCallAnalysis?.problemDetected) return true;
 
   const genDate = new Date(c.playbookLastGenerated);
   const daysSince = (Date.now() - genDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -187,6 +251,25 @@ function buildPrompt(c: PlaybookCompany, cfg: IndustryConfig): string {
 
   const notesSection = c.notes ? `Company notes: ${c.notes}` : "";
 
+  let callAnalysisSection = "";
+  if (c.lastCallAnalysis) {
+    const a = c.lastCallAnalysis;
+    callAnalysisSection = `\nCALL ANALYSIS FROM LAST RECORDING (CRITICAL — adapt scripts based on this):`;
+    callAnalysisSection += `\nLast call outcome: ${a.outcome}`;
+    if (a.problemDetected) {
+      callAnalysisSection += `\nPROBLEM DETECTED: ${a.problemDetected}`;
+      callAnalysisSection += `\nPatch type needed: ${a.proposedPatchType}`;
+      callAnalysisSection += `\nConfidence: ${a.confidence}`;
+      if (a.proposedPatchType === "add_gatekeeper_redirect_line") {
+        callAnalysisSection += `\nThe caller accepted a containment deflection (e.g., "just send info") without redirecting to an authority. The gatekeeper script MUST include a redirect line like "I understand — before I do, who typically handles [service area] decisions? I want to make sure the right person sees this."`;
+      }
+    }
+    if (a.analysis) {
+      const analysisPreview = a.analysis.length > 500 ? a.analysis.slice(0, 500) + "..." : a.analysis;
+      callAnalysisSection += `\nAnalysis summary:\n${analysisPreview}`;
+    }
+  }
+
   return `You are a B2B sales script writer for the ${cfg.name} industry (${cfg.market} market).
 Write outreach scripts for calling ${c.companyName}.
 
@@ -196,7 +279,7 @@ ${gkSection}
 ${bucketGuidance}
 ${evidenceSection}
 ${opportunitySection}
-${notesSection}
+${notesSection}${callAnalysisSection}
 Engagement score: ${c.engagementScore}. Times called: ${c.timesCalled}.
 
 TONE: Confident, concise, operator voice. Industry-specific language for ${cfg.name}.
@@ -275,6 +358,21 @@ export async function generatePlaybooksForTodayList(options: {
   logPB("Fetching Today_Call_List companies...");
   const companies = await fetchTodayListCompanies(effectiveClientId);
   logPB(`Found ${companies.length} companies on today's list`);
+
+  const companyNames = companies.map(c => c.companyName);
+  const analysisMap = await fetchCallAnalysisForCompanies(companyNames, effectiveClientId);
+  let analysisMatched = 0;
+  for (const c of companies) {
+    const key = c.companyName.trim().toLowerCase();
+    const ctx = analysisMap.get(key);
+    if (ctx) {
+      c.lastCallAnalysis = ctx;
+      analysisMatched++;
+    }
+  }
+  if (analysisMatched > 0) {
+    logPB(`Matched call analysis context for ${analysisMatched} companies`);
+  }
 
   const result: PlaybookResult = {
     generated: 0,
