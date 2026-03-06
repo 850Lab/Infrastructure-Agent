@@ -1,6 +1,6 @@
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { LogOut, LayoutDashboard, Users, PlusCircle, History, Activity } from "lucide-react";
+import { LogOut, LayoutDashboard, Users, PlusCircle, History, Activity, HeartPulse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
 
@@ -9,6 +9,7 @@ const navItems = [
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/provision", label: "Provision", icon: PlusCircle },
   { href: "/admin/runs", label: "Runs", icon: History },
+  { href: "/admin/support", label: "Support", icon: HeartPulse },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -55,6 +56,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link href="/machine/dashboard">
+              <Button variant="outline" size="sm" style={{ color: "#64748B", borderColor: "#E2E8F0" }} data-testid="button-switch-machine">
+                <Activity className="w-4 h-4 mr-1" />
+                <span className="hidden sm:inline">Machine View</span>
+              </Button>
+            </Link>
             <Button
               variant="ghost"
               size="sm"

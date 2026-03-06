@@ -11,6 +11,7 @@ import { eventBus } from "./events";
 import { startRun, addStep, completeRun } from "./run-history";
 import { takeSnapshot, computeDiff } from "./run-diff";
 import { snapshotTodayListFields, computeChangeset, type ChangesetEntry } from "./run-changeset";
+import { checkLimit, logUsageMetric } from "./usage-guard";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -30,6 +31,7 @@ export interface WebRunOptions {
   market?: string;
   bootstrap?: boolean;
   playbooks?: boolean;
+  clientId?: string;
 }
 
 export function isRunActive(): boolean {
@@ -59,10 +61,11 @@ export function startDailyRun(opts?: WebRunOptions): string {
 async function timedStep(
   run_id: string,
   stepName: string,
-  fn: () => Promise<any>
+  fn: () => Promise<any>,
+  clientId?: string
 ): Promise<{ result: any; duration_ms: number }> {
   const started_at = Date.now();
-  eventBus.publish("STEP_STARTED", { step: stepName, run_id, ts: started_at });
+  eventBus.publish("STEP_STARTED", { step: stepName, run_id, ts: started_at }, clientId);
   addStep(run_id, { step: stepName, started_at, status: "running" });
 
   try {
@@ -70,19 +73,20 @@ async function timedStep(
     const duration_ms = Date.now() - started_at;
     const stats = typeof result === "object" ? result : undefined;
 
-    eventBus.publish("STEP_DONE", { step: stepName, run_id, duration_ms, ts: Date.now(), stats });
+    eventBus.publish("STEP_DONE", { step: stepName, run_id, duration_ms, ts: Date.now(), stats }, clientId);
     addStep(run_id, { step: stepName, started_at, finished_at: Date.now(), duration_ms, stats, status: "ok" });
 
     return { result, duration_ms };
   } catch (err: any) {
     const duration_ms = Date.now() - started_at;
-    eventBus.publish("ERROR", { step: stepName, message: err.message, ts: Date.now() });
+    eventBus.publish("ERROR", { step: stepName, message: err.message, ts: Date.now() }, clientId);
     addStep(run_id, { step: stepName, started_at, finished_at: Date.now(), duration_ms, status: "error" });
     throw err;
   }
 }
 
 async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
+  const clientId = opts?.clientId;
   const config = {
     top: opts?.top ?? 25,
     limit: opts?.limit ?? 25,
@@ -94,8 +98,8 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
   };
 
   const errors: string[] = [];
-  startRun(run_id);
-  eventBus.publish("RUN_STARTED", { run_id, ts: Date.now() });
+  startRun(run_id, clientId);
+  eventBus.publish("RUN_STARTED", { run_id, ts: Date.now() }, clientId);
 
   log(`Web run started: ${run_id}`, "daily-web");
   const industryCfg = getIndustryConfig();
@@ -118,29 +122,40 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
         await timedStep(run_id, "bootstrap", async () => {
           const report = await ensureSchema();
           return { created: report.fields_created.length + report.tables_created.length };
-        });
+        }, clientId);
       } catch (e: any) {
         errors.push(`Bootstrap: ${e.message}`);
       }
     }
 
     try {
-      changesetBefore = await snapshotTodayListFields();
+      changesetBefore = await snapshotTodayListFields(clientId);
       log(`Changeset: before-snapshot captured ${changesetBefore.size} records`, "changeset");
     } catch (e: any) {
       log(`Changeset before-snapshot failed: ${e.message}`, "changeset");
     }
 
     try {
+      if (clientId) {
+        const guard = await checkLimit(clientId, "top_companies", 0);
+        if (!guard.allowed) {
+          addStep(run_id, { step: "opportunity_engine", started_at: Date.now(), status: "skipped" });
+          log(`Opportunity engine skipped: usage limit reached (${guard.limit})`, "daily-web");
+          errors.push(`Opportunity Engine: Usage limit reached`);
+        } else {
+          config.top = Math.min(config.top, guard.remaining);
+        }
+      }
       const { result: oeResult } = await timedStep(run_id, "opportunity_engine", async () => {
-        const r = await runOpportunityEngine({ top: config.top, pctHot: 0.4, pctWorking: 0.35, pctFresh: 0.25 });
+        const r = await runOpportunityEngine({ top: config.top, pctHot: 0.4, pctWorking: 0.35, pctFresh: 0.25 }, clientId);
+        if (clientId) await logUsageMetric(clientId, run_id, "opportunity_engine", "top_companies", r.hot_selected + r.working_selected + r.fresh_selected + r.score_fill_selected);
         eventBus.publish("TRIGGER_FIRED", {
           trigger: "opportunity_engine",
           company: `${r.hot_selected + r.working_selected + r.fresh_selected + r.score_fill_selected} companies selected`,
           ts: Date.now(),
-        });
+        }, clientId);
         return r;
-      });
+      }, clientId);
       log(`Call list: ${oeResult.hot_selected + oeResult.working_selected + oeResult.fresh_selected} companies`, "daily-web");
     } catch (e: any) {
       errors.push(`Opportunity Engine: ${e.message}`);
@@ -148,28 +163,28 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
 
     try {
       await timedStep(run_id, "dm_coverage", async () => {
-        const r = await runDMCoverage({ top: config.top, limit: config.limit });
+        const r = await runDMCoverage({ top: config.top, limit: config.limit }, clientId);
         eventBus.publish("TRIGGER_FIRED", {
           trigger: "dm_coverage",
           company: `${r.companiesEnriched} enriched, ${r.companiesReady} ready`,
           ts: Date.now(),
-        });
+        }, clientId);
         return r;
-      });
+      }, clientId);
     } catch (e: any) {
       errors.push(`DM Coverage: ${e.message}`);
     }
 
     try {
       await timedStep(run_id, "dm_fit", async () => {
-        const r = await runDMFit();
+        const r = await runDMFit(clientId);
         eventBus.publish("TRIGGER_FIRED", {
           trigger: "dm_fit",
           company: `${r.offerDMSelected}/${r.totalCompanies} selected`,
           ts: Date.now(),
-        });
+        }, clientId);
         return r;
-      });
+      }, clientId);
     } catch (e: any) {
       errors.push(`DM Fit: ${e.message}`);
     }
@@ -177,14 +192,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
     if (config.playbooks) {
       try {
         await timedStep(run_id, "playbooks", async () => {
-          const r = await generatePlaybooksForTodayList({ limit: config.top, force: false });
+          const r = await generatePlaybooksForTodayList({ limit: config.top, force: false }, clientId);
           eventBus.publish("TRIGGER_FIRED", {
             trigger: "playbooks",
             company: `${r.generated} generated, ${r.skipped} skipped`,
             ts: Date.now(),
-          });
+          }, clientId);
           return r;
-        });
+        }, clientId);
       } catch (e: any) {
         errors.push(`Playbooks: ${e.message}`);
       }
@@ -192,7 +207,7 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
 
     if (changesetBefore) {
       try {
-        const changesetAfter = await snapshotTodayListFields();
+        const changesetAfter = await snapshotTodayListFields(clientId);
         changesetEntries = computeChangeset(changesetBefore, changesetAfter);
         log(`Changeset: ${changesetEntries.length} field changes detected`, "changeset");
       } catch (e: any) {
@@ -202,14 +217,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
 
     try {
       await timedStep(run_id, "call_engine", async () => {
-        const r = await runCallEngine();
+        const r = await runCallEngine(clientId);
         eventBus.publish("TRIGGER_FIRED", {
           trigger: "call_engine",
           company: `${r.calls_processed} calls processed`,
           ts: Date.now(),
-        });
+        }, clientId);
         return r;
-      });
+      }, clientId);
     } catch (e: any) {
       errors.push(`Call Engine: ${e.message}`);
     }
@@ -220,14 +235,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
           generate: config.generate,
           targetFresh: config.targetFresh,
           market: config.market,
-        });
+        }, clientId);
         eventBus.publish("TRIGGER_FIRED", {
           trigger: "query_intel",
           company: `fresh=${r.freshCount}, inserted=${r.queriesInserted}`,
           ts: Date.now(),
-        });
+        }, clientId);
         return r;
-      });
+      }, clientId);
     } catch (e: any) {
       errors.push(`Query Intel: ${e.message}`);
     }
@@ -254,7 +269,7 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       status,
       summary: { errors_count: errors.length, warnings_count: 0, diff, changeset },
     });
-    eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status });
+    eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status }, clientId);
     log(`Web run ${run_id} finished: ${status} (${errors.length} errors)`, "daily-web");
   } catch (e: any) {
     let diff = null;
@@ -273,7 +288,7 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       status: "error",
       summary: { errors_count: errors.length + 1, diff, changeset },
     });
-    eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status: "error" });
+    eventBus.publish("RUN_DONE", { run_id, ts: Date.now(), status: "error" }, clientId);
     log(`Web run ${run_id} crashed: ${e.message}`, "daily-web");
   } finally {
     isRunning = false;

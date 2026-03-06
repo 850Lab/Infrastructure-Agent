@@ -15,33 +15,59 @@ export interface SSEEvent {
   payload: Record<string, any>;
   ts: number;
   seq: number;
+  clientId?: string;
+}
+
+interface SubscriberEntry {
+  res: Response;
+  clientId: string | null;
+  isPlatformAdmin: boolean;
 }
 
 class EventBus {
-  private subscribers: Set<Response> = new Set();
+  private subscribers: Map<string, SubscriberEntry> = new Map();
   private buffer: SSEEvent[] = [];
   private readonly maxBuffer = 200;
   private seq = 0;
+  private subIdCounter = 0;
 
-  subscribe(res: Response): void {
-    this.subscribers.add(res);
+  subscribe(res: Response, clientId: string | null, isPlatformAdmin: boolean = false): string {
+    const subId = `sub_${++this.subIdCounter}`;
+    this.subscribers.set(subId, { res, clientId, isPlatformAdmin });
+    return subId;
   }
 
-  unsubscribe(res: Response): void {
-    this.subscribers.delete(res);
+  unsubscribe(subId: string): void {
+    this.subscribers.delete(subId);
   }
 
-  getRecentEvents(n?: number): SSEEvent[] {
+  unsubscribeByRes(res: Response): void {
+    for (const [id, entry] of this.subscribers) {
+      if (entry.res === res) {
+        this.subscribers.delete(id);
+        break;
+      }
+    }
+  }
+
+  getRecentEvents(n?: number, clientId?: string): SSEEvent[] {
     const count = n ?? this.buffer.length;
-    return this.buffer.slice(-count);
+    let events = this.buffer;
+    if (clientId) {
+      events = events.filter(e => e.clientId === clientId);
+    }
+    return events.slice(-count);
   }
 
-  getEventsSince(sinceSeq: number, limit = 50): SSEEvent[] {
-    const events = this.buffer.filter((e) => e.seq > sinceSeq);
+  getEventsSince(sinceSeq: number, limit = 50, clientId?: string): SSEEvent[] {
+    let events = this.buffer.filter((e) => e.seq > sinceSeq);
+    if (clientId) {
+      events = events.filter(e => e.clientId === clientId);
+    }
     return events.slice(-limit);
   }
 
-  publish(type: EventType, payload: Record<string, any>): void {
+  publish(type: EventType, payload: Record<string, any>, clientId?: string): void {
     const ts = Date.now();
     this.seq++;
     const narrative = toNarrative(type, { ...payload, ts: payload.ts ?? ts });
@@ -58,7 +84,7 @@ class EventBus {
       severity: narrative.severity,
     };
 
-    const event: SSEEvent = { type, payload: enrichedPayload, ts, seq: this.seq };
+    const event: SSEEvent = { type, payload: enrichedPayload, ts, seq: this.seq, clientId };
 
     if (type !== "HEARTBEAT") {
       this.buffer.push(event);
@@ -69,11 +95,13 @@ class EventBus {
 
     const data = `event: ${type}\ndata: ${JSON.stringify(enrichedPayload)}\n\n`;
 
-    for (const res of this.subscribers) {
+    for (const [id, entry] of this.subscribers) {
       try {
-        res.write(data);
+        if (entry.isPlatformAdmin || !clientId || entry.clientId === clientId) {
+          entry.res.write(data);
+        }
       } catch {
-        this.subscribers.delete(res);
+        this.subscribers.delete(id);
       }
     }
   }
@@ -85,7 +113,7 @@ class EventBus {
     try {
       res.write(data);
     } catch {
-      this.subscribers.delete(res);
+      this.unsubscribeByRes(res);
     }
   }
 

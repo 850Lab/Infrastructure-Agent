@@ -22,6 +22,7 @@ import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
 import AdminRuns from "@/pages/admin/runs";
+import AdminSupport from "@/pages/admin/support";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import ErrorBoundary from "@/components/error-boundary";
@@ -33,6 +34,7 @@ interface MeResponse {
   client: Record<string, any> | null;
   machine_config: Record<string, any> | null;
   needsOnboarding: boolean;
+  permissions: string[];
 }
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -55,12 +57,9 @@ function AdminRoute({ children }: { children: ReactNode }) {
 }
 
 function MachineRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated, role } = useAuth();
+  const { isAuthenticated } = useAuth();
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
-  }
-  if (role === "platform_admin") {
-    return <Redirect to="/admin/dashboard" />;
   }
   return <>{children}</>;
 }
@@ -119,6 +118,7 @@ function Router() {
         <Route path="/admin/clients"><AdminRoute><AdminClients /></AdminRoute></Route>
         <Route path="/admin/provision"><AdminRoute><AdminProvision /></AdminRoute></Route>
         <Route path="/admin/runs"><AdminRoute><AdminRuns /></AdminRoute></Route>
+        <Route path="/admin/support"><AdminRoute><AdminSupport /></AdminRoute></Route>
 
         <Route path="/machine/onboarding"><MachineRoute><OnboardingPage /></MachineRoute></Route>
         <Route path="/machine/briefing"><MachineRoute><BriefingPage /></MachineRoute></Route>

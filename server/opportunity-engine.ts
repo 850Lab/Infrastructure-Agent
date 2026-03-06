@@ -1,8 +1,6 @@
 import { resolveAndWriteDMs, type DMResolutionSummary } from "./dm-resolver";
 import { getIndustryConfig } from "./config";
-
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 
 interface CompanyRecord {
   id: string;
@@ -105,13 +103,15 @@ function logOE(message: string) {
   console.log(`${time} [opp-engine] ${message}`);
 }
 
-async function airtableRequest(path: string, options: RequestInit = {}): Promise<any> {
-  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) throw new Error("Airtable credentials not configured");
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${path}`;
+async function airtableRequest(path: string, options: RequestInit = {}, config?: { apiKey: string; baseId: string }): Promise<any> {
+  const apiKey = config?.apiKey || process.env.AIRTABLE_API_KEY;
+  const baseId = config?.baseId || process.env.AIRTABLE_BASE_ID;
+  if (!apiKey || !baseId) throw new Error("Airtable credentials not configured");
+  const url = `https://api.airtable.com/v0/${baseId}/${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       ...options.headers,
     },
@@ -123,14 +123,18 @@ async function airtableRequest(path: string, options: RequestInit = {}): Promise
   return res.json();
 }
 
-async function fetchAllCompanies(): Promise<CompanyRecord[]> {
+async function fetchAllCompanies(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CompanyRecord[]> {
   const table = encodeURIComponent("Companies");
   const companies: CompanyRecord[] = [];
   let offset: string | undefined;
 
   do {
-    const params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
-    const data = await airtableRequest(`${table}${params}`);
+    let params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
+    if (clientId) {
+      const formula = encodeURIComponent(scopedFormula(clientId));
+      params += `&filterByFormula=${formula}`;
+    }
+    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
 
     for (const rec of data.records || []) {
       const f = rec.fields;
@@ -171,14 +175,18 @@ async function fetchAllCompanies(): Promise<CompanyRecord[]> {
   return companies;
 }
 
-async function fetchAllCalls(): Promise<CallRecord[]> {
+async function fetchAllCalls(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CallRecord[]> {
   const table = encodeURIComponent("Calls");
   const calls: CallRecord[] = [];
   let offset: string | undefined;
 
   do {
-    const params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
-    const data = await airtableRequest(`${table}${params}`);
+    let params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
+    if (clientId) {
+      const formula = encodeURIComponent(scopedFormula(clientId));
+      params += `&filterByFormula=${formula}`;
+    }
+    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
 
     for (const rec of data.records || []) {
       const f = rec.fields;
@@ -399,12 +407,14 @@ function buildExplainability(
   };
 }
 
-export async function runOpportunityEngine(config: BucketConfig): Promise<EngineResult> {
+export async function runOpportunityEngine(config: BucketConfig, clientId?: string): Promise<EngineResult> {
   logOE("Fetching all companies and calls...");
 
+  const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
+
   const [companies, calls] = await Promise.all([
-    fetchAllCompanies(),
-    fetchAllCalls(),
+    fetchAllCompanies(clientId, atConfig),
+    fetchAllCalls(clientId, atConfig),
   ]);
 
   logOE(`Loaded ${companies.length} companies, ${calls.length} calls`);
@@ -610,7 +620,7 @@ export async function runOpportunityEngine(config: BucketConfig): Promise<Engine
       await airtableRequest(compTable, {
         method: "PATCH",
         body: JSON.stringify({ records }),
-      });
+      }, atConfig);
       companiesUpdated += records.length;
     } catch (e: any) {
       logOE(`Batch update error: ${e.message}`);

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware } from "./dashboard-routes";
 import { log } from "./logger";
 import { processCall } from "./call-engine";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -165,9 +166,12 @@ function suggestFollowupDate(outcome: string): string | null {
 export function registerTodayRoutes(app: Express) {
   app.get("/api/today-list", authMiddleware, async (_req: Request, res: Response) => {
     try {
+      const clientId = (_req as any).user?.clientId;
+      const baseFormula = "{Today_Call_List}=TRUE()";
+      const formula = clientId ? scopedFormula(clientId, baseFormula) : baseFormula;
       const records = await airtableFetch(
         "Companies",
-        "{Today_Call_List}=TRUE()",
+        formula,
         companyFields(),
       );
 
@@ -247,9 +251,12 @@ export function registerTodayRoutes(app: Express) {
 
   app.get("/api/followups/due", authMiddleware, async (_req: Request, res: Response) => {
     try {
+      const clientId = (_req as any).user?.clientId;
+      const baseFormula = `AND({Followup_Due}!='',IS_BEFORE({Followup_Due},DATEADD(TODAY(),1,'day')),{Lead_Status}!='Won',{Lead_Status}!='Lost')`;
+      const formula = clientId ? scopedFormula(clientId, baseFormula) : baseFormula;
       const records = await airtableFetch(
         "Companies",
-        `AND({Followup_Due}!='',IS_BEFORE({Followup_Due},DATEADD(TODAY(),1,'day')),{Lead_Status}!='Won',{Lead_Status}!='Lost')`,
+        formula,
         ["Company_Name", "Followup_Due", "Last_Outcome", "Phone", "Offer_DM_Name", "Bucket"],
       );
 

@@ -1,5 +1,6 @@
 import { log } from "./logger";
 import { getHistory } from "./run-history";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -91,7 +92,7 @@ function pipelineRanToday(): boolean {
   );
 }
 
-export async function computeDailyBriefing(): Promise<DailyBriefing> {
+export async function computeDailyBriefing(clientId?: string): Promise<DailyBriefing> {
   if (!hasAirtable()) {
     return emptyBriefing();
   }
@@ -101,6 +102,8 @@ export async function computeDailyBriefing(): Promise<DailyBriefing> {
   const todayStr = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
+  const sf = (formula: string) => clientId ? scopedFormula(clientId, formula) : formula;
+
   const [
     newCompanies24h,
     freshPool,
@@ -109,27 +112,27 @@ export async function computeDailyBriefing(): Promise<DailyBriefing> {
     dmGaps,
     hotBucket,
   ] = await Promise.all([
-    countRecords("Companies", `IS_AFTER({First_Seen},'${yesterday}')`),
-    countRecords("Companies", "OR({Times_Called}=0,{Lead_Status}='New')"),
+    countRecords("Companies", sf(`IS_AFTER({First_Seen},'${yesterday}')`)),
+    countRecords("Companies", sf("OR({Times_Called}=0,{Lead_Status}='New')")),
     airtableFetch(
       "Companies",
-      "{Today_Call_List}=TRUE()",
+      sf("{Today_Call_List}=TRUE()"),
       ["Company_Name", "Offer_DM_Name", "Bucket", "Followup_Due", "Final_Priority", "Primary_DM_Name", "Lead_Status"],
     ),
     airtableFetch(
       "Companies",
-      `AND({Followup_Due}!='',IS_BEFORE({Followup_Due},DATEADD(TODAY(),1,'day')),{Lead_Status}!='Won',{Lead_Status}!='Lost')`,
+      sf(`AND({Followup_Due}!='',IS_BEFORE({Followup_Due},DATEADD(TODAY(),1,'day')),{Lead_Status}!='Won',{Lead_Status}!='Lost')`),
       ["Company_Name", "Followup_Due", "Last_Outcome", "Primary_DM_Name"],
     ),
     airtableFetch(
       "Companies",
-      "AND({Today_Call_List}=TRUE(),{Offer_DM_Name}='')",
+      sf("AND({Today_Call_List}=TRUE(),{Offer_DM_Name}='')"),
       ["Company_Name", "Primary_DM_Name"],
       10,
     ),
     airtableFetch(
       "Companies",
-      "AND({Bucket}='Hot Follow-up',{Lead_Status}!='Won',{Lead_Status}!='Lost')",
+      sf("AND({Bucket}='Hot Follow-up',{Lead_Status}!='Won',{Lead_Status}!='Lost')"),
       ["Company_Name", "Final_Priority", "Primary_DM_Name", "Last_Outcome"],
       10,
     ),

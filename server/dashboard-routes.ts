@@ -10,7 +10,7 @@ import type { MachineConfig } from "./user-config";
 import { computeDailyBriefing } from "./briefing";
 import { computeOutcomes, computeConfidence } from "./outcomes";
 import { log } from "./logger";
-import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin } from "./auth";
+import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { storage } from "./storage";
 
 export { authMiddleware } from "./auth";
@@ -18,18 +18,29 @@ export { authMiddleware } from "./auth";
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
 
-async function airtableCount(formula: string): Promise<number | null> {
+import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
+
+async function airtableCount(formula: string, clientId?: string): Promise<number | null> {
   try {
-    const key = AIRTABLE_API_KEY();
-    const base = AIRTABLE_BASE_ID();
+    let key: string, base: string;
+    if (clientId) {
+      const cfg = await getClientAirtableConfig(clientId);
+      key = cfg.apiKey;
+      base = cfg.baseId;
+    } else {
+      key = AIRTABLE_API_KEY();
+      base = AIRTABLE_BASE_ID();
+    }
     if (!key || !base) return null;
+
+    const scopedFilter = clientId ? scopedFormula(clientId, formula) : formula;
 
     let count = 0;
     let offset: string | undefined;
 
     do {
       const params = new URLSearchParams({
-        filterByFormula: formula,
+        filterByFormula: scopedFilter,
         pageSize: "100",
         "fields[]": "Company",
       });
@@ -87,6 +98,9 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const tokenEntry = getTokenEntry(token);
+    const clientId = tokenEntry?.clientId || null;
+    const isPlatformAdmin = tokenEntry?.role === "platform_admin";
     const sinceSeq = parseInt(req.query.since_seq as string, 10) || 0;
 
     res.writeHead(200, {
@@ -98,14 +112,14 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     res.flushHeaders();
 
     const backfill = sinceSeq > 0
-      ? eventBus.getEventsSince(sinceSeq, 50)
-      : eventBus.getRecentEvents(50);
+      ? eventBus.getEventsSince(sinceSeq, 50, isPlatformAdmin ? undefined : (clientId || undefined))
+      : eventBus.getRecentEvents(50, isPlatformAdmin ? undefined : (clientId || undefined));
 
     for (const event of backfill) {
       res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
     }
 
-    eventBus.subscribe(res);
+    const subId = eventBus.subscribe(res, clientId, isPlatformAdmin);
 
     const heartbeatInterval = setInterval(() => {
       try {
@@ -117,13 +131,17 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
     req.on("close", () => {
       clearInterval(heartbeatInterval);
-      eventBus.unsubscribe(res);
+      eventBus.unsubscribe(subId);
     });
   });
 
-  app.post("/api/run-daily", authMiddleware, (_req: Request, res: Response) => {
+  app.post("/api/run-daily", authMiddleware, (req: Request, res: Response) => {
     try {
-      const run_id = startDailyRun();
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const run_id = startDailyRun({ clientId });
       res.json({ run_id });
     } catch (err) {
       if (err instanceof RunAlreadyActiveError) {
@@ -133,8 +151,9 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/run-history", authMiddleware, (_req: Request, res: Response) => {
-    res.json(getHistory());
+  app.get("/api/run-history", authMiddleware, (req: Request, res: Response) => {
+    const clientId = (req as any).user?.clientId;
+    res.json(getHistory(clientId));
   });
 
   app.get("/api/run-history/:run_id", authMiddleware, (req: Request, res: Response) => {
@@ -142,11 +161,16 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     if (!run) {
       return res.status(404).json({ error: "Run not found" });
     }
+    const clientId = (req as any).user?.clientId;
+    if (clientId && run.clientId && run.clientId !== clientId) {
+      return res.status(404).json({ error: "Run not found" });
+    }
     res.json(run);
   });
 
-  app.get("/api/run-latest-diff", authMiddleware, (_req: Request, res: Response) => {
-    const history = getHistory();
+  app.get("/api/run-latest-diff", authMiddleware, (req: Request, res: Response) => {
+    const clientId = (req as any).user?.clientId;
+    const history = getHistory(clientId);
     const latest = history.find((r) => r.status !== "running" && r.summary?.diff);
     if (!latest) {
       return res.json({ run_id: null, diff: null, duration_ms: null });
@@ -231,9 +255,10 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     res.json(getRunStatus());
   });
 
-  app.get("/api/machine-metrics", authMiddleware, async (_req: Request, res: Response) => {
+  app.get("/api/machine-metrics", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const metrics = await computeMachineMetrics();
+      const clientId = (req as any).user?.clientId;
+      const metrics = await computeMachineMetrics(clientId);
       res.json(metrics);
     } catch (err: any) {
       log(`Machine metrics error: ${err.message}`, "machine-metrics");
@@ -287,6 +312,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         client: clientContext,
         machine_config: safeConfig,
         needsOnboarding: role !== "platform_admin" && !config,
+        permissions: getPermissions(role),
       });
     } catch (err: any) {
       log(`/api/me error: ${err.message}`, "auth");
@@ -302,6 +328,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         return res.status(401).json({ error: "Invalid token" });
       }
 
+      const clientId = (req as any).user?.clientId;
       const { machine_name, market, opportunity, decision_maker_focus, geo } = req.body || {};
 
       if (!machine_name || !market || !opportunity || !decision_maker_focus || !geo) {
@@ -322,6 +349,16 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       };
 
       const saved = await saveUserConfig(config);
+
+      if (clientId) {
+        await storage.updateClient(clientId, {
+          machineName: machine_name,
+          industryConfig,
+          territory: geo,
+          decisionMakerFocus: decision_maker_focus,
+        });
+      }
+
       log(`Onboarding complete for ${email}: ${machine_name} (${industryConfig})`, "onboarding");
       res.json({ success: true, config: saved });
     } catch (err: any) {
@@ -338,7 +375,11 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
   app.post("/api/onboarding/build", authMiddleware, (req: Request, res: Response) => {
     try {
-      const run_id = startDailyRun({ top: 10, bootstrap: true });
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const run_id = startDailyRun({ top: 10, bootstrap: true, clientId });
       log(`Onboarding build triggered: ${run_id}`, "onboarding");
       res.json({ run_id });
     } catch (err) {
@@ -359,7 +400,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     market: z.enum(ALLOWED_MARKETS).optional(),
   });
 
-  app.patch("/api/machine-settings", authMiddleware, async (req: Request, res: Response) => {
+  app.patch("/api/machine-settings", authMiddleware, requirePermission("edit_settings"), async (req: Request, res: Response) => {
     try {
       const token = extractToken(req);
       const email = token ? getEmailFromToken(token) : null;
@@ -402,16 +443,17 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/dashboard/stats", authMiddleware, async (_req: Request, res: Response) => {
+  app.get("/api/dashboard/stats", authMiddleware, async (req: Request, res: Response) => {
     try {
+      const clientId = (req as any).user?.clientId;
       const [today_list_count, dm_resolved_count, playbooks_ready_count, fresh_pool_count] = await Promise.all([
-        airtableCount("{Today_Call_List}=TRUE()"),
-        airtableCount("AND({Today_Call_List}=TRUE(),{Offer_DM_Name}!='')"),
-        airtableCount("AND({Today_Call_List}=TRUE(),{Playbook_Version}!='')"),
-        airtableCount("OR({Times_Called}=0,{Lead_Status}='New')"),
+        airtableCount("{Today_Call_List}=TRUE()", clientId),
+        airtableCount("AND({Today_Call_List}=TRUE(),{Offer_DM_Name}!='')", clientId),
+        airtableCount("AND({Today_Call_List}=TRUE(),{Playbook_Version}!='')", clientId),
+        airtableCount("OR({Times_Called}=0,{Lead_Status}='New')", clientId),
       ]);
 
-      const history = getHistory();
+      const history = getHistory(clientId);
       const lastRun = history.length > 0 ? history[0] : null;
 
       res.json({
@@ -437,9 +479,10 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/briefing", authMiddleware, async (_req: Request, res: Response) => {
+  app.get("/api/briefing", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const briefing = await computeDailyBriefing();
+      const clientId = (req as any).user?.clientId;
+      const briefing = await computeDailyBriefing(clientId);
       res.json(briefing);
     } catch (err: any) {
       log(`Briefing error: ${err.message}`, "briefing");
@@ -449,8 +492,12 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
   app.post("/api/action/run-pipeline", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const run = await startDailyRun({ top: 10 });
-      res.json({ run_id: run.run_id, status: "started" });
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const run_id = startDailyRun({ top: 10, clientId });
+      res.json({ run_id, status: "started" });
     } catch (err: any) {
       if (err instanceof RunAlreadyActiveError) {
         res.status(409).json({ error: "Pipeline is already running" });
@@ -461,10 +508,14 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/action/enrich-dms", authMiddleware, async (_req: Request, res: Response) => {
+  app.post("/api/action/enrich-dms", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const run = await startDailyRun({ top: 10 });
-      res.json({ run_id: run.run_id, status: "started", note: "Pipeline will enrich DMs as part of its run." });
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const run_id = startDailyRun({ top: 10, clientId });
+      res.json({ run_id, status: "started", note: "Pipeline will enrich DMs as part of its run." });
     } catch (err: any) {
       if (err instanceof RunAlreadyActiveError) {
         res.status(409).json({ error: "Pipeline is already running" });
@@ -482,11 +533,12 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
   app.get("/api/outcomes", authMiddleware, async (req: Request, res: Response) => {
     try {
+      const clientId = (req as any).user?.clientId;
       const range = String(req.query.range || "7d");
       if (range !== "7d" && range !== "30d") {
         return res.status(400).json({ error: "range must be 7d or 30d" });
       }
-      const outcomes = await computeOutcomes(range);
+      const outcomes = await computeOutcomes(range, clientId);
       res.json(outcomes);
     } catch (err: any) {
       log(`Outcomes error: ${err.message}`, "outcomes");
@@ -494,9 +546,10 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/confidence", authMiddleware, async (_req: Request, res: Response) => {
+  app.get("/api/confidence", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const confidence = await computeConfidence();
+      const clientId = (req as any).user?.clientId;
+      const confidence = await computeConfidence(clientId);
       res.json(confidence);
     } catch (err: any) {
       log(`Confidence error: ${err.message}`, "outcomes");

@@ -1,7 +1,5 @@
 import { handleCallOutcome } from "./opportunities";
-
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 
 interface CallRecord {
   id: string;
@@ -69,13 +67,15 @@ function logEngine(message: string) {
   console.log(`${time} [call-engine] ${message}`);
 }
 
-async function airtableRequest(path: string, options: RequestInit = {}): Promise<any> {
-  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) throw new Error("Airtable credentials not configured");
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${path}`;
+async function airtableRequest(path: string, options: RequestInit = {}, config?: { apiKey: string; baseId: string }): Promise<any> {
+  const apiKey = config?.apiKey || process.env.AIRTABLE_API_KEY;
+  const baseId = config?.baseId || process.env.AIRTABLE_BASE_ID;
+  if (!apiKey || !baseId) throw new Error("Airtable credentials not configured");
+  const url = `https://api.airtable.com/v0/${baseId}/${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       ...options.headers,
     },
@@ -87,14 +87,15 @@ async function airtableRequest(path: string, options: RequestInit = {}): Promise
   return res.json();
 }
 
-export async function fetchUnprocessedCalls(): Promise<CallRecord[]> {
+export async function fetchUnprocessedCalls(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CallRecord[]> {
   const table = encodeURIComponent("Calls");
-  const formula = encodeURIComponent("AND({Outcome} != '', {Call_Time} != '', NOT({Processed}))");
+  const baseFormula = "AND({Outcome} != '', {Call_Time} != '', NOT({Processed}))";
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const calls: CallRecord[] = [];
   let offset: string | undefined;
 
   do {
-    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`);
+    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`, {}, atConfig);
 
     for (const rec of data.records || []) {
       calls.push({
@@ -112,7 +113,7 @@ export async function fetchUnprocessedCalls(): Promise<CallRecord[]> {
   return calls;
 }
 
-async function findCompanyByName(companyName: string): Promise<{
+async function findCompanyByName(companyName: string, clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<{
   id: string;
   engagementScore: number;
   gatekeeperName: string;
@@ -122,10 +123,11 @@ async function findCompanyByName(companyName: string): Promise<{
 
   const table = encodeURIComponent("Companies");
   const escaped = companyName.replace(/'/g, "\\'");
-  const formula = encodeURIComponent(`LOWER({company_name}) = LOWER('${escaped}')`);
+  const baseFormula = `LOWER({company_name}) = LOWER('${escaped}')`;
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
 
   try {
-    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`);
+    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`, {}, atConfig);
     const rec = data.records?.[0];
     if (!rec) return null;
     return {
@@ -145,7 +147,7 @@ function addDays(fromDate: Date, days: number): string {
   return d.toISOString();
 }
 
-export async function processCall(call: CallRecord): Promise<{
+export async function processCall(call: CallRecord, clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<{
   leadStatusSet: string | null;
   followupDate: string | null;
   engagementDelta: number;
@@ -169,7 +171,7 @@ export async function processCall(call: CallRecord): Promise<{
   let gatekeeperRecorded: string | null = null;
 
   if (call.company) {
-    const company = await findCompanyByName(call.company);
+    const company = await findCompanyByName(call.company, clientId, atConfig);
     if (company) {
       const compUpdate: Record<string, any> = {};
 
@@ -210,7 +212,7 @@ export async function processCall(call: CallRecord): Promise<{
         await airtableRequest(`${compTable}/${company.id}`, {
           method: "PATCH",
           body: JSON.stringify({ fields: compUpdate }),
-        });
+        }, atConfig);
         companyUpdated = true;
       }
     } else {
@@ -226,7 +228,7 @@ export async function processCall(call: CallRecord): Promise<{
   await airtableRequest(`${callTable}/${call.id}`, {
     method: "PATCH",
     body: JSON.stringify({ fields: callUpdate }),
-  });
+  }, atConfig);
 
   let opportunityResult = null;
   try {
@@ -241,9 +243,10 @@ export async function processCall(call: CallRecord): Promise<{
   return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated, gatekeeperRecorded, opportunityResult };
 }
 
-export async function runEngine(): Promise<EngineResult> {
+export async function runEngine(clientId?: string): Promise<EngineResult> {
   logEngine("Fetching unprocessed calls...");
-  const calls = await fetchUnprocessedCalls();
+  const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
+  const calls = await fetchUnprocessedCalls(clientId, atConfig);
   logEngine(`Found ${calls.length} unprocessed calls`);
 
   const result: EngineResult = {
@@ -257,7 +260,7 @@ export async function runEngine(): Promise<EngineResult> {
   for (const call of calls) {
     try {
       logEngine(`Processing: ${call.company} — ${call.outcome}`);
-      const outcome = await processCall(call);
+      const outcome = await processCall(call, clientId, atConfig);
 
       result.calls_processed++;
       if (outcome.companyUpdated) result.companies_updated++;

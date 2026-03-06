@@ -1,6 +1,7 @@
 import { log } from "./logger";
 import OpenAI from "openai";
 import { getIndustryConfig } from "./config";
+import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -154,12 +155,14 @@ export interface QueryIntelResult {
   queryStatsUpdated: number;
 }
 
-export async function runQueryIntel(config: QueryIntelConfig): Promise<QueryIntelResult> {
+export async function runQueryIntel(config: QueryIntelConfig, clientId?: string): Promise<QueryIntelResult> {
   logQI("Fetching all data...");
 
+  const clientFilter = clientId ? scopedFormula(clientId) : undefined;
+
   const [queryRecords, companyRecords] = await Promise.all([
-    fetchAllPaginated("Search_Queries"),
-    fetchAllPaginated("Companies"),
+    fetchAllPaginated("Search_Queries", clientFilter),
+    fetchAllPaginated("Companies", clientFilter),
   ]);
 
   const queries = queryRecords.map(parseQueryRecord);
@@ -247,6 +250,7 @@ export async function runQueryIntel(config: QueryIntelConfig): Promise<QueryInte
             Performance_Score: 0,
             Last_Generated_By: "QueryIntel",
             Notes: `Rationale: ${q.rationale}`,
+            ...(clientId ? { Client_ID: clientId } : {}),
           },
         }));
 

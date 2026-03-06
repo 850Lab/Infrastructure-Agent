@@ -1,4 +1,5 @@
 import { log } from "./logger";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -60,9 +61,10 @@ async function airtableRequest(pathStr: string, options: RequestInit = {}): Prom
   return res.json();
 }
 
-export async function snapshotTodayListFields(): Promise<Map<string, { companyName: string; fields: Record<string, any> }>> {
+export async function snapshotTodayListFields(clientId?: string): Promise<Map<string, { companyName: string; fields: Record<string, any> }>> {
   const table = encodeURIComponent("Companies");
-  const formula = encodeURIComponent(`{Today_Call_List}=TRUE()`);
+  const baseFormula = `{Today_Call_List}=TRUE()`;
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const allFields = getAllTrackedFields();
   const fieldParams = allFields.map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
 

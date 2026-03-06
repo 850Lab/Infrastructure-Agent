@@ -2,6 +2,7 @@ import { log } from "./logger";
 import OpenAI from "openai";
 import { searchGoogleMaps } from "./outscraper";
 import { getIndustryConfig } from "./config";
+import { scopedFormula } from "./airtable-scoped";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -132,13 +133,14 @@ function computePriorityScore(category: string, description: string, website: st
   return { score, tier };
 }
 
-async function fetchExistingQueries(): Promise<Set<string>> {
+async function fetchExistingQueries(clientId?: string): Promise<Set<string>> {
   const table = encodeURIComponent(QUERIES_TABLE);
   const queries = new Set<string>();
   let offset: string | undefined;
 
   do {
     const params = new URLSearchParams({ pageSize: "100", "fields[]": "query_text" });
+    if (clientId) params.set("filterByFormula", scopedFormula(clientId));
     if (offset) params.set("offset", offset);
 
     try {
@@ -160,7 +162,7 @@ async function fetchExistingQueries(): Promise<Set<string>> {
   return queries;
 }
 
-export async function generateQueries(count: number = 20): Promise<{
+export async function generateQueries(count: number = 20, clientId?: string): Promise<{
   generated: number;
   written: number;
   duplicatesSkipped: number;
@@ -168,7 +170,7 @@ export async function generateQueries(count: number = 20): Promise<{
 }> {
   log(`Generating ${count} search queries via OpenAI`, "lead-feed");
 
-  const existingQueries = await fetchExistingQueries();
+  const existingQueries = await fetchExistingQueries(clientId);
   log(`Found ${existingQueries.size} existing queries`, "lead-feed");
 
   const cfg = getIndustryConfig();
@@ -249,6 +251,7 @@ Return a JSON array of ${count} query strings.`,
           category: catMatch ? catMatch[0] : cfg.company_categories[0] || "Other",
           status: "Queued",
           results_count: 0,
+          ...(clientId ? { Client_ID: clientId } : {}),
         },
       };
     });
@@ -268,9 +271,10 @@ Return a JSON array of ${count} query strings.`,
   return { generated: queries.length, written, duplicatesSkipped, queries: newQueries };
 }
 
-async function fetchQueuedQueries(limit: number): Promise<Array<{ id: string; query: string; market: string; category: string }>> {
+async function fetchQueuedQueries(limit: number, clientId?: string): Promise<Array<{ id: string; query: string; market: string; category: string }>> {
   const table = encodeURIComponent(QUERIES_TABLE);
-  const formula = encodeURIComponent("{status} = 'Queued'");
+  const baseFormula = "{status} = 'Queued'";
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=${limit}`);
 
   return (data.records || []).map((r: any) => ({
@@ -294,12 +298,13 @@ async function setQueryStatus(recordId: string, status: string, notesText?: stri
   });
 }
 
-async function findExistingCompany(dedupeKey: string, normalizedName: string, normalizedDomain: string): Promise<{ id: string; fields: Record<string, any> } | null> {
+async function findExistingCompany(dedupeKey: string, normalizedName: string, normalizedDomain: string, clientId?: string): Promise<{ id: string; fields: Record<string, any> } | null> {
   const table = encodeURIComponent(COMPANIES_TABLE);
+  const sf = (f: string) => clientId ? scopedFormula(clientId, f) : f;
 
   if (dedupeKey) {
     try {
-      const formula = encodeURIComponent(`{Dedupe_Key} = '${dedupeKey.replace(/'/g, "\\'")}'`);
+      const formula = encodeURIComponent(sf(`{Dedupe_Key} = '${dedupeKey.replace(/'/g, "\\'")}'`));
       const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`);
       if (data.records && data.records.length > 0) {
         return { id: data.records[0].id, fields: data.records[0].fields };
@@ -309,7 +314,7 @@ async function findExistingCompany(dedupeKey: string, normalizedName: string, no
 
   if (normalizedDomain) {
     try {
-      const formula = encodeURIComponent(`{Normalized_Domain} = '${normalizedDomain.replace(/'/g, "\\'")}'`);
+      const formula = encodeURIComponent(sf(`{Normalized_Domain} = '${normalizedDomain.replace(/'/g, "\\'")}'`));
       const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`);
       if (data.records && data.records.length > 0) {
         return { id: data.records[0].id, fields: data.records[0].fields };
@@ -319,7 +324,7 @@ async function findExistingCompany(dedupeKey: string, normalizedName: string, no
 
   if (normalizedName && normalizedName.length > 3) {
     try {
-      const formula = encodeURIComponent(`LOWER({company_name}) = '${normalizedName.replace(/'/g, "\\'")}'`);
+      const formula = encodeURIComponent(sf(`LOWER({company_name}) = '${normalizedName.replace(/'/g, "\\'")}'`));
       const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`);
       if (data.records && data.records.length > 0) {
         return { id: data.records[0].id, fields: data.records[0].fields };
@@ -422,14 +427,14 @@ async function searchOutscraperFull(query: string, retryCount: number = 0): Prom
   return data.data[0] || [];
 }
 
-export async function runOutscraper(queryLimit: number = 5): Promise<{
+export async function runOutscraper(queryLimit: number = 5, clientId?: string): Promise<{
   queriesProcessed: number;
   totalResults: number;
   created: number;
   updated: number;
   errors: string[];
 }> {
-  const queries = await fetchQueuedQueries(queryLimit);
+  const queries = await fetchQueuedQueries(queryLimit, clientId);
   log(`Found ${queries.length} queued queries to process`, "lead-feed");
 
   let totalResults = 0;
@@ -465,7 +470,7 @@ export async function runOutscraper(queryLimit: number = 5): Promise<{
             parsed.phone,
           );
 
-          const existing = await findExistingCompany(dedupeKey, normalizedName, normalizedDomain);
+          const existing = await findExistingCompany(dedupeKey, normalizedName, normalizedDomain, clientId);
 
           if (existing) {
             const updates: Record<string, any> = {};
@@ -503,6 +508,7 @@ export async function runOutscraper(queryLimit: number = 5): Promise<{
               Source_Query: q.query,
               Lead_Status: "New",
               Priority_Score: score,
+              ...(clientId ? { Client_ID: clientId } : {}),
             };
 
             if (parsed.website) {
@@ -598,15 +604,14 @@ function extractLinkedInUrl(text: string, html?: string): string {
   return match ? match[0].replace(/["']/g, "") : "";
 }
 
-export async function enrichLeads(limit: number = 10): Promise<{
+export async function enrichLeads(limit: number = 10, clientId?: string): Promise<{
   processed: number;
   enriched: number;
   results: Array<{ companyName: string; emails: string[]; linkedinUrl: string; notesSummary: string }>;
 }> {
   const table = encodeURIComponent(COMPANIES_TABLE);
-  const formula = encodeURIComponent(
-    "AND({website} != '', OR({Lead_Status} = 'New', {Lead_Status} = 'Enriched', {Lead_Status} = BLANK()), OR({enriched_at} = BLANK(), DATETIME_DIFF(NOW(), {enriched_at}, 'days') > 14))"
-  );
+  const baseFormula = "AND({website} != '', OR({Lead_Status} = 'New', {Lead_Status} = 'Enriched', {Lead_Status} = BLANK()), OR({enriched_at} = BLANK(), DATETIME_DIFF(NOW(), {enriched_at}, 'days') > 14))";
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
 
   const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=${limit}`);
   const records = data.records || [];

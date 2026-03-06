@@ -27,6 +27,7 @@ export interface Run {
   status: "running" | "completed" | "error";
   duration_ms?: number;
   _airtable_id?: string;
+  clientId?: string;
 }
 
 const runs: Run[] = [];
@@ -222,13 +223,14 @@ export async function loadHistory(): Promise<void> {
   loaded = true;
 }
 
-export function startRun(run_id: string): Run {
+export function startRun(run_id: string, clientId?: string): Run {
   const run: Run = {
     run_id,
     started_at: Date.now(),
     steps: [],
     errors: [],
     status: "running",
+    clientId,
   };
   runs.unshift(run);
   if (runs.length > MAX_RUNS) {
@@ -292,8 +294,12 @@ function persistRun(run: Run): void {
   }
 }
 
-export function getHistory(): Run[] {
-  return runs;
+export function getHistory(clientId?: string, includeGlobal: boolean = false): Run[] {
+  if (!clientId) return runs;
+  if (includeGlobal) {
+    return runs.filter(r => !r.clientId || r.clientId === clientId);
+  }
+  return runs.filter(r => r.clientId === clientId);
 }
 
 export function getRunById(run_id: string): Run | undefined {

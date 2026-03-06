@@ -1,4 +1,5 @@
 import { log } from "./logger";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -71,13 +72,15 @@ function daysAgoISO(days: number): string {
   return new Date(Date.now() - days * 86400000).toISOString();
 }
 
-export async function computeOutcomes(range: string): Promise<OutcomeMetrics> {
+export async function computeOutcomes(range: string, clientId?: string): Promise<OutcomeMetrics> {
   const days = range === "30d" ? 30 : 7;
   const since = daysAgoISO(days);
 
   log(`Computing outcomes for ${range} (since ${since.slice(0, 10)})...`, "outcomes");
 
-  const callFormula = `IS_AFTER({Call_Time},'${since}')`;
+  const sf = (formula: string) => clientId ? scopedFormula(clientId, formula) : formula;
+
+  const callFormula = sf(`IS_AFTER({Call_Time},'${since}')`);
 
   const [
     calls,
@@ -88,15 +91,15 @@ export async function computeOutcomes(range: string): Promise<OutcomeMetrics> {
     wonCompanies,
   ] = await Promise.all([
     airtableFetch("Calls", callFormula, ["Outcome", "Call_Time"]),
-    airtableFetch("Companies", "{Today_Call_List}=TRUE()", ["Company_Name"]),
-    airtableFetch("Companies", "AND({Today_Call_List}=TRUE(),{Offer_DM_Name}!='')", ["Company_Name"]),
-    airtableFetch("Companies", "OR({Times_Called}=0,{Lead_Status}='New')", ["Company_Name"]),
+    airtableFetch("Companies", sf("{Today_Call_List}=TRUE()"), ["Company_Name"]),
+    airtableFetch("Companies", sf("AND({Today_Call_List}=TRUE(),{Offer_DM_Name}!='')"), ["Company_Name"]),
+    airtableFetch("Companies", sf("OR({Times_Called}=0,{Lead_Status}='New')"), ["Company_Name"]),
     airtableFetch(
       "Companies",
-      `AND({Followup_Due}!='',IS_BEFORE({Followup_Due},DATEADD(TODAY(),1,'day')),{Lead_Status}!='Won',{Lead_Status}!='Lost')`,
+      sf(`AND({Followup_Due}!='',IS_BEFORE({Followup_Due},DATEADD(TODAY(),1,'day')),{Lead_Status}!='Won',{Lead_Status}!='Lost')`),
       ["Company_Name"],
     ),
-    airtableFetch("Companies", "{Lead_Status}='Won'", ["Company_Name"]),
+    airtableFetch("Companies", sf("{Lead_Status}='Won'"), ["Company_Name"]),
   ]);
 
   const DM_OUTCOMES = new Set(["decision maker", "qualified", "callback"]);
@@ -140,8 +143,8 @@ export async function computeOutcomes(range: string): Promise<OutcomeMetrics> {
   return metrics;
 }
 
-export async function computeConfidence(): Promise<ConfidenceResult> {
-  const outcomes = await computeOutcomes("7d");
+export async function computeConfidence(clientId?: string): Promise<ConfidenceResult> {
+  const outcomes = await computeOutcomes("7d", clientId);
 
   const totalCalls = Math.max(1, outcomes.calls_made);
   const dmReachedRate = outcomes.dm_reached / totalCalls;

@@ -67,10 +67,15 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   if (token && validateToken(token)) {
     const entry = getTokenEntry(token);
     if (entry) {
+      let effectiveClientId = entry.clientId;
+      if (entry.role === "platform_admin" && !effectiveClientId) {
+        const override = req.query.clientId as string | undefined;
+        if (override) effectiveClientId = override;
+      }
       (req as any).user = {
         email: entry.email,
         role: entry.role,
-        clientId: entry.clientId,
+        clientId: effectiveClientId,
       };
       return next();
     }
@@ -83,6 +88,33 @@ export function requireRole(...roles: string[]) {
     const user = (req as any).user;
     if (!user || !roles.includes(user.role)) {
       res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    next();
+  };
+}
+
+const PERMISSIONS: Record<string, string[]> = {
+  platform_admin: ["view_machine", "run_pipeline", "edit_settings", "manage_users", "provision", "export_data", "view_admin"],
+  client_admin: ["view_machine", "run_pipeline", "edit_settings", "manage_operators", "export_data"],
+  operator: ["view_machine", "run_pipeline", "export_data"],
+};
+
+export function getPermissions(role: string): string[] {
+  return PERMISSIONS[role] || [];
+}
+
+export function requirePermission(...perms: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = (req as any).user;
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const userPerms = getPermissions(user.role);
+    const hasAll = perms.every(p => userPerms.includes(p));
+    if (!hasAll) {
+      res.status(403).json({ error: "Insufficient permissions" });
       return;
     }
     next();

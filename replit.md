@@ -16,12 +16,18 @@ The system employs a micro-frontend-like structure with a clear separation betwe
 
 ### Multi-Tenant Architecture
 The platform supports multiple clients with role-based access control:
-- **PostgreSQL Tables**: `clients` (id, client_name, machine_name, industry_config, territory, decision_maker_focus, status, airtable_base_id, created_at, last_run_at) and `users` (id, username, password, email, role, client_id)
-- **Roles**: `platform_admin` (full access to admin panel + all clients), `client_admin` (manages their machine), `operator` (runs their machine)
-- **Route Split**: `/admin/*` routes for platform management, `/machine/*` routes for client machine operation
+- **PostgreSQL Tables**: `clients`, `users`, `client_config` (per-client usage limits), `usage_logs` (metered usage tracking), `webhook_logs`
+- **Roles**: `platform_admin` (full admin + all clients), `client_admin` (manage machine + operators + settings), `operator` (view + run machine only)
+- **Permissions**: Defined in `server/auth.ts` PERMISSIONS map; `requirePermission()` middleware guards sensitive routes; frontend hides settings for operators
+- **Route Split**: `/admin/*` routes for platform management, `/machine/*` routes for client machine operation (both accessible to platform_admin for dual-login)
 - **Auth**: Database-backed with bcrypt hashed passwords, UUID tokens carrying role+client_id, seedPlatformAdmin on boot from ADMIN_EMAIL/ADMIN_PASSWORD env vars
-- **Server Files**: `server/auth.ts` (auth module), `server/client-context.ts` (client middleware), `server/admin-routes.ts` (admin API), `server/seed-client.ts` (Texas Cool Down Trailers seed)
-- **Frontend Files**: `client/src/components/admin-layout.tsx`, `client/src/pages/admin/` (dashboard, clients, provision, runs)
+- **Client Scoping**: All Airtable queries scoped via `scopedFormula(clientId, existingFormula?)` from `server/airtable-scoped.ts`; injects `{Client_ID}='clientId'` into filterByFormula
+- **SSE Isolation**: EventBus uses `Map<string, SubscriberEntry>` keyed by subscriber ID; each publish targets clientId's subscribers; platform_admin sees all events
+- **Usage Guardrails**: `server/usage-guard.ts` checks limits from `client_config` table; metrics logged to `usage_logs`
+- **Data Export**: `server/data-export.ts` exports client-scoped Airtable data as CSV; routes at `/api/admin/clients/:id/export/:type` and `/api/export/:type`
+- **Data Migration**: `server/migrate-client-data.ts` tags untagged Airtable records with Client_ID; triggered via `POST /api/admin/clients/:id/migrate`
+- **Server Files**: `server/auth.ts`, `server/airtable-scoped.ts`, `server/admin-routes.ts`, `server/usage-guard.ts`, `server/data-export.ts`, `server/migrate-client-data.ts`, `server/seed-client.ts`
+- **Frontend Files**: `client/src/components/admin-layout.tsx`, `client/src/pages/admin/` (dashboard, clients, provision, runs, support)
 - **Client #1**: Texas Cool Down Trailers — "Gulf Coast Heat Mitigation Engine", industrial, Gulf Coast, Safety + Site Operations
 
 ### UI/UX Decisions

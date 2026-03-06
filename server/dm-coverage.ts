@@ -1,8 +1,6 @@
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { fetchAllDecisionMakers, resolveAndWriteDMs, type DMResolutionSummary } from "./dm-resolver";
-
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 
 function logDC(message: string) {
   const time = new Date().toLocaleTimeString("en-US", {
@@ -14,13 +12,15 @@ function logDC(message: string) {
   console.log(`${time} [dm-coverage] ${message}`);
 }
 
-async function airtableRequest(path: string, options: RequestInit = {}): Promise<any> {
-  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) throw new Error("Airtable credentials not configured");
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${path}`;
+async function airtableRequest(path: string, options: RequestInit = {}, config?: { apiKey: string; baseId: string }): Promise<any> {
+  const apiKey = config?.apiKey || process.env.AIRTABLE_API_KEY;
+  const baseId = config?.baseId || process.env.AIRTABLE_BASE_ID;
+  if (!apiKey || !baseId) throw new Error("Airtable credentials not configured");
+  const url = `https://api.airtable.com/v0/${baseId}/${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       ...options.headers,
     },
@@ -49,15 +49,16 @@ interface CallListCompany {
   primaryDMConfidence: number;
 }
 
-async function fetchCallListCompanies(top: number): Promise<CallListCompany[]> {
+async function fetchCallListCompanies(top: number, clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CallListCompany[]> {
   const table = encodeURIComponent("Companies");
-  const formula = encodeURIComponent("{Today_Call_List}=TRUE()");
+  const baseFormula = "{Today_Call_List}=TRUE()";
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const companies: CallListCompany[] = [];
   let offset: string | undefined;
 
   do {
     const params = `?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`;
-    const data = await airtableRequest(`${table}${params}`);
+    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
 
     for (const rec of data.records || []) {
       const f = rec.fields;
@@ -117,12 +118,12 @@ async function countDMsForCompany(companyName: string, normalizedDomain: string 
   }).length;
 }
 
-async function updateCompanyField(recordId: string, fields: Record<string, any>): Promise<void> {
+async function updateCompanyField(recordId: string, fields: Record<string, any>, atConfig?: { apiKey: string; baseId: string }): Promise<void> {
   const table = encodeURIComponent("Companies");
   await airtableRequest(`${table}/${recordId}`, {
     method: "PATCH",
     body: JSON.stringify({ fields }),
-  });
+  }, atConfig);
 }
 
 export interface CoverageConfig {
@@ -149,9 +150,10 @@ export interface CoverageResult {
   }>;
 }
 
-export async function runDMCoverage(config: CoverageConfig): Promise<CoverageResult> {
+export async function runDMCoverage(config: CoverageConfig, clientId?: string): Promise<CoverageResult> {
   logDC("Fetching Today_Call_List companies...");
-  const companies = await fetchCallListCompanies(config.top);
+  const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
+  const companies = await fetchCallListCompanies(config.top, clientId, atConfig);
   logDC(`Found ${companies.length} companies on Today_Call_List`);
 
   let allDMs = await fetchAllDecisionMakers();
@@ -178,7 +180,7 @@ export async function runDMCoverage(config: CoverageConfig): Promise<CoverageRes
       await airtableRequest(table, {
         method: "PATCH",
         body: JSON.stringify({ records }),
-      });
+      }, atConfig);
     }
   }
 
@@ -189,7 +191,7 @@ export async function runDMCoverage(config: CoverageConfig): Promise<CoverageRes
     logDC(`Enriching: ${c.companyName} (${c.website})`);
 
     try {
-      await updateCompanyField(c.id, { DM_Coverage_Status: "Enriching" });
+      await updateCompanyField(c.id, { DM_Coverage_Status: "Enriching" }, atConfig);
 
       const result = await enrichCompany(c.id);
       const written = await writeDMsToAirtable(result);
@@ -197,7 +199,7 @@ export async function runDMCoverage(config: CoverageConfig): Promise<CoverageRes
       await updateCompanyField(c.id, {
         DM_Coverage_Status: "Enriching",
         DM_Last_Enriched: new Date().toISOString(),
-      });
+      }, atConfig);
 
       enriched++;
       logDC(`  → ${result.decisionMakers.length} DMs found (${written} new written)`);
@@ -207,7 +209,7 @@ export async function runDMCoverage(config: CoverageConfig): Promise<CoverageRes
         await updateCompanyField(c.id, {
           DM_Coverage_Status: "Error",
           DM_Last_Enriched: new Date().toISOString(),
-        });
+        }, atConfig);
       } catch {}
       c.dmCoverageStatus = "Error";
       errored++;
@@ -240,7 +242,7 @@ export async function runDMCoverage(config: CoverageConfig): Promise<CoverageRes
         await airtableRequest(table, {
           method: "PATCH",
           body: JSON.stringify({ records: batch }),
-        });
+        }, atConfig);
       } catch (e: any) {
         logDC(`DM_Count update error: ${e.message}`);
       }
@@ -269,7 +271,7 @@ export async function runDMCoverage(config: CoverageConfig): Promise<CoverageRes
     logDC(`DM resolution failed: ${e.message}`);
   }
 
-  const refreshed = await fetchCallListCompanies(config.top);
+  const refreshed = await fetchCallListCompanies(config.top, clientId, atConfig);
   const refreshMap = new Map(refreshed.map(c => [c.id, c]));
 
   const callList = companies.map(c => {

@@ -1,4 +1,5 @@
 import { log } from "./logger";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -20,18 +21,22 @@ function hasAirtable(): boolean {
   return !!(AIRTABLE_API_KEY() && AIRTABLE_BASE_ID());
 }
 
-async function airtableCount(table: string, formula?: string): Promise<number | null> {
+async function airtableCount(table: string, formula?: string, clientId?: string): Promise<number | null> {
   try {
     const key = AIRTABLE_API_KEY();
     const base = AIRTABLE_BASE_ID();
     if (!key || !base) return null;
+
+    const effectiveFormula = clientId
+      ? (formula ? scopedFormula(clientId, formula) : scopedFormula(clientId))
+      : formula;
 
     let count = 0;
     let offset: string | undefined;
 
     do {
       const params = new URLSearchParams({ pageSize: "100" });
-      if (formula) params.set("filterByFormula", formula);
+      if (effectiveFormula) params.set("filterByFormula", effectiveFormula);
       if (offset) params.set("offset", offset);
 
       const url = `https://api.airtable.com/v0/${base}/${encodeURIComponent(table)}?${params}`;
@@ -51,7 +56,7 @@ async function airtableCount(table: string, formula?: string): Promise<number | 
   }
 }
 
-export async function computeMachineMetrics(): Promise<MachineMetrics> {
+export async function computeMachineMetrics(clientId?: string): Promise<MachineMetrics> {
   if (cachedMetrics && Date.now() < cacheExpiry) {
     return cachedMetrics;
   }
@@ -70,11 +75,11 @@ export async function computeMachineMetrics(): Promise<MachineMetrics> {
   log("Computing machine metrics from Airtable...", "machine-metrics");
 
   const [companies, dms, calls, wins, opportunities] = await Promise.all([
-    airtableCount("Companies"),
-    airtableCount("Decision_Makers"),
-    airtableCount("Calls"),
-    airtableCount("Companies", "{Win_Flag}=TRUE()"),
-    airtableCount("Companies", "OR({Lead_Status}='Working',{Lead_Status}='Won')"),
+    airtableCount("Companies", undefined, clientId),
+    airtableCount("Decision_Makers", undefined, clientId),
+    airtableCount("Calls", undefined, clientId),
+    airtableCount("Companies", "{Win_Flag}=TRUE()", clientId),
+    airtableCount("Companies", "OR({Lead_Status}='Working',{Lead_Status}='Won')", clientId),
   ]);
 
   const metrics: MachineMetrics = {

@@ -1,8 +1,6 @@
 import { fetchAllDecisionMakers, type DMCandidate } from "./dm-resolver";
 import { log } from "./logger";
-
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 const FIT_THRESHOLD = 45;
 
 interface FitCompany {
@@ -49,13 +47,15 @@ function logFit(message: string) {
   log(message, "dm-fit");
 }
 
-async function airtableRequest(path: string, options: RequestInit = {}): Promise<any> {
-  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) throw new Error("Airtable credentials not configured");
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${path}`;
+async function airtableRequest(path: string, options: RequestInit = {}, config?: { apiKey: string; baseId: string }): Promise<any> {
+  const apiKey = config?.apiKey || process.env.AIRTABLE_API_KEY;
+  const baseId = config?.baseId || process.env.AIRTABLE_BASE_ID;
+  if (!apiKey || !baseId) throw new Error("Airtable credentials not configured");
+  const url = `https://api.airtable.com/v0/${baseId}/${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
@@ -195,16 +195,17 @@ function selectOfferDM(
   };
 }
 
-async function fetchTodayListForFit(): Promise<FitCompany[]> {
+async function fetchTodayListForFit(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<FitCompany[]> {
   const table = encodeURIComponent("Companies");
-  const formula = encodeURIComponent(`{Today_Call_List}=TRUE()`);
+  const baseFormula = `{Today_Call_List}=TRUE()`;
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const companies: FitCompany[] = [];
   let offset: string | undefined;
 
   do {
     let params = `?pageSize=100&filterByFormula=${formula}`;
     if (offset) params += `&offset=${offset}`;
-    const data = await airtableRequest(`${table}${params}`);
+    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
 
     for (const rec of data.records || []) {
       const f = rec.fields;
@@ -246,11 +247,13 @@ function shouldUpdate(existing: FitCompany, candidate: OfferDMCandidate | null):
   return false;
 }
 
-export async function runDMFit(): Promise<DMFitSummary> {
+export async function runDMFit(clientId?: string): Promise<DMFitSummary> {
   logFit("Fetching Today_Call_List companies and Decision_Makers...");
 
+  const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
+
   const [companies, allDMs] = await Promise.all([
-    fetchTodayListForFit(),
+    fetchTodayListForFit(clientId, atConfig),
     fetchAllDecisionMakers(),
   ]);
 
@@ -326,7 +329,7 @@ export async function runDMFit(): Promise<DMFitSummary> {
       await airtableRequest(table, {
         method: "PATCH",
         body: JSON.stringify({ records: batch }),
-      });
+      }, atConfig);
       updated += batch.length;
     } catch (e: any) {
       logFit(`Batch update error: ${e.message}`);

@@ -41,6 +41,34 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
+export const clientConfig = pgTable("client_config", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull(),
+  maxTopPerRun: integer("max_top_per_run").notNull().default(25),
+  maxDmEnrichPerRun: integer("max_dm_enrich_per_run").notNull().default(25),
+  maxQueryGeneratePerRun: integer("max_query_generate_per_run").notNull().default(20),
+  maxPlaybooksPerRun: integer("max_playbooks_per_run").notNull().default(25),
+  maxLeadFeedPerRun: integer("max_lead_feed_per_run").notNull().default(5),
+});
+
+export const insertClientConfigSchema = createInsertSchema(clientConfig).omit({ id: true });
+export type InsertClientConfig = z.infer<typeof insertClientConfigSchema>;
+export type ClientConfig = typeof clientConfig.$inferSelect;
+
+export const usageLogs = pgTable("usage_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  runId: text("run_id"),
+  step: text("step").notNull(),
+  metricName: text("metric_name").notNull(),
+  metricValue: integer("metric_value").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertUsageLogSchema = createInsertSchema(usageLogs).omit({ id: true, createdAt: true });
+export type InsertUsageLog = z.infer<typeof insertUsageLogSchema>;
+export type UsageLog = typeof usageLogs.$inferSelect;
+
 export const webhookLogs = pgTable("webhook_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   airtableRecordId: text("airtable_record_id").notNull(),

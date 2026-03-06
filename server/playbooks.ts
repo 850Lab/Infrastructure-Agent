@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { getIndustryConfig } from "./config";
 import { log } from "./logger";
 import type { IndustryConfig } from "../config/types";
+import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -86,9 +87,10 @@ async function airtableRequest(path: string, options: RequestInit = {}): Promise
   return res.json();
 }
 
-async function fetchTodayListCompanies(): Promise<PlaybookCompany[]> {
+async function fetchTodayListCompanies(clientId?: string): Promise<PlaybookCompany[]> {
   const table = encodeURIComponent("Companies");
-  const formula = encodeURIComponent(`{Today_Call_List}=TRUE()`);
+  const baseFormula = `{Today_Call_List}=TRUE()`;
+  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const companies: PlaybookCompany[] = [];
   let offset: string | undefined;
 
@@ -263,13 +265,15 @@ async function writePlaybook(companyId: string, playbook: PlaybookOutput, config
 export async function generatePlaybooksForTodayList(options: {
   limit?: number;
   force?: boolean;
-}): Promise<PlaybookResult> {
+  clientId?: string;
+}, clientId?: string): Promise<PlaybookResult> {
   const cfg = getIndustryConfig();
   const limit = options.limit ?? 25;
   const force = options.force ?? false;
+  const effectiveClientId = clientId || options.clientId;
 
   logPB("Fetching Today_Call_List companies...");
-  const companies = await fetchTodayListCompanies();
+  const companies = await fetchTodayListCompanies(effectiveClientId);
   logPB(`Found ${companies.length} companies on today's list`);
 
   const result: PlaybookResult = {
