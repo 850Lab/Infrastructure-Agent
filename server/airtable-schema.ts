@@ -461,6 +461,17 @@ const COMPANIES_FIELDS: FieldSpec[] = [
       timeZone: "America/Chicago",
     },
   },
+  { name: "Recovery_Plan", type: "multilineText" },
+  { name: "Recovery_Attempts", type: "number", options: { precision: 0 } },
+  {
+    name: "Recovery_Last_Run",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

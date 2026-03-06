@@ -582,6 +582,25 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/recovery/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const { runRecoveryEngine } = await import("./recovery-engine");
+      const result = await runRecoveryEngine(clientId);
+      res.json(result);
+    } catch (err: any) {
+      log(`Recovery engine run error: ${err.message}`, "recovery-engine");
+      res.status(500).json({ error: "Failed to run recovery engine" });
+    }
+  });
+
   app.post("/api/dm-status/run", authMiddleware, async (req: Request, res: Response) => {
     try {
       let clientId = (req as any).user?.clientId;

@@ -16,6 +16,7 @@ import { runSalesLearning } from "./sales-learning/run-sales-learning";
 import { snapshotAuthorityTrends } from "./dm-authority-learning";
 import { runAlertDetection } from "./machine-alerts";
 import { updateDMStatus } from "./dm-status";
+import { runRecoveryEngine } from "./recovery-engine";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -138,6 +139,20 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       log(`Changeset: before-snapshot captured ${changesetBefore.size} records`, "changeset");
     } catch (e: any) {
       log(`Changeset before-snapshot failed: ${e.message}`, "changeset");
+    }
+
+    try {
+      await timedStep(run_id, "recovery_engine", async () => {
+        const r = await runRecoveryEngine(clientId);
+        eventBus.publish("TRIGGER_FIRED", {
+          trigger: "recovery_engine",
+          company: `${r.recovered}/${r.total} recovered`,
+          ts: Date.now(),
+        }, clientId);
+        return r;
+      }, clientId);
+    } catch (e: any) {
+      errors.push(`Recovery Engine: ${e.message}`);
     }
 
     try {
