@@ -434,6 +434,33 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   },
   { name: "Offer_DM_Title_At_Contact", type: "singleLineText" },
   { name: "Authority_Miss_Count", type: "number", options: { precision: 0 } },
+  {
+    name: "DM_Status",
+    type: "singleSelect",
+    options: {
+      choices: [
+        { name: "DM_READY", color: "greenLight2" },
+        { name: "DM_WEAK", color: "yellowLight2" },
+        { name: "NO_DM", color: "redLight2" },
+        { name: "NO_EMAIL", color: "orangeLight2" },
+        { name: "NO_PHONE", color: "orangeLight2" },
+        { name: "GENERIC_CONTACT", color: "yellowLight2" },
+        { name: "NO_WEBSITE", color: "redLight2" },
+        { name: "AUTHORITY_MISMATCH", color: "redLight2" },
+        { name: "RECOVERY_IN_PROGRESS", color: "cyanLight2" },
+        { name: "READY_FOR_OUTREACH", color: "greenLight2" },
+      ],
+    },
+  },
+  {
+    name: "DM_Last_Checked",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

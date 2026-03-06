@@ -15,6 +15,7 @@ import { checkLimit, logUsageMetric } from "./usage-guard";
 import { runSalesLearning } from "./sales-learning/run-sales-learning";
 import { snapshotAuthorityTrends } from "./dm-authority-learning";
 import { runAlertDetection } from "./machine-alerts";
+import { updateDMStatus } from "./dm-status";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -191,6 +192,20 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }, clientId);
     } catch (e: any) {
       errors.push(`DM Fit: ${e.message}`);
+    }
+
+    try {
+      await timedStep(run_id, "dm_status", async () => {
+        const r = await updateDMStatus(clientId);
+        eventBus.publish("TRIGGER_FIRED", {
+          trigger: "dm_status",
+          company: `${r.updated}/${r.total} classified`,
+          ts: Date.now(),
+        }, clientId);
+        return r;
+      }, clientId);
+    } catch (e: any) {
+      errors.push(`DM Status: ${e.message}`);
     }
 
     if (config.playbooks) {

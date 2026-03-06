@@ -582,6 +582,25 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/dm-status/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const { updateDMStatus } = await import("./dm-status");
+      const result = await updateDMStatus(clientId);
+      res.json(result);
+    } catch (err: any) {
+      log(`DM Status run error: ${err.message}`, "dm-status");
+      res.status(500).json({ error: "Failed to run DM status classification" });
+    }
+  });
+
   app.get("/api/alerts", authMiddleware, async (req: Request, res: Response) => {
     try {
       const clientId = (req as any).user?.clientId;
