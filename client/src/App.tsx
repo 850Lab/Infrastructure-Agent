@@ -17,6 +17,7 @@ import AnalyticsPage from "@/pages/analytics";
 import PipelinePage from "@/pages/pipeline";
 import CallModePage from "@/pages/call-mode";
 import MachineSettingsPage from "@/pages/machine-settings";
+import CinematicPage from "@/pages/cinematic";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
@@ -47,7 +48,7 @@ function OnboardingGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated || isLoading || !me) return;
 
-    const onProtectedPage = location !== "/login" && location !== "/onboarding" && location !== "/briefing";
+    const onProtectedPage = location !== "/login" && location !== "/onboarding" && location !== "/briefing" && location !== "/cinematic";
 
     if (me.needsOnboarding && onProtectedPage) {
       navigate("/onboarding");
@@ -78,6 +79,9 @@ function Router() {
         </Route>
         <Route path="/briefing">
           <ProtectedRoute><BriefingPage /></ProtectedRoute>
+        </Route>
+        <Route path="/cinematic">
+          <ProtectedRoute><CinematicPage /></ProtectedRoute>
         </Route>
         <Route path="/dashboard">
           <ProtectedRoute><Dashboard /></ProtectedRoute>
