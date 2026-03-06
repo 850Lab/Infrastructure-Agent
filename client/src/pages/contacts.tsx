@@ -1,9 +1,49 @@
+import { useMemo } from "react";
+import { List } from "react-window";
 import AppLayout from "@/components/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Users, Mail, Phone, Loader2 } from "lucide-react";
 import { useLatestRun } from "@/lib/use-latest-run";
+import type { CSSProperties, ReactElement } from "react";
+
+const ROW_HEIGHT = 48;
+const HEADER_HEIGHT = 40;
+
+interface ContactRowProps {
+  contacts: any[];
+}
+
+function ContactRow(props: { index: number; style: CSSProperties } & ContactRowProps): ReactElement | null {
+  const { index, style, contacts } = props;
+  const c = contacts[index];
+  if (!c) return null;
+
+  return (
+    <div
+      style={style}
+      className="flex items-center border-b"
+      data-testid={`row-contact-${index}`}
+    >
+      <div className="flex-1 min-w-0 px-4 py-2 text-sm font-medium truncate" style={{ color: "#0F172A", flexBasis: "20%" }}>
+        {c.primaryDMName}
+      </div>
+      <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ color: "#334155", flexBasis: "20%" }}>
+        {c.primaryDMTitle || <span style={{ color: "#94A3B8" }}>—</span>}
+      </div>
+      <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ color: "#334155", flexBasis: "20%" }}>
+        {c.companyName}
+      </div>
+      <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ flexBasis: "25%" }}>
+        {c.primaryDMEmail ? (
+          <a href={`mailto:${c.primaryDMEmail}`} className="underline" style={{ color: "#10B981" }}>{c.primaryDMEmail}</a>
+        ) : <span style={{ color: "#94A3B8" }}>—</span>}
+      </div>
+      <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ color: "#334155", flexBasis: "15%" }}>
+        {c.primaryDMPhone || <span style={{ color: "#94A3B8" }}>—</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function ContactsPage() {
   const { getStep, isLoading } = useLatestRun();
@@ -12,7 +52,7 @@ export default function ContactsPage() {
   const dmFitStep = getStep("dm_fit");
 
   const callList: any[] = dmStep?.stats?.callList || [];
-  const contactsWithDM = callList.filter((c: any) => c.primaryDMName);
+  const contactsWithDM = useMemo(() => callList.filter((c: any) => c.primaryDMName), [callList]);
   const contactsWithEmail = callList.filter((c: any) => c.primaryDMEmail);
   const contactsWithPhone = callList.filter((c: any) => c.primaryDMPhone);
 
@@ -23,6 +63,9 @@ export default function ContactsPage() {
     { label: "With Email", value: contactsWithEmail.length, icon: Mail },
     { label: "With Phone", value: contactsWithPhone.length, icon: Phone },
   ];
+
+  const useVirtualization = contactsWithDM.length > 50;
+  const rowProps: ContactRowProps = useMemo(() => ({ contacts: contactsWithDM }), [contactsWithDM]);
 
   return (
     <AppLayout showBackToChip>
@@ -53,46 +96,60 @@ export default function ContactsPage() {
         </div>
         <Card style={{ border: "1px solid #E2E8F0" }}>
           <CardContent className="p-0">
-            <Table data-testid="table-contacts">
-              <TableHeader>
-                <TableRow>
-                  <TableHead style={{ color: "#64748B" }}>Name</TableHead>
-                  <TableHead style={{ color: "#64748B" }}>Title</TableHead>
-                  <TableHead style={{ color: "#64748B" }}>Company</TableHead>
-                  <TableHead style={{ color: "#64748B" }}>Email</TableHead>
-                  <TableHead style={{ color: "#64748B" }}>Phone</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8">
-                      <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: "#94A3B8" }} />
-                    </TableCell>
-                  </TableRow>
-                ) : contactsWithDM.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8" style={{ color: "#94A3B8" }}>
-                      No decision makers found yet — run the engine from the dashboard
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  contactsWithDM.map((c: any, i: number) => (
-                    <TableRow key={i} data-testid={`row-contact-${i}`}>
-                      <TableCell className="font-medium" style={{ color: "#0F172A" }}>{c.primaryDMName}</TableCell>
-                      <TableCell style={{ color: "#334155" }}>{c.primaryDMTitle || <span style={{ color: "#94A3B8" }}>—</span>}</TableCell>
-                      <TableCell style={{ color: "#334155" }}>{c.companyName}</TableCell>
-                      <TableCell>
-                        {c.primaryDMEmail ? (
-                          <a href={`mailto:${c.primaryDMEmail}`} className="underline" style={{ color: "#10B981" }}>{c.primaryDMEmail}</a>
-                        ) : <span style={{ color: "#94A3B8" }}>—</span>}
-                      </TableCell>
-                      <TableCell style={{ color: "#334155" }}>{c.primaryDMPhone || <span style={{ color: "#94A3B8" }}>—</span>}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+            <div className="flex items-center border-b" style={{ height: HEADER_HEIGHT }}>
+              <div className="px-4 py-2 text-xs font-medium" style={{ color: "#64748B", flexBasis: "20%" }}>Name</div>
+              <div className="px-4 py-2 text-xs font-medium" style={{ color: "#64748B", flexBasis: "20%" }}>Title</div>
+              <div className="px-4 py-2 text-xs font-medium" style={{ color: "#64748B", flexBasis: "20%" }}>Company</div>
+              <div className="px-4 py-2 text-xs font-medium" style={{ color: "#64748B", flexBasis: "25%" }}>Email</div>
+              <div className="px-4 py-2 text-xs font-medium" style={{ color: "#64748B", flexBasis: "15%" }}>Phone</div>
+            </div>
+            <div data-testid="table-contacts">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#94A3B8" }} />
+                </div>
+              ) : contactsWithDM.length === 0 ? (
+                <div className="text-center py-8 text-sm" style={{ color: "#94A3B8" }}>
+                  No decision makers found yet — run the engine from the dashboard
+                </div>
+              ) : useVirtualization ? (
+                <List
+                  rowComponent={ContactRow}
+                  rowCount={contactsWithDM.length}
+                  rowHeight={ROW_HEIGHT}
+                  rowProps={rowProps}
+                  overscanCount={10}
+                  style={{ height: "calc(100vh - 420px)", minHeight: 300 }}
+                />
+              ) : (
+                contactsWithDM.map((c: any, i: number) => (
+                  <div
+                    key={i}
+                    className="flex items-center border-b"
+                    style={{ height: ROW_HEIGHT }}
+                    data-testid={`row-contact-${i}`}
+                  >
+                    <div className="flex-1 min-w-0 px-4 py-2 text-sm font-medium truncate" style={{ color: "#0F172A", flexBasis: "20%" }}>
+                      {c.primaryDMName}
+                    </div>
+                    <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ color: "#334155", flexBasis: "20%" }}>
+                      {c.primaryDMTitle || <span style={{ color: "#94A3B8" }}>—</span>}
+                    </div>
+                    <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ color: "#334155", flexBasis: "20%" }}>
+                      {c.companyName}
+                    </div>
+                    <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ flexBasis: "25%" }}>
+                      {c.primaryDMEmail ? (
+                        <a href={`mailto:${c.primaryDMEmail}`} className="underline" style={{ color: "#10B981" }}>{c.primaryDMEmail}</a>
+                      ) : <span style={{ color: "#94A3B8" }}>—</span>}
+                    </div>
+                    <div className="flex-1 min-w-0 px-4 py-2 text-sm truncate" style={{ color: "#334155", flexBasis: "15%" }}>
+                      {c.primaryDMPhone || <span style={{ color: "#94A3B8" }}>—</span>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

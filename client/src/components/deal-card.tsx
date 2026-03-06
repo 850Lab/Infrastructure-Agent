@@ -46,6 +46,15 @@ interface DealCardProps {
   compact?: boolean;
 }
 
+function getOppQueryKeys() {
+  return queryClient.getQueryCache().findAll({
+    predicate: (q) => {
+      const key = q.queryKey[0];
+      return typeof key === "string" && key.startsWith("/api/opportunities");
+    },
+  }).map(q => q.queryKey);
+}
+
 function invalidateOppQueries() {
   queryClient.invalidateQueries({
     predicate: (q) => {
@@ -74,9 +83,43 @@ export default function DealCard({ opportunity, compact = false }: DealCardProps
   const advanceMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) =>
       apiRequest("POST", `/api/opportunities/${id}/update`, { stage }),
-    onMutate: ({ stage }) => {
-      setOptimisticStage(stage);
+    onMutate: async ({ id, stage }) => {
       setShowStages(false);
+      setOptimisticStage(stage);
+
+      await queryClient.cancelQueries({
+        predicate: (q) => {
+          const key = q.queryKey[0];
+          return typeof key === "string" && key.startsWith("/api/opportunities");
+        },
+      });
+
+      const snapshots: { key: unknown[]; data: unknown }[] = [];
+      const keys = getOppQueryKeys();
+
+      for (const key of keys) {
+        const prev = queryClient.getQueryData(key);
+        snapshots.push({ key, data: prev });
+
+        queryClient.setQueryData(key, (old: any) => {
+          if (!old?.opportunities) return old;
+          return {
+            ...old,
+            opportunities: old.opportunities.map((o: Opportunity) =>
+              o.id === id ? { ...o, stage, last_updated: new Date().toISOString() } : o
+            ),
+          };
+        });
+      }
+
+      return { snapshots };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.snapshots) {
+        for (const { key, data } of context.snapshots) {
+          queryClient.setQueryData(key, data);
+        }
+      }
     },
     onSuccess: () => {
       invalidateOppQueries();
