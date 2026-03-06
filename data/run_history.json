@@ -1,17 +1,1649 @@
 [
   {
-    "run_id": "run_1772823378623_x0h83l",
-    "started_at": 1772823378624,
+    "run_id": "run_1772823927414_6nxofi",
+    "started_at": 1772823927415,
     "steps": [
       {
         "step": "recovery_engine",
-        "started_at": 1772823380004,
+        "started_at": 1772823928660,
         "status": "running"
       }
     ],
     "errors": [],
     "status": "running",
-    "clientId": "3dfe54de-caca-40de-a47a-7b825118738d",
+    "clientId": "94a6c2d1-0e39-46b8-b78f-dfc5cb61aef5",
+    "_airtable_id": "recTfdtXgXWcqm6g3"
+  },
+  {
+    "run_id": "run_1772823864704_wjjicf",
+    "started_at": 1772823864705,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "recwCONWDx1QbHLu8"
+  },
+  {
+    "run_id": "run_1772823741295_7xclaq",
+    "started_at": 1772823741296,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "reczIRTDiHM9YTZfo"
+  },
+  {
+    "run_id": "run_1772823538645_k9tjxu",
+    "started_at": 1772823538645,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "recaOrcZ3wjD6uNAX"
+  },
+  {
+    "run_id": "run_1772823378623_x0h83l",
+    "started_at": 1772823378624,
+    "finished_at": 1772823537548,
+    "status": "success",
+    "steps": [
+      {
+        "step": "recovery_engine",
+        "started_at": 1772823380004,
+        "status": "ok",
+        "finished_at": 1772823507518,
+        "duration_ms": 127514,
+        "stats": {
+          "queue": {
+            "added": 0,
+            "removed": 0,
+            "alreadyQueued": 429
+          },
+          "processing": {
+            "processed": 20,
+            "recovered": 7,
+            "skipped": 0,
+            "maxedOut": 0,
+            "ceilingReached": 0,
+            "breakdown": {
+              "NO_WEBSITE": {
+                "attempted": 5,
+                "succeeded": 5
+              },
+              "NO_DM": {
+                "attempted": 15,
+                "succeeded": 2
+              }
+            }
+          }
+        }
+      },
+      {
+        "step": "outreach_engine",
+        "started_at": 1772823507530,
+        "status": "ok",
+        "finished_at": 1772823507633,
+        "duration_ms": 103,
+        "stats": {
+          "populate": {
+            "added": 0,
+            "skipped": 2
+          },
+          "advance": {
+            "advanced": 0,
+            "completed": 0,
+            "due": 0
+          }
+        }
+      },
+      {
+        "step": "opportunity_engine",
+        "started_at": 1772823507647,
+        "status": "ok",
+        "finished_at": 1772823518317,
+        "duration_ms": 10670,
+        "stats": {
+          "top_requested": 25,
+          "hot_selected": 2,
+          "working_selected": 0,
+          "fresh_selected": 23,
+          "score_fill_selected": 0,
+          "overdue_followups_included": 0,
+          "dm_resolution": {
+            "companiesOnList": 25,
+            "companiesWithDM": 6,
+            "companiesMissingDM": 19,
+            "avgConfidence": 67,
+            "updates": []
+          },
+          "freshness_alert": {
+            "triggered": false,
+            "required": 10,
+            "available": 415
+          },
+          "slip_alert": {
+            "triggered": false,
+            "overdue_count": 0
+          },
+          "companies_updated": 435,
+          "rank_writes": 0,
+          "rank_skipped": 25,
+          "details": [
+            {
+              "companyName": "Turner Industries",
+              "bucket": "Hot Follow-up",
+              "finalPriority": 10,
+              "followupDue": "2026-03-06T22:34:55.626Z",
+              "overdue": false,
+              "phone": "+1 225-300-8100",
+              "primaryDMName": "Christa Andresky",
+              "primaryDMTitle": "Executive Vice President, Chief Financial Officer",
+              "primaryDMEmail": "candresky@tcco.com",
+              "gatekeeperName": "",
+              "rankReason": "Follow-up due 2026-03-06. DM: Christa Andresky Executive Vice President, Chief Financial Officer.",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Turner Industries",
+              "bucket": "Hot Follow-up",
+              "finalPriority": 10,
+              "followupDue": "2026-03-06T22:34:55.626Z",
+              "overdue": false,
+              "phone": "+1 225-300-8100",
+              "primaryDMName": "Christa Andresky",
+              "primaryDMTitle": "Executive Vice President, Chief Financial Officer",
+              "primaryDMEmail": "candresky@tcco.com",
+              "gatekeeperName": "",
+              "rankReason": "Follow-up due 2026-03-06. DM: Christa Andresky Executive Vice President, Chief Financial Officer.",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Irex Energy Solutions",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-474-2298",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Top Maintenance Services",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-300-4502",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Thermal Industrial Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 346-708-2790",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Insul Pro Solutions",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-965-7797",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "General Insulation Company, Inc.",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 844-851-9740",
+              "primaryDMName": "Gerald Towle",
+              "primaryDMTitle": "Director of Sales and Marketing for Commercial and Residential Divisions",
+              "primaryDMEmail": "gtowle@generalinsulation.com",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05). DM: Gerald Towle Director of Sales and Marketing for Commercial and Residential Divisions.",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Lake Charles Spray Foam Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-427-8351",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Industrial Specialty Crafts",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-813-1167",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Performance Insulation Contractors, Inc.",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 281-471-9900",
+              "primaryDMName": "Joseph Perry",
+              "primaryDMTitle": "Corporate Safety Manager",
+              "primaryDMEmail": "josephperry@performance-1.com",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05). DM: Joseph Perry Corporate Safety Manager.",
+              "offerDMName": "Joseph Perry",
+              "offerDMTitle": "Corporate Safety Manager",
+              "offerDMFitScore": 80
+            },
+            {
+              "companyName": "Insultherm Inc",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 281-767-2520",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "IBP Beaumont",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-724-0300",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "KNIGHT INDUSTRIAL SERVICES",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 281-421-5049",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Martin Insulation & Coatings",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-274-6611",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Architectural Insulation LLC",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-660-3377",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Rader's Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-540-6399",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Chief Foam Insulation and Coatings LLC",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-476-7228",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Iberville Insulation, LLC",
+              "bucket": "Fresh",
+              "finalPriority": 60,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 713-986-1148",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Insulate My Attic | Insulation Lake Charles LA",
+              "bucket": "Fresh",
+              "finalPriority": 45,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-304-5050",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Talon Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 45,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-512-7533",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Builders' Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 45,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-842-2856",
+              "primaryDMName": "Peter Jackson",
+              "primaryDMTitle": "President & Chief Executive Officer",
+              "primaryDMEmail": "peter.jackson@bldr.com",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05). DM: Peter Jackson President & Chief Executive Officer.",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Richey's 3-D Foam Insulation",
+              "bucket": "Fresh",
+              "finalPriority": 45,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 337-526-5526",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "enerflex insulation",
+              "bucket": "Fresh",
+              "finalPriority": 45,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 281-628-7183",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "Raven Commercial Solutions LLC",
+              "bucket": "Fresh",
+              "finalPriority": 40,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-853-4045",
+              "primaryDMName": "Corey Perkins",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "corey.perkins@ravencommercialsolutions.com",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05). DM: Corey Perkins.",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            },
+            {
+              "companyName": "BK Industrial Solutions LLC",
+              "bucket": "Fresh",
+              "finalPriority": 40,
+              "followupDue": null,
+              "overdue": false,
+              "phone": "+1 409-838-1641",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "gatekeeperName": "",
+              "rankReason": "Fresh lead (added 2026-03-05).",
+              "offerDMName": "",
+              "offerDMTitle": "",
+              "offerDMFitScore": 0
+            }
+          ]
+        }
+      },
+      {
+        "step": "dm_coverage",
+        "started_at": 1772823518327,
+        "status": "ok",
+        "finished_at": 1772823520288,
+        "duration_ms": 1961,
+        "stats": {
+          "companiesOnList": 25,
+          "companiesNeedingEnrichment": 0,
+          "companiesEnriched": 0,
+          "companiesReady": 6,
+          "companiesMissing": 19,
+          "companiesErrored": 0,
+          "dmResolution": {
+            "companiesOnList": 25,
+            "companiesWithDM": 6,
+            "companiesMissingDM": 19,
+            "avgConfidence": 67,
+            "updates": []
+          },
+          "callList": [
+            {
+              "companyName": "Irex Energy Solutions",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Top Maintenance Services",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Thermal Industrial Insulation",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Insul Pro Solutions",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "General Insulation Company, Inc.",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "Gerald Towle",
+              "primaryDMTitle": "Director of Sales and Marketing for Commercial and Residential Divisions",
+              "primaryDMEmail": "gtowle@generalinsulation.com",
+              "primaryDMPhone": "(617) 799-8345"
+            },
+            {
+              "companyName": "Lake Charles Spray Foam Insulation",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Industrial Specialty Crafts",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Performance Insulation Contractors, Inc.",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "Joseph Perry",
+              "primaryDMTitle": "Corporate Safety Manager",
+              "primaryDMEmail": "josephperry@performance-1.com",
+              "primaryDMPhone": "281-471-9900"
+            },
+            {
+              "companyName": "Insultherm Inc",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "IBP Beaumont",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "KNIGHT INDUSTRIAL SERVICES",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Martin Insulation & Coatings",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Architectural Insulation LLC",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Rader's Insulation",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Chief Foam Insulation and Coatings LLC",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Iberville Insulation, LLC",
+              "finalPriority": 60,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Insulate My Attic | Insulation Lake Charles LA",
+              "finalPriority": 45,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": "+1 337-304-5050"
+            },
+            {
+              "companyName": "Talon Insulation",
+              "finalPriority": 45,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": "+1 337-512-7533"
+            },
+            {
+              "companyName": "Builders' Insulation",
+              "finalPriority": 45,
+              "bucket": "Fresh",
+              "primaryDMName": "Peter Jackson",
+              "primaryDMTitle": "President & Chief Executive Officer",
+              "primaryDMEmail": "peter.jackson@bldr.com",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Richey's 3-D Foam Insulation",
+              "finalPriority": 45,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": "+1 337-526-5526"
+            },
+            {
+              "companyName": "enerflex insulation",
+              "finalPriority": 45,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": "+1 281-628-7183"
+            },
+            {
+              "companyName": "Raven Commercial Solutions LLC",
+              "finalPriority": 40,
+              "bucket": "Fresh",
+              "primaryDMName": "Corey Perkins",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "corey.perkins@ravencommercialsolutions.com",
+              "primaryDMPhone": "(409) 658-9597"
+            },
+            {
+              "companyName": "BK Industrial Solutions LLC",
+              "finalPriority": 40,
+              "bucket": "Fresh",
+              "primaryDMName": "",
+              "primaryDMTitle": "",
+              "primaryDMEmail": "",
+              "primaryDMPhone": ""
+            },
+            {
+              "companyName": "Turner Industries",
+              "finalPriority": 10,
+              "bucket": "Hot Follow-up",
+              "primaryDMName": "Christa Andresky",
+              "primaryDMTitle": "Executive Vice President, Chief Financial Officer",
+              "primaryDMEmail": "candresky@tcco.com",
+              "primaryDMPhone": "+1-212-229-6490"
+            },
+            {
+              "companyName": "Turner Industries",
+              "finalPriority": 10,
+              "bucket": "Hot Follow-up",
+              "primaryDMName": "Christa Andresky",
+              "primaryDMTitle": "Executive Vice President, Chief Financial Officer",
+              "primaryDMEmail": "candresky@tcco.com",
+              "primaryDMPhone": "+1-212-229-6490"
+            }
+          ]
+        }
+      },
+      {
+        "step": "dm_fit",
+        "started_at": 1772823520296,
+        "status": "ok",
+        "finished_at": 1772823521937,
+        "duration_ms": 1641,
+        "stats": {
+          "totalCompanies": 25,
+          "offerDMSelected": 1,
+          "noFitCount": 24,
+          "avgFitScore": 80,
+          "updated": 24,
+          "skipped": 1
+        }
+      },
+      {
+        "step": "dm_status",
+        "started_at": 1772823521946,
+        "status": "ok",
+        "finished_at": 1772823532858,
+        "duration_ms": 10912,
+        "stats": {
+          "total": 435,
+          "updated": 435,
+          "breakdown": {
+            "NO_DM": 400,
+            "NO_WEBSITE": 28,
+            "DM_READY": 1,
+            "DM_WEAK": 4,
+            "READY_FOR_OUTREACH": 1,
+            "NO_PHONE": 1
+          }
+        }
+      },
+      {
+        "step": "playbooks",
+        "started_at": 1772823532866,
+        "status": "ok",
+        "finished_at": 1772823535758,
+        "duration_ms": 2892,
+        "stats": {
+          "generated": 0,
+          "skipped": 25,
+          "errors": 0,
+          "details": [
+            {
+              "companyName": "Raven Commercial Solutions LLC",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Irex Energy Solutions",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Top Maintenance Services",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Thermal Industrial Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Insul Pro Solutions",
+              "status": "skipped"
+            },
+            {
+              "companyName": "BK Industrial Solutions LLC",
+              "status": "skipped"
+            },
+            {
+              "companyName": "General Insulation Company, Inc.",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Turner Industries",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Lake Charles Spray Foam Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Insulate My Attic | Insulation Lake Charles LA",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Talon Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Industrial Specialty Crafts",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Performance Insulation Contractors, Inc.",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Insultherm Inc",
+              "status": "skipped"
+            },
+            {
+              "companyName": "IBP Beaumont",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Builders' Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Richey's 3-D Foam Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "KNIGHT INDUSTRIAL SERVICES",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Martin Insulation & Coatings",
+              "status": "skipped"
+            },
+            {
+              "companyName": "enerflex insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Architectural Insulation LLC",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Rader's Insulation",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Chief Foam Insulation and Coatings LLC",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Iberville Insulation, LLC",
+              "status": "skipped"
+            },
+            {
+              "companyName": "Turner Industries",
+              "status": "skipped"
+            }
+          ]
+        }
+      },
+      {
+        "step": "call_engine",
+        "started_at": 1772823535857,
+        "status": "ok",
+        "finished_at": 1772823535964,
+        "duration_ms": 107,
+        "stats": {
+          "calls_processed": 0,
+          "companies_updated": 0,
+          "followups_scheduled": 0,
+          "gatekeepers_recorded": 0,
+          "details": []
+        }
+      },
+      {
+        "step": "sales_learning",
+        "started_at": 1772823535974,
+        "status": "ok",
+        "finished_at": 1772823536070,
+        "duration_ms": 96,
+        "stats": {
+          "calls_processed": 0,
+          "observations_created": 0,
+          "learning_records_created": 0,
+          "patterns_created": 0,
+          "patterns_updated": 0,
+          "patches_created": 0,
+          "patches_skipped": 0,
+          "errors": [],
+          "duration_ms": 80
+        }
+      },
+      {
+        "step": "query_intel",
+        "started_at": 1772823536080,
+        "status": "ok",
+        "finished_at": 1772823536589,
+        "duration_ms": 509,
+        "stats": {
+          "freshCount": 429,
+          "freshNeeded": 0,
+          "queriesGenerated": 20,
+          "queriesInserted": 0,
+          "queriesSkippedDuplicates": 20,
+          "queriesRetired": 0,
+          "attributionMode": "exact",
+          "winFlagUpdated": 0,
+          "queryStatsUpdated": 0
+        }
+      }
+    ],
+    "summary": {
+      "errors_count": 0,
+      "warnings_count": 0,
+      "diff": {
+        "companies_added": 0,
+        "dms_added": 0,
+        "today_call_list_delta": 0,
+        "offer_dm_updated": 0,
+        "playbooks_generated": 0,
+        "queries_inserted": 0,
+        "queries_retired": 0,
+        "before": {
+          "companies_total": 435,
+          "dms_total": 501,
+          "today_call_list": 25,
+          "offer_dm_filled": 1,
+          "playbook_filled": 27,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772823379814
+        },
+        "after": {
+          "companies_total": 435,
+          "dms_total": 501,
+          "today_call_list": 25,
+          "offer_dm_filled": 1,
+          "playbook_filled": 27,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772823537548
+        }
+      },
+      "changeset": {
+        "entries": [
+          {
+            "table": "Companies",
+            "recordId": "rec1yRr4Lg0brgovF",
+            "companyName": "Raven Commercial Solutions LLC",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.249Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.083Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rec2qH5qme5QgcqoN",
+            "companyName": "Irex Energy Solutions",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.249Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.084Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rec3cyepckEO9AO1V",
+            "companyName": "Top Maintenance Services",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.249Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.084Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rec5nuJcBPbt1EEA3",
+            "companyName": "Thermal Industrial Insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.249Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.084Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rec84L6Tv89Dopfr9",
+            "companyName": "Insul Pro Solutions",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.249Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.085Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rec8jlnGDSJFIE69F",
+            "companyName": "BK Industrial Solutions LLC",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.250Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.085Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recAhENVnaAxGOcu2",
+            "companyName": "General Insulation Company, Inc.",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.255Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.091Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recCR190TYeL9AxeK",
+            "companyName": "Turner Industries",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.268Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.104Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recIcNGPEcBNG76jK",
+            "companyName": "Lake Charles Spray Foam Insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.268Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.105Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recM3femD6h3I82cZ",
+            "companyName": "Insulate My Attic | Insulation Lake Charles LA",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.269Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.105Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recMfb1gLBXGoZD9k",
+            "companyName": "Talon Insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.269Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.105Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recQnq2YMUwFHtgxb",
+            "companyName": "Industrial Specialty Crafts",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.269Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.105Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recTx5lufF9dDleHv",
+            "companyName": "Insultherm Inc",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.284Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.121Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recU4G5JCaU3kpfkT",
+            "companyName": "IBP Beaumont",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.284Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.122Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recZTkoeWZMKcp91L",
+            "companyName": "Builders' Insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.290Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.129Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recftc8HJndROTCv8",
+            "companyName": "Richey's 3-D Foam Insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.290Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.129Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rechw42ZRDLUpksiW",
+            "companyName": "KNIGHT INDUSTRIAL SERVICES",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.290Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.129Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recitmR9eFdwf5k0R",
+            "companyName": "Martin Insulation & Coatings",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.291Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.129Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recndYk4SpqEuwii6",
+            "companyName": "enerflex insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.291Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.130Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recpmdTebXfre0NT2",
+            "companyName": "Architectural Insulation LLC",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.291Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.130Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "rectBoFYQQM6SlUcz",
+            "companyName": "Rader's Insulation",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.291Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.130Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recwvkWfpGFIgv2R3",
+            "companyName": "Chief Foam Insulation and Coatings LLC",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.291Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.130Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "recy7pEGx049eR3Ui",
+            "companyName": "Iberville Insulation, LLC",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.292Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.131Z"
+            }
+          },
+          {
+            "table": "Companies",
+            "recordId": "reczoHQ8Dlc1lGLyD",
+            "companyName": "Turner Industries",
+            "category": "offer_dm",
+            "fields_before": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:50:33.304Z"
+            },
+            "fields_after": {
+              "Offer_DM_Name": null,
+              "Offer_DM_Title": null,
+              "Offer_DM_Email": null,
+              "Offer_DM_Phone": null,
+              "Offer_DM_FitScore": 0,
+              "Offer_DM_Reason": "No strong-fit DM found; ask gatekeeper for Safety Manager / Site Superintendent.",
+              "Offer_DM_Source": null,
+              "Offer_DM_Last_Selected": "2026-03-06T18:58:41.144Z"
+            }
+          }
+        ],
+        "reverted": false
+      }
+    },
+    "errors": [],
+    "duration_ms": 158924,
     "_airtable_id": "recQFanc06Zv5akrK"
   },
   {

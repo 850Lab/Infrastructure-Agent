@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin-layout";
-import { Users, Activity, Zap, Clock, Globe, RefreshCw, TrendingUp, TrendingDown, Timer, Play, Square } from "lucide-react";
+import { Users, Activity, Zap, Clock, Globe, RefreshCw, TrendingUp, TrendingDown, Timer, Play, Square, Mail, Phone, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -42,6 +42,28 @@ export default function AdminDashboard() {
   }>({
     queryKey: ["/api/admin/scheduler"],
     refetchInterval: 30000,
+  });
+
+  interface CampaignOverviewItem {
+    clientId: string;
+    clientName: string;
+    machineName: string;
+    industryConfig: string;
+    territory: string;
+    status: string;
+    totalLeads: number;
+    active: number;
+    completed: number;
+    responded: number;
+    notInterested: number;
+    dueToday: number;
+    touchStages: Record<string, number>;
+    templateCount: number;
+  }
+
+  const { data: campaignData } = useQuery<{ campaigns: CampaignOverviewItem[] }>({
+    queryKey: ["/api/admin/campaign-overview"],
+    refetchInterval: 60000,
   });
 
   const startSchedulerMutation = useMutation({
@@ -201,6 +223,83 @@ export default function AdminDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {campaignData && campaignData.campaigns.length > 0 && (
+          <Card style={{ border: "1px solid #E2E8F0" }} data-testid="card-campaign-overview">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2" style={{ color: "#0F172A" }}>
+                <Activity className="w-4 h-4" style={{ color: "#10B981" }} />
+                Campaign Overview
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {campaignData.campaigns.map((c) => (
+                  <div key={c.clientId} className="rounded-lg p-4" style={{ background: "#F8FAFC", border: "1px solid #E2E8F0" }} data-testid={`campaign-card-${c.clientId}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold" style={{ color: "#0F172A" }}>{c.clientName}</h3>
+                        <p className="text-[10px]" style={{ color: "#94A3B8" }}>{c.machineName}</p>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{
+                        background: c.status === "active" ? "rgba(16,185,129,0.08)" : "rgba(148,163,184,0.08)",
+                        color: c.status === "active" ? "#10B981" : "#94A3B8",
+                        border: `1px solid ${c.status === "active" ? "rgba(16,185,129,0.3)" : "#E2E8F0"}`,
+                      }}>
+                        {c.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <div className="text-center p-1.5 rounded" style={{ background: "#FFFFFF", border: "1px solid #E2E8F0" }}>
+                        <div className="text-lg font-bold" style={{ color: "#0F172A" }}>{c.totalLeads}</div>
+                        <div className="text-[9px] font-medium" style={{ color: "#94A3B8" }}>Leads</div>
+                      </div>
+                      <div className="text-center p-1.5 rounded" style={{ background: "#FFFFFF", border: "1px solid #E2E8F0" }}>
+                        <div className="text-lg font-bold" style={{ color: "#10B981" }}>{c.active}</div>
+                        <div className="text-[9px] font-medium" style={{ color: "#94A3B8" }}>Active</div>
+                      </div>
+                      <div className="text-center p-1.5 rounded" style={{ background: "#FFFFFF", border: "1px solid #E2E8F0" }}>
+                        <div className="text-lg font-bold" style={{ color: c.dueToday > 0 ? "#F59E0B" : "#94A3B8" }}>{c.dueToday}</div>
+                        <div className="text-[9px] font-medium" style={{ color: "#94A3B8" }}>Due Today</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                      {c.responded > 0 && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                          style={{ background: "rgba(59,130,246,0.08)", color: "#3B82F6", border: "1px solid rgba(59,130,246,0.2)" }}>
+                          <Mail className="w-3 h-3" /> {c.responded} replied
+                        </span>
+                      )}
+                      {c.completed > 0 && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                          style={{ background: "rgba(16,185,129,0.08)", color: "#10B981", border: "1px solid rgba(16,185,129,0.2)" }}>
+                          <CheckCircle2 className="w-3 h-3" /> {c.completed} done
+                        </span>
+                      )}
+                      {c.notInterested > 0 && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                          style={{ background: "rgba(239,68,68,0.08)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)" }}>
+                          {c.notInterested} not interested
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                        style={{ background: "rgba(139,92,246,0.08)", color: "#8B5CF6", border: "1px solid rgba(139,92,246,0.2)" }}>
+                        <FileText className="w-3 h-3" /> {c.templateCount} templates
+                      </span>
+                    </div>
+
+                    <div className="text-[10px]" style={{ color: "#94A3B8" }}>
+                      <span className="font-medium">Touch stages:</span>{" "}
+                      {Object.entries(c.touchStages).filter(([_, v]) => v > 0).map(([k, v]) => `${k.replace("_", " ")}: ${v}`).join(" / ") || "No leads yet"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card style={{ border: "1px solid #E2E8F0" }}>
           <CardHeader>

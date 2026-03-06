@@ -10,6 +10,9 @@ import { exportTableCSV } from "./data-export";
 import { migrateClientData } from "./migrate-client-data";
 import { aggregatePlatformInsights, getPlatformInsightsForIndustry } from "./platform-insights";
 import { getSchedulerStatus, startScheduler, stopScheduler } from "./scheduler";
+import { db } from "./db";
+import { outreachPipeline, emailTemplates } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 
 const provisionSchema = z.object({
   clientName: z.string().min(1),
@@ -355,5 +358,65 @@ export async function registerAdminRoutes(app: Express): Promise<void> {
   app.post("/api/admin/scheduler/stop", authMiddleware, requireRole("platform_admin"), (_req: Request, res: Response) => {
     stopScheduler();
     res.json({ success: true, ...getSchedulerStatus() });
+  });
+
+  app.get("/api/admin/campaign-overview", authMiddleware, requireRole("platform_admin"), async (_req: Request, res: Response) => {
+    try {
+      const clients = await storage.getAllClients();
+      const activeClients = clients.filter(c => c.status === "active");
+
+      const campaigns = [];
+      for (const client of activeClients) {
+        const pipelines = await db.select().from(outreachPipeline).where(eq(outreachPipeline.clientId, client.id));
+        const templates = await db.select().from(emailTemplates).where(eq(emailTemplates.clientId, client.id));
+
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayEnd = new Date(todayStart.getTime() + 86400000);
+        const stats = {
+          totalLeads: pipelines.length,
+          active: 0,
+          completed: 0,
+          responded: 0,
+          notInterested: 0,
+          dueToday: 0,
+          touchStages: { not_contacted: 0, touch_1: 0, touch_2: 0, touch_3: 0, touch_4: 0, touch_5: 0, touch_6: 0 },
+          templateCount: templates.length,
+        };
+
+        for (const p of pipelines) {
+          if (p.pipelineStatus === "ACTIVE") stats.active++;
+          else if (p.pipelineStatus === "COMPLETED") stats.completed++;
+          else if (p.pipelineStatus === "RESPONDED") stats.responded++;
+          else if (p.pipelineStatus === "NOT_INTERESTED") stats.notInterested++;
+
+          const touchDate = new Date(p.nextTouchDate);
+          if (p.pipelineStatus === "ACTIVE" && touchDate >= todayStart && touchDate < todayEnd) stats.dueToday++;
+
+          const tc = p.touchesCompleted;
+          if (tc === 0) stats.touchStages.not_contacted++;
+          else if (tc === 1) stats.touchStages.touch_1++;
+          else if (tc === 2) stats.touchStages.touch_2++;
+          else if (tc === 3) stats.touchStages.touch_3++;
+          else if (tc === 4) stats.touchStages.touch_4++;
+          else if (tc === 5) stats.touchStages.touch_5++;
+          else if (tc >= 6) stats.touchStages.touch_6++;
+        }
+
+        campaigns.push({
+          clientId: client.id,
+          clientName: client.clientName,
+          machineName: client.machineName,
+          industryConfig: client.industryConfig,
+          territory: client.territory,
+          status: client.status,
+          ...stats,
+        });
+      }
+
+      res.json({ campaigns });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 }
