@@ -9,6 +9,8 @@ import { getUserConfig, saveUserConfig, suggestMachineName, mapToIndustryConfig 
 import type { MachineConfig } from "./user-config";
 import { computeDailyBriefing } from "./briefing";
 import { computeOutcomes, computeConfidence } from "./outcomes";
+import { computeDMAuthorityReport } from "./dm-authority-learning";
+import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { storage } from "./storage";
@@ -554,6 +556,28 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     } catch (err: any) {
       log(`Confidence error: ${err.message}`, "outcomes");
       res.status(500).json({ error: "Failed to compute confidence" });
+    }
+  });
+
+  app.get("/api/dm-authority/report", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const report = await computeDMAuthorityReport(clientId);
+      res.json(report);
+    } catch (err: any) {
+      log(`DM authority report error: ${err.message}`, "dm-authority");
+      res.status(500).json({ error: "Failed to compute DM authority report" });
+    }
+  });
+
+  app.get("/api/query-intel/summary", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const summary = await getQueryIntelSummary(clientId);
+      res.json(summary);
+    } catch (err: any) {
+      log(`Query intel summary error: ${err.message}`, "query-intel");
+      res.status(500).json({ error: "Failed to compute query intel summary" });
     }
   });
 }

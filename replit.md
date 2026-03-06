@@ -51,6 +51,22 @@ A 4-layer evidence-based learning system runs in parallel with the existing play
 - GET /api/sales-learning/recommendations — per-company or per-bucket script recommendations
 - GET /api/sales-learning/versions — script version history
 
+### DM Decision Authority Learning Loop
+A closed-loop system that learns which decision maker titles actually lead to cooldown trailer deals and evolves DM targeting + query generation based on real outreach data.
+
+**Architecture**:
+- **Win Tiers** (`server/query-intel.ts`): `WinTier` type (`'closed' | 'pipeline' | 'qualified' | null`). `getWinTier()` classifies companies by real deal progression. Attribution scoring: closed=+50, pipeline=+30, qualified=+15, not_interested=-15.
+- **DM Outcome Tracking** (`server/airtable-schema.ts`, `server/call-engine.ts`): `Offer_DM_Outcome` and `Offer_DM_Title_At_Contact` fields auto-populated on every call. Tracks reached_dm, wrong_person, no_authority, converted, rejected.
+- **DM Authority Learning Engine** (`server/dm-authority-learning.ts`): `computeTitleEffectiveness()` aggregates per-title conversion rates with title bucketing (Safety Manager, Turnaround Manager, etc.). `getDMAuthorityAdjustments()` returns score adjustments (cap ±25) applied to DM fit scoring. `computeDMAuthorityReport()` returns structured dashboard data. Min 5 contacts for meaningful score, min 3 for adjustment.
+- **Adaptive DM Fit** (`server/dm-fit.ts`): `scoreDMFit()` accepts authority adjustments from learning engine. `runDMFit()` fetches adjustments once per run, passes to all scoring calls. Non-blocking fallback to hardcoded scores.
+- **Win Pattern Queries** (`server/query-intel.ts`): `extractWinPatterns()` analyzes winners for shared traits (categories, cities, keywords). `generateIntelligentQueries()` uses win patterns in GPT prompt, tags queries as `Last_Generated_By: "WinPattern"`.
+
+**API Endpoints**:
+- GET /api/dm-authority/report — title effectiveness rankings and authority scores
+- GET /api/query-intel/summary — top queries, win pattern summary, generation mode
+
+**Dashboard**: "Intelligence" section shows DM Authority (top 5 titles by conversion), Top Queries (performance-ranked), Win Patterns (categories, cities, keywords). Hidden when no data exists.
+
 ### Feature Specifications
 Key features include a **Command Center Dashboard** with real-time visualizations, a **Lead Engine** for lead generation and enrichment, **DM Enrichment** using external services, and a **Playbook Generator** for dynamic outreach scripts. A **Run Diff** feature tracks changes between daily runs, while a **Revert Last Run** capability allows rolling back specific categories of changes. The **Call Outcome Engine** processes call logs, updates lead statuses, and manages follow-ups, automatically creating opportunities. An **Opportunities Pipeline** tracks deals through various stages with auto-generated actions. **Call Mode** provides a dedicated interface for rapid call sessions. **Machine Feedback** uses narrative micro-interactions for system labels and toast notifications. A **Rank Explainability Layer** offers transparency into lead ranking. **Machine Identity & Settings** allow configuration via the dashboard. The system also includes a **First-Run Cinematic** and an **Onboarding Wizard** for new users, alongside an **Admin Platform** for client and platform management.
 

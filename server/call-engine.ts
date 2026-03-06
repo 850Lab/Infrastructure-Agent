@@ -118,6 +118,8 @@ async function findCompanyByName(companyName: string, clientId?: string, atConfi
   engagementScore: number;
   gatekeeperName: string;
   gatekeeperNotes: string;
+  offerDMTitle: string;
+  primaryDMTitle: string;
 } | null> {
   if (!companyName) return null;
 
@@ -135,6 +137,8 @@ async function findCompanyByName(companyName: string, clientId?: string, atConfi
       engagementScore: parseInt(rec.fields.Engagement_Score || "0", 10) || 0,
       gatekeeperName: String(rec.fields.Gatekeeper_Name || "").trim(),
       gatekeeperNotes: String(rec.fields.Gatekeeper_Notes || "").trim(),
+      offerDMTitle: String(rec.fields.Offer_DM_Title || "").trim(),
+      primaryDMTitle: String(rec.fields.Primary_DM_Title || "").trim(),
     };
   } catch {
     return null;
@@ -206,6 +210,32 @@ export async function processCall(call: CallRecord, clientId?: string, atConfig?
           compUpdate.Gatekeeper_Last_Spoken = call.callTime || new Date().toISOString();
           logEngine(`Gatekeeper confirmed: ${call.gatekeeperName} @ ${call.company}`);
         }
+      }
+
+      const OUTCOME_TO_DM_OUTCOME: Record<string, string | null> = {
+        "Decision Maker": "reached_dm",
+        "Qualified": "reached_dm",
+        "Won": "converted",
+        "Not Interested": "rejected",
+        "Gatekeeper": null,
+        "No Answer": null,
+        "Callback": null,
+        "Lost": "rejected",
+      };
+
+      const dmOutcome = OUTCOME_TO_DM_OUTCOME[call.outcome] ?? null;
+
+      if (call.outcome === "Gatekeeper" && (company.offerDMTitle || company.primaryDMTitle)) {
+        compUpdate.Offer_DM_Outcome = "wrong_person";
+        logEngine(`DM outcome: wrong_person (gatekeeper reached, DM was set) @ ${call.company}`);
+      } else if (dmOutcome) {
+        compUpdate.Offer_DM_Outcome = dmOutcome;
+        logEngine(`DM outcome: ${dmOutcome} @ ${call.company}`);
+      }
+
+      const titleAtContact = company.offerDMTitle || company.primaryDMTitle;
+      if (titleAtContact) {
+        compUpdate.Offer_DM_Title_At_Contact = titleAtContact;
       }
 
       if (Object.keys(compUpdate).length > 0) {

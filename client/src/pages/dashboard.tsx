@@ -192,6 +192,43 @@ export default function DashboardPage() {
     refetchInterval: 120000,
   });
 
+  const { data: dmAuthorityData } = useQuery<{
+    title_rankings: Array<{
+      title: string;
+      total_contacts: number;
+      reached_dm: number;
+      converted: number;
+      wrong_person: number;
+      rejected: number;
+      authority_score: number;
+    }>;
+    total_contacts_analyzed: number;
+    computed_at: number;
+  }>({
+    queryKey: ["/api/dm-authority/report"],
+    enabled: !!token,
+    refetchInterval: 300000,
+  });
+
+  const { data: queryIntelData } = useQuery<{
+    topQueries: Array<{ query: string; category: string; wins: number; runs: number; performanceScore: number }>;
+    totalActive: number;
+    totalRetired: number;
+    winPatterns: {
+      topCategories: Array<{ category: string; count: number; winRate: number }>;
+      topCities: Array<{ city: string; count: number }>;
+      commonKeywords: string[];
+      closedWins: number;
+      pipelineWins: number;
+      totalWinners: number;
+    } | null;
+    generationMode: string;
+  }>({
+    queryKey: ["/api/query-intel/summary"],
+    enabled: !!token,
+    refetchInterval: 300000,
+  });
+
   const { data: latestDiff } = useQuery<{
     run_id: string | null;
     started_at?: number;
@@ -854,6 +891,171 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {((dmAuthorityData?.title_rankings && dmAuthorityData.title_rankings.length > 0) ||
+          (queryIntelData?.topQueries && queryIntelData.topQueries.length > 0) ||
+          queryIntelData?.winPatterns) && (
+          <div className="mt-6">
+            <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
+              Intelligence
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {dmAuthorityData?.title_rankings && dmAuthorityData.title_rankings.length > 0 && (
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  }}
+                  data-testid="card-dm-authority"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
+                      DM Authority
+                    </p>
+                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
+                      {dmAuthorityData.total_contacts_analyzed} contacts
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {dmAuthorityData.title_rankings.slice(0, 5).map((t, i) => {
+                      const convRate = t.total_contacts > 0 ? Math.round((t.converted / t.total_contacts) * 100) : 0;
+                      const barWidth = Math.max(8, Math.round(t.authority_score));
+                      return (
+                        <div key={t.title} data-testid={`dm-authority-row-${i}`}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-xs font-semibold truncate" style={{ color: "#0F172A", maxWidth: "60%" }}>
+                              {t.title}
+                            </span>
+                            <span className="text-xs font-mono" style={{ color: "#64748B" }}>
+                              {convRate}% conv · {t.total_contacts} calls
+                            </span>
+                          </div>
+                          <div className="w-full rounded-full" style={{ height: "4px", background: "#F1F5F9" }}>
+                            <div
+                              className="rounded-full"
+                              style={{
+                                height: "4px",
+                                width: `${barWidth}%`,
+                                background: i === 0 ? "#10B981" : i <= 2 ? "#059669" : "#94A3B8",
+                                transition: "width 0.5s ease",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {queryIntelData?.topQueries && queryIntelData.topQueries.length > 0 && (
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  }}
+                  data-testid="card-query-performance"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
+                      Top Queries
+                    </p>
+                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
+                      {queryIntelData.totalActive} active · {queryIntelData.totalRetired} retired
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {queryIntelData.topQueries.slice(0, 5).map((q, i) => (
+                      <div key={i} className="flex items-start gap-2" data-testid={`query-row-${i}`}>
+                        <span className="text-xs font-mono flex-shrink-0 mt-0.5" style={{ color: q.wins > 0 ? "#10B981" : "#94A3B8" }}>
+                          {q.wins > 0 ? "★" : "○"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate" style={{ color: "#0F172A" }}>{q.query}</p>
+                          <p className="text-xs font-mono" style={{ color: "#64748B" }}>
+                            {q.wins}W / {q.runs}R · Score: {q.performanceScore}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 pt-2" style={{ borderTop: "1px solid #F1F5F9" }}>
+                    <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>
+                      Mode: <span style={{ color: queryIntelData.generationMode === "WinPattern" ? "#10B981" : "#64748B" }}>{queryIntelData.generationMode}</span>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {queryIntelData?.winPatterns && (
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  }}
+                  data-testid="card-win-patterns"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
+                      Win Patterns
+                    </p>
+                    <span className="text-xs font-mono" style={{ color: "#10B981" }}>
+                      {queryIntelData.winPatterns.closedWins} closed · {queryIntelData.winPatterns.pipelineWins} pipeline
+                    </span>
+                  </div>
+                  {queryIntelData.winPatterns.topCategories.length > 0 && (
+                    <div className="mb-2">
+                      <p className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>Top Categories</p>
+                      <div className="flex flex-wrap gap-1">
+                        {queryIntelData.winPatterns.topCategories.slice(0, 4).map((c) => (
+                          <span
+                            key={c.category}
+                            className="text-xs font-mono px-2 py-0.5 rounded-full"
+                            style={{ background: "#F0FDF4", color: "#059669", border: "1px solid #BBF7D0" }}
+                            data-testid={`win-category-${c.category}`}
+                          >
+                            {c.category} ({c.winRate}%)
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {queryIntelData.winPatterns.topCities.length > 0 && (
+                    <div className="mb-2">
+                      <p className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>Top Cities</p>
+                      <div className="flex flex-wrap gap-1">
+                        {queryIntelData.winPatterns.topCities.slice(0, 4).map((c) => (
+                          <span
+                            key={c.city}
+                            className="text-xs font-mono px-2 py-0.5 rounded-full"
+                            style={{ background: "#F8FAFC", color: "#64748B", border: "1px solid #E2E8F0" }}
+                            data-testid={`win-city-${c.city}`}
+                          >
+                            {c.city} ({c.count})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {queryIntelData.winPatterns.commonKeywords.length > 0 && (
+                    <div>
+                      <p className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>Keywords</p>
+                      <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>
+                        {queryIntelData.winPatterns.commonKeywords.slice(0, 6).join(" · ")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="mt-6">
           <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>

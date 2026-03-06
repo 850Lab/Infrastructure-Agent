@@ -403,6 +403,20 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   { name: "Playbook_Learning_Version", type: "singleLineText" },
   { name: "Playbook_Applied_Patches", type: "multilineText" },
   { name: "Playbook_Confidence", type: "number", options: { precision: 0 } },
+  {
+    name: "Offer_DM_Outcome",
+    type: "singleSelect",
+    options: {
+      choices: [
+        { name: "reached_dm", color: "cyanLight2" },
+        { name: "wrong_person", color: "yellowLight2" },
+        { name: "no_authority", color: "orangeLight2" },
+        { name: "converted", color: "greenLight2" },
+        { name: "rejected", color: "redLight2" },
+      ],
+    },
+  },
+  { name: "Offer_DM_Title_At_Contact", type: "singleLineText" },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [

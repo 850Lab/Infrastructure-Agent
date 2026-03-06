@@ -1,6 +1,7 @@
 import { fetchAllDecisionMakers, type DMCandidate } from "./dm-resolver";
 import { log } from "./logger";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
+import { getDMAuthorityAdjustments, type DMAuthorityAdjustment } from "./dm-authority-learning";
 const FIT_THRESHOLD = 45;
 
 interface FitCompany {
@@ -67,7 +68,7 @@ async function airtableRequest(path: string, options: RequestInit = {}, config?:
   return res.json();
 }
 
-export function scoreDMFit(title: string, email: string, phone: string, department: string, enrichedAt: string | null): FitResult {
+export function scoreDMFit(title: string, email: string, phone: string, department: string, enrichedAt: string | null, authorityAdjustments?: DMAuthorityAdjustment[]): FitResult {
   let fitScore = 0;
   const reasons: string[] = [];
   const titleLower = (title || "").toLowerCase();
@@ -121,6 +122,16 @@ export function scoreDMFit(title: string, email: string, phone: string, departme
     }
   }
 
+  if (authorityAdjustments && authorityAdjustments.length > 0) {
+    for (const adj of authorityAdjustments) {
+      if (adj.titlePattern.test(titleLower)) {
+        fitScore += adj.adjustment;
+        reasons.push(`${adj.reason} (${adj.adjustment > 0 ? "+" : ""}${adj.adjustment})`);
+        break;
+      }
+    }
+  }
+
   fitScore = Math.max(0, Math.min(fitScore, 100));
 
   let fitTier: FitResult["fitTier"];
@@ -136,7 +147,8 @@ function selectOfferDM(
   companyName: string,
   allDMs: DMCandidate[],
   primaryDM: { name: string; title: string; email: string; phone: string } | null,
-  notes: string
+  notes: string,
+  authorityAdjustments?: DMAuthorityAdjustment[]
 ): OfferDMCandidate | null {
   const companyDMs = allDMs.filter(
     dm => dm.companyNameText.toLowerCase() === companyName.toLowerCase()
@@ -145,7 +157,7 @@ function selectOfferDM(
   const candidates: Array<OfferDMCandidate & { _fit: FitResult }> = [];
 
   for (const dm of companyDMs) {
-    const fit = scoreDMFit(dm.title, dm.email, dm.phone, dm.department, dm.enrichedAt);
+    const fit = scoreDMFit(dm.title, dm.email, dm.phone, dm.department, dm.enrichedAt, authorityAdjustments);
     candidates.push({
       name: dm.fullName,
       title: dm.title,
@@ -163,7 +175,7 @@ function selectOfferDM(
       c => c.name.toLowerCase() === primaryDM.name.toLowerCase()
     );
     if (!alreadyInList) {
-      const fit = scoreDMFit(primaryDM.title, primaryDM.email, primaryDM.phone, "", null);
+      const fit = scoreDMFit(primaryDM.title, primaryDM.email, primaryDM.phone, "", null, authorityAdjustments);
       candidates.push({
         name: primaryDM.name,
         title: primaryDM.title,
@@ -252,6 +264,18 @@ export async function runDMFit(clientId?: string): Promise<DMFitSummary> {
 
   const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
 
+  let authorityAdjustments: DMAuthorityAdjustment[] = [];
+  try {
+    authorityAdjustments = await getDMAuthorityAdjustments(clientId);
+    if (authorityAdjustments.length > 0) {
+      logFit(`Authority learning active: ${authorityAdjustments.length} adjustments loaded`);
+    } else {
+      logFit("No authority learning data yet — using baseline scores");
+    }
+  } catch (e: any) {
+    logFit(`Authority learning fetch failed (non-blocking): ${e.message}`);
+  }
+
   const [companies, allDMs] = await Promise.all([
     fetchTodayListForFit(clientId, atConfig),
     fetchAllDecisionMakers(),
@@ -274,7 +298,7 @@ export async function runDMFit(clientId?: string): Promise<DMFitSummary> {
       ? { name: c.primaryDMName, title: c.primaryDMTitle, email: c.primaryDMEmail, phone: c.primaryDMPhone }
       : null;
 
-    const candidate = selectOfferDM(c.companyName, allDMs, primaryDM, c.notes);
+    const candidate = selectOfferDM(c.companyName, allDMs, primaryDM, c.notes, authorityAdjustments);
 
     if (candidate) {
       offerDMSelected++;

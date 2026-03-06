@@ -67,6 +67,8 @@ interface QueryRecord {
   notes: string;
 }
 
+export type WinTier = 'closed' | 'pipeline' | 'qualified' | null;
+
 interface CompanyRecord {
   id: string;
   companyName: string;
@@ -84,6 +86,8 @@ interface CompanyRecord {
   finalPriority: number;
   lastOutcome: string;
   winFlag: boolean;
+  winTier: WinTier;
+  opportunityStage: string;
   notes: string;
 }
 
@@ -107,7 +111,7 @@ function parseQueryRecord(rec: any): QueryRecord {
 
 function parseCompanyRecord(rec: any): CompanyRecord {
   const f = rec.fields;
-  return {
+  const parsed: CompanyRecord = {
     id: rec.id,
     companyName: String(f.company_name || f.Company_Name || "").trim(),
     category: String(f.Category || f.category || "").trim(),
@@ -124,17 +128,39 @@ function parseCompanyRecord(rec: any): CompanyRecord {
     finalPriority: parseInt(f.Final_Priority || "0", 10) || 0,
     lastOutcome: String(f.Last_Outcome || "").trim(),
     winFlag: !!f.Win_Flag,
+    winTier: null,
+    opportunityStage: String(f.Opportunity_Stage || "").trim(),
     notes: String(f.Notes || f.notes || "").trim(),
   };
+  parsed.winTier = getWinTier(parsed);
+  return parsed;
+}
+
+const PIPELINE_STAGES = ['sitewalk', 'quotesent', 'deploymentscheduled'];
+
+function getWinTier(c: CompanyRecord): WinTier {
+  const leadStatusLower = c.leadStatus.toLowerCase();
+  const stageLower = c.opportunityStage.toLowerCase();
+
+  if (leadStatusLower === 'won' || stageLower === 'won') {
+    return 'closed';
+  }
+
+  if (PIPELINE_STAGES.includes(stageLower)) {
+    return 'pipeline';
+  }
+
+  const outcomeLower = c.lastOutcome.toLowerCase();
+  if ((outcomeLower === 'qualified' || outcomeLower === 'decision maker') && c.engagementScore >= 10) {
+    return 'qualified';
+  }
+
+  return null;
 }
 
 function isWin(c: CompanyRecord): boolean {
-  if (c.primaryDMEmail && c.primaryDMEmail.includes("@")) return true;
-  if (c.primaryDMPhone && c.primaryDMPhone.length > 3) return true;
-  if (c.engagementScore >= 10) return true;
-  const goodOutcomes = ["decision maker", "qualified", "callback"];
-  if (goodOutcomes.includes(c.lastOutcome.toLowerCase())) return true;
-  return false;
+  const tier = c.winTier ?? getWinTier(c);
+  return tier === 'closed' || tier === 'pipeline';
 }
 
 export interface QueryIntelConfig {
@@ -160,13 +186,42 @@ export async function runQueryIntel(config: QueryIntelConfig, clientId?: string)
 
   const clientFilter = clientId ? scopedFormula(clientId) : undefined;
 
-  const [queryRecords, companyRecords] = await Promise.all([
+  const [queryRecords, companyRecords, opportunityRecords] = await Promise.all([
     fetchAllPaginated("Search_Queries", clientFilter),
-    fetchAllPaginated("Companies", clientFilter),
+    fetchAllPaginated("Companies", clientFilter, [
+      "company_name", "Company_Name", "Category", "category", "city", "City", "state", "State",
+      "Source_Query", "First_Seen", "Times_Called", "Lead_Status", "Engagement_Score",
+      "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone", "Final_Priority",
+      "Last_Outcome", "Win_Flag", "Notes", "notes", "Opportunity_Stage"
+    ]),
+    fetchAllPaginated("Opportunities", clientFilter, ["Company", "Stage"]).catch(() => []),
   ]);
 
+  const opportunityStageMap = new Map<string, string>();
+  for (const rec of opportunityRecords) {
+    const company = String(rec.fields?.Company || "").trim().toLowerCase();
+    const stage = String(rec.fields?.Stage || "").trim();
+    if (company && stage) {
+      const existing = opportunityStageMap.get(company);
+      const STAGE_RANK: Record<string, number> = { won: 5, deploymentscheduled: 4, quotesent: 3, sitewalk: 2, qualified: 1 };
+      if (!existing || (STAGE_RANK[stage.toLowerCase()] || 0) > (STAGE_RANK[existing.toLowerCase()] || 0)) {
+        opportunityStageMap.set(company, stage);
+      }
+    }
+  }
+
   const queries = queryRecords.map(parseQueryRecord);
-  const companies = companyRecords.map(parseCompanyRecord);
+  const companies = companyRecords.map((rec: any) => {
+    const c = parseCompanyRecord(rec);
+    if (!c.opportunityStage) {
+      const oppStage = opportunityStageMap.get(c.companyName.toLowerCase());
+      if (oppStage) {
+        c.opportunityStage = oppStage;
+        c.winTier = getWinTier(c);
+      }
+    }
+    return c;
+  });
 
   logQI(`Loaded ${queries.length} queries, ${companies.length} companies`);
 
@@ -198,15 +253,24 @@ export async function runQueryIntel(config: QueryIntelConfig, clientId?: string)
 
     logQI(`Top winners for pattern extraction: ${winners.length}`);
 
+    const winPatterns = extractWinPatterns(companies);
+    if (winPatterns) {
+      logQI(`Win patterns available: ${winPatterns.totalWinners} winners, top category: ${winPatterns.topCategories[0]?.category || "N/A"}`);
+    }
+
     const existingQueryTexts = new Set(queries.map(q => q.query.toLowerCase().trim()));
 
     let newQueries: Array<{ query: string; category: string; market: string; rationale: string }>;
+    let generatedBy = "QueryIntel";
 
     if (winners.length < 3) {
       logQI("COLD_START_MODE — not enough winners, using static templates");
       newQueries = generateColdStartQueries(config.market, config.generate);
     } else {
-      newQueries = await generateIntelligentQueries(winners, config.market, config.generate);
+      newQueries = await generateIntelligentQueries(winners, config.market, config.generate, winPatterns);
+      if (winPatterns) {
+        generatedBy = "WinPattern";
+      }
     }
 
     queriesGenerated = newQueries.length;
@@ -248,7 +312,7 @@ export async function runQueryIntel(config: QueryIntelConfig, clientId?: string)
             Runs: 0,
             Wins: 0,
             Performance_Score: 0,
-            Last_Generated_By: "QueryIntel",
+            Last_Generated_By: generatedBy,
             Notes: `Rationale: ${q.rationale}`,
             ...(clientId ? { Client_ID: clientId } : {}),
           },
@@ -325,15 +389,31 @@ async function attributeAndScore(
 ): Promise<{ mode: string; statsUpdated: number }> {
   let mode = "exact";
   const queryWins = new Map<string, number>();
+  const queryClosed = new Map<string, number>();
+  const queryPipeline = new Map<string, number>();
   const queryQualified = new Map<string, number>();
   const queryNotInterested = new Map<string, number>();
   const queryDMFound = new Map<string, number>();
 
   for (const q of queries) {
     queryWins.set(q.id, 0);
+    queryClosed.set(q.id, 0);
+    queryPipeline.set(q.id, 0);
     queryQualified.set(q.id, 0);
     queryNotInterested.set(q.id, 0);
     queryDMFound.set(q.id, 0);
+  }
+
+  function attributeCompanyToQuery(queryId: string, c: CompanyRecord) {
+    if (c.winFlag) queryWins.set(queryId, (queryWins.get(queryId) || 0) + 1);
+    if (c.primaryDMName) queryDMFound.set(queryId, (queryDMFound.get(queryId) || 0) + 1);
+    if (c.winTier === 'closed') queryClosed.set(queryId, (queryClosed.get(queryId) || 0) + 1);
+    else if (c.winTier === 'pipeline') queryPipeline.set(queryId, (queryPipeline.get(queryId) || 0) + 1);
+    else if (c.winTier === 'qualified') queryQualified.set(queryId, (queryQualified.get(queryId) || 0) + 1);
+    const outcomeLower = c.lastOutcome.toLowerCase();
+    if (outcomeLower === 'not interested') {
+      queryNotInterested.set(queryId, (queryNotInterested.get(queryId) || 0) + 1);
+    }
   }
 
   let exactMatches = 0;
@@ -346,9 +426,7 @@ async function attributeAndScore(
       );
       if (matchedQuery) {
         exactMatches++;
-        if (c.winFlag) queryWins.set(matchedQuery.id, (queryWins.get(matchedQuery.id) || 0) + 1);
-        if (c.primaryDMName) queryDMFound.set(matchedQuery.id, (queryDMFound.get(matchedQuery.id) || 0) + 1);
-        attributeOutcome(matchedQuery, c, queryQualified, queryNotInterested);
+        attributeCompanyToQuery(matchedQuery.id, c);
         continue;
       }
     }
@@ -364,9 +442,7 @@ async function attributeAndScore(
             c.category.toLowerCase() === q.category.toLowerCase();
           if (catMatch) {
             approxMatches++;
-            if (c.winFlag) queryWins.set(q.id, (queryWins.get(q.id) || 0) + 1);
-            if (c.primaryDMName) queryDMFound.set(q.id, (queryDMFound.get(q.id) || 0) + 1);
-            attributeOutcome(q, c, queryQualified, queryNotInterested);
+            attributeCompanyToQuery(q.id, c);
             break;
           }
         }
@@ -384,11 +460,12 @@ async function attributeAndScore(
 
   for (const q of queries) {
     const wins = queryWins.get(q.id) || 0;
+    const closed = queryClosed.get(q.id) || 0;
+    const pipeline = queryPipeline.get(q.id) || 0;
     const qualified = queryQualified.get(q.id) || 0;
     const notInterested = queryNotInterested.get(q.id) || 0;
-    const dmFound = queryDMFound.get(q.id) || 0;
 
-    const perfScore = (wins * 10) + (qualified * 20) - (notInterested * 10) + (dmFound * 5);
+    const perfScore = (closed * 50) + (pipeline * 30) + (qualified * 15) - (notInterested * 15);
 
     const computedRuns = (q.status === "Done" || q.status === "Error") ? Math.max(q.runs, 1) : q.runs;
 
@@ -421,18 +498,86 @@ async function attributeAndScore(
   return { mode, statsUpdated };
 }
 
-function attributeOutcome(
-  q: QueryRecord,
-  c: CompanyRecord,
-  qualifiedMap: Map<string, number>,
-  notInterestedMap: Map<string, number>
-) {
-  const outcome = c.lastOutcome.toLowerCase();
-  if (outcome === "qualified" || outcome === "decision maker" || outcome === "callback") {
-    qualifiedMap.set(q.id, (qualifiedMap.get(q.id) || 0) + 1);
-  } else if (outcome === "not interested") {
-    notInterestedMap.set(q.id, (notInterestedMap.get(q.id) || 0) + 1);
+
+export interface WinPatternProfile {
+  topCategories: Array<{ category: string; count: number; winRate: number }>;
+  topCities: Array<{ city: string; count: number }>;
+  topOpportunityTypes: Array<{ type: string; count: number }>;
+  commonKeywords: string[];
+  avgEngagement: number;
+  closedWins: number;
+  pipelineWins: number;
+  totalWinners: number;
+}
+
+export function extractWinPatterns(companies: CompanyRecord[]): WinPatternProfile | null {
+  const winners = companies.filter(c => c.winTier === 'closed' || c.winTier === 'pipeline');
+
+  if (winners.length < 3) {
+    logQI(`Win patterns: insufficient data (${winners.length} winners, need 3)`);
+    return null;
   }
+
+  const categoryCounts: Record<string, { total: number; wins: number }> = {};
+  const cityCounts: Record<string, number> = {};
+  const oppTypeCounts: Record<string, number> = {};
+  const keywords: string[] = [];
+  let totalEngagement = 0;
+
+  const allByCategory: Record<string, number> = {};
+  for (const c of companies) {
+    if (c.category) allByCategory[c.category] = (allByCategory[c.category] || 0) + 1;
+  }
+
+  for (const w of winners) {
+    if (w.category) {
+      if (!categoryCounts[w.category]) categoryCounts[w.category] = { total: allByCategory[w.category] || 1, wins: 0 };
+      categoryCounts[w.category].wins++;
+    }
+    if (w.city) cityCounts[w.city] = (cityCounts[w.city] || 0) + 1;
+
+    const oppStage = w.opportunityStage;
+    if (oppStage) oppTypeCounts[oppStage] = (oppTypeCounts[oppStage] || 0) + 1;
+
+    totalEngagement += w.engagementScore;
+
+    const text = `${w.companyName} ${w.notes} ${w.sourceQuery}`.toLowerCase();
+    const kws = getIndustryConfig().opportunity_keywords;
+    for (const kw of kws) {
+      if (text.includes(kw)) keywords.push(kw);
+    }
+  }
+
+  const topCategories = Object.entries(categoryCounts)
+    .map(([category, { total, wins }]) => ({ category, count: wins, winRate: Math.round((wins / total) * 100) }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const topCities = Object.entries(cityCounts)
+    .map(([city, count]) => ({ city, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  const topOpportunityTypes = Object.entries(oppTypeCounts)
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const closedWins = winners.filter(w => w.winTier === 'closed').length;
+  const pipelineWins = winners.filter(w => w.winTier === 'pipeline').length;
+
+  logQI(`Win patterns extracted: ${winners.length} winners (${closedWins} closed, ${pipelineWins} pipeline), ${topCategories.length} categories, ${topCities.length} cities`);
+
+  return {
+    topCategories,
+    topCities,
+    topOpportunityTypes,
+    commonKeywords: [...new Set(keywords)].slice(0, 10),
+    avgEngagement: Math.round(totalEngagement / winners.length),
+    closedWins,
+    pipelineWins,
+    totalWinners: winners.length,
+  };
 }
 
 function generateColdStartQueries(
@@ -472,7 +617,8 @@ function generateColdStartQueries(
 async function generateIntelligentQueries(
   winners: CompanyRecord[],
   market: string,
-  count: number
+  count: number,
+  winPatterns?: WinPatternProfile | null
 ): Promise<Array<{ query: string; category: string; market: string; rationale: string }>> {
   const categoryCounts: Record<string, number> = {};
   const cityCounts: Record<string, number> = {};
@@ -506,6 +652,28 @@ async function generateIntelligentQueries(
   const defaultCities = cfg.geo.cities.slice(0, 3).join(", ");
   const defaultKeywords = cfg.opportunity_keywords.slice(0, 4).join(", ");
 
+  let winPatternContext = "";
+  if (winPatterns) {
+    const catInsight = winPatterns.topCategories
+      .map(c => `${c.category} (${c.winRate}% win rate, ${c.count} wins)`)
+      .join(", ");
+    const cityInsight = winPatterns.topCities
+      .map(c => `${c.city} (${c.count} wins)`)
+      .join(", ");
+    const oppInsight = winPatterns.topOpportunityTypes
+      .map(o => `${o.type} (${o.count})`)
+      .join(", ");
+
+    winPatternContext = `
+REAL WIN DATA (prioritize these patterns — they represent actual closed deals and pipeline):
+- Winning categories by conversion rate: ${catInsight || "N/A"}
+- Cities with most wins: ${cityInsight || "N/A"}
+- Opportunity stages reached: ${oppInsight || "N/A"}
+- Average engagement score of winners: ${winPatterns.avgEngagement}
+- Total wins: ${winPatterns.closedWins} closed, ${winPatterns.pipelineWins} in pipeline
+Focus at least 60% of queries on the highest win-rate categories and cities.`;
+  }
+
   const prompt = `You are a B2B lead generation expert for ${cfg.name} in ${cfg.market}.
 
 Based on these winning patterns from our best leads:
@@ -513,6 +681,7 @@ Based on these winning patterns from our best leads:
 - Top cities: ${topCities.join(", ") || defaultCities}
 - Common keywords: ${topKeywords.join(", ") || defaultKeywords}
 - Market: ${market}
+${winPatternContext}
 
 Generate exactly ${count} unique Google Maps search queries to find ${cfg.name.toLowerCase()}.
 Each query should combine: category + location + 1-2 industry keywords.
@@ -551,6 +720,82 @@ Valid categories: ${cfg.company_categories.join(", ")}`;
     logQI(`OpenAI query generation failed: ${e.message}, falling back to cold start`);
     return generateColdStartQueries(market, count);
   }
+}
+
+export interface QueryIntelSummary {
+  topQueries: Array<{ query: string; category: string; wins: number; runs: number; performanceScore: number }>;
+  totalActive: number;
+  totalRetired: number;
+  winPatterns: WinPatternProfile | null;
+  generationMode: string;
+}
+
+export async function getQueryIntelSummary(clientId?: string): Promise<QueryIntelSummary> {
+  const clientFilter = clientId ? scopedFormula(clientId) : undefined;
+
+  const [queryRecords, companyRecords, opportunityRecords] = await Promise.all([
+    fetchAllPaginated("Search_Queries", clientFilter),
+    fetchAllPaginated("Companies", clientFilter, [
+      "company_name", "Company_Name", "Category", "category", "city", "City", "state", "State",
+      "Source_Query", "First_Seen", "Times_Called", "Lead_Status", "Engagement_Score",
+      "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone", "Final_Priority",
+      "Last_Outcome", "Win_Flag", "Notes", "notes", "Opportunity_Stage"
+    ]),
+    fetchAllPaginated("Opportunities", clientFilter, ["Company", "Stage"]).catch(() => []),
+  ]);
+
+  const opportunityStageMap = new Map<string, string>();
+  for (const rec of opportunityRecords) {
+    const company = String(rec.fields?.Company || "").trim().toLowerCase();
+    const stage = String(rec.fields?.Stage || "").trim();
+    if (company && stage) {
+      const existing = opportunityStageMap.get(company);
+      const STAGE_RANK: Record<string, number> = { won: 5, deploymentscheduled: 4, quotesent: 3, sitewalk: 2, qualified: 1 };
+      if (!existing || (STAGE_RANK[stage.toLowerCase()] || 0) > (STAGE_RANK[existing.toLowerCase()] || 0)) {
+        opportunityStageMap.set(company, stage);
+      }
+    }
+  }
+
+  const queries = queryRecords.map(parseQueryRecord);
+  const companies = companyRecords.map((rec: any) => {
+    const c = parseCompanyRecord(rec);
+    if (!c.opportunityStage) {
+      const oppStage = opportunityStageMap.get(c.companyName.toLowerCase());
+      if (oppStage) {
+        c.opportunityStage = oppStage;
+        c.winTier = getWinTier(c);
+      }
+    }
+    return c;
+  });
+
+  const activeQueries = queries.filter(q => !q.retired);
+  const retiredQueries = queries.filter(q => q.retired);
+
+  const topQueries = activeQueries
+    .filter(q => q.runs > 0)
+    .sort((a, b) => b.performanceScore - a.performanceScore)
+    .slice(0, 5)
+    .map(q => ({
+      query: q.query,
+      category: q.category,
+      wins: q.wins,
+      runs: q.runs,
+      performanceScore: q.performanceScore,
+    }));
+
+  const winPatterns = extractWinPatterns(companies);
+  const winners = companies.filter(c => c.winTier === 'closed' || c.winTier === 'pipeline');
+  const generationMode = winners.length >= 3 ? (winPatterns ? "WinPattern" : "Intelligent") : "ColdStart";
+
+  return {
+    topQueries,
+    totalActive: activeQueries.length,
+    totalRetired: retiredQueries.length,
+    winPatterns,
+    generationMode,
+  };
 }
 
 async function retireLowPerformers(queries: QueryRecord[]): Promise<number> {
