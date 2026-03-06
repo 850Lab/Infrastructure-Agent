@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   Phone, Copy, Check, ChevronLeft, ChevronRight, X, Mail, Globe,
   MapPin, User, Shield, FileText, MessageSquare, Loader2, Calendar,
-  ArrowLeft, Zap, ClipboardList,
+  ArrowLeft, Zap, ClipboardList, Mic, Upload, CheckCircle2,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -92,6 +92,10 @@ export default function CallModePage() {
   });
   const [cbNotes, setCbNotes] = useState("");
 
+  const [lastCallIds, setLastCallIds] = useState<Map<string, string>>(new Map());
+  const [uploadedCallIds, setUploadedCallIds] = useState<Set<string>>(new Set());
+  const [uploadingCallId, setUploadingCallId] = useState<string | null>(null);
+
   const { data: todayData, isLoading } = useQuery<{ companies: TodayCompany[]; count: number }>({
     queryKey: ["/api/today-list"],
     enabled: !!token,
@@ -104,11 +108,16 @@ export default function CallModePage() {
   const remaining = companies.length - completedCount;
 
   const logCallMutation = useMutation({
-    mutationFn: (data: { company_name: string; outcome: string; notes?: string; gatekeeper_name?: string }) =>
-      apiRequest("POST", "/api/calls/log", data),
-    onSuccess: (_res, vars) => {
+    mutationFn: async (data: { company_name: string; outcome: string; notes?: string; gatekeeper_name?: string }) => {
+      const res = await apiRequest("POST", "/api/calls/log", data);
+      return res.json();
+    },
+    onSuccess: (resData, vars) => {
       if (company) {
         setCompletedIds(prev => new Set(prev).add(company.id));
+        if (resData?.call_id) {
+          setLastCallIds(prev => new Map(prev).set(company.id, resData.call_id));
+        }
       }
 
       const fb = SIGNAL_MAP[vars.outcome];
@@ -186,6 +195,29 @@ export default function CallModePage() {
     setShowCbPrompt(false);
     setCbNotes("");
   };
+
+  const handleRecordingUpload = useCallback(async (companyId: string, callId: string, file: File) => {
+    setUploadingCallId(companyId);
+    try {
+      const formData = new FormData();
+      formData.append("recording", file);
+      const res = await fetch(`/api/calls/${callId}/recording`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      setUploadedCallIds(prev => new Set(prev).add(companyId));
+      toast({ title: "Recording uploaded", description: `${file.name} attached to Airtable.`, duration: 3000 });
+    } catch (e: any) {
+      toast({ title: "Upload failed", description: e.message, variant: "destructive", duration: 4000 });
+    } finally {
+      setUploadingCallId(null);
+    }
+  }, [token, toast]);
 
   const copyToClipboard = useCallback((text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -623,6 +655,50 @@ export default function CallModePage() {
             <div className="flex items-center justify-center gap-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin" style={{ color: EMERALD }} />
               <span className="text-xs font-mono" style={{ color: MUTED }}>Logging...</span>
+            </div>
+          )}
+
+          {company && isCompleted && lastCallIds.has(company.id) && (
+            <div
+              className="rounded-xl p-3 mt-2"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+            >
+              <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: MUTED }}>
+                <Mic className="w-3 h-3 inline mr-1" /> Recording
+              </p>
+              {uploadedCallIds.has(company.id) ? (
+                <div className="flex items-center gap-2 py-2" data-testid="recording-uploaded">
+                  <CheckCircle2 className="w-4 h-4" style={{ color: EMERALD }} />
+                  <span className="text-xs font-mono" style={{ color: EMERALD }}>Recording uploaded</span>
+                </div>
+              ) : uploadingCallId === company.id ? (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" style={{ color: EMERALD }} />
+                  <span className="text-xs font-mono" style={{ color: MUTED }}>Uploading...</span>
+                </div>
+              ) : (
+                <label
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl cursor-pointer transition-all"
+                  style={{ background: `${BLUE}15`, border: `1px solid ${BLUE}40`, color: "#FFF" }}
+                  data-testid="button-upload-recording"
+                >
+                  <Upload className="w-4 h-4" style={{ color: BLUE }} />
+                  <span className="text-sm font-semibold">Upload Recording</span>
+                  <input
+                    type="file"
+                    accept=".mp3,.wav,.m4a,.ogg,.webm,.mp4,.aac,audio/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file && company) {
+                        handleRecordingUpload(company.id, lastCallIds.get(company.id)!, file);
+                      }
+                      e.target.value = "";
+                    }}
+                    data-testid="input-recording-file"
+                  />
+                </label>
+              )}
             </div>
           )}
 

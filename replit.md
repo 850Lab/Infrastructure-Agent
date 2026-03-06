@@ -45,6 +45,7 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 **Orchestration**: A daily orchestrator (`run-daily-web.ts`) manages the sequence of lead generation steps, preventing concurrent runs.
 **Data Persistence**: Run history and user configurations are stored persistently, with Airtable as the primary source and JSON files as fallbacks.
 **KPI Tracking**: Lifetime counters and daily/weekly KPIs are computed and cached to monitor system performance and business outcomes, including a "Targeting Accuracy" score.
+**Call Recording Upload**: Operators can upload audio recordings directly from Call Mode after logging a call outcome. Files are uploaded to the server, then attached to the Airtable `Calls` record via the `Recording` attachment field, which fires Airtable automations. Endpoint: `POST /api/calls/:callId/recording` (multipart). Temp files auto-cleaned after 5 minutes. Accepts mp3, wav, m4a, ogg, webm, mp4, aac up to 50MB.
 **Briefing Engine**: Generates daily briefings, including new leads, DMs found, follow-ups due, and recommended actions.
 **Industry Configuration**: The system supports configurable industry-specific settings via environment variables, allowing for multi-industry adaptation.
 

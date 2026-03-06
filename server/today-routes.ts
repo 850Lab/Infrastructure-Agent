@@ -1,4 +1,7 @@
 import type { Express, Request, Response } from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { authMiddleware } from "./dashboard-routes";
 import { log } from "./logger";
 import { processCall } from "./call-engine";
@@ -6,6 +9,37 @@ import { scopedFormula } from "./airtable-scoped";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
+
+const UPLOADS_DIR = path.join(process.cwd(), "server", "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const uploadTokens = new Map<string, { filename: string; expires: number }>();
+
+function createUploadToken(filename: string): string {
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+  uploadTokens.set(token, { filename, expires: Date.now() + 10 * 60 * 1000 });
+  return token;
+}
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      cb(null, `${unique}${path.extname(file.originalname)}`);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".mp4", ".aac"];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported audio format: ${ext}`));
+    }
+  },
+});
 
 const OUTCOME_FOLLOWUP_DAYS: Record<string, number | null> = {
   "No Answer": 2,
@@ -248,6 +282,80 @@ export function registerTodayRoutes(app: Express) {
     } catch (err: any) {
       log(`Call log error: ${err.message}`, "today");
       res.status(500).json({ error: "Failed to log call" });
+    }
+  });
+
+  app.get("/api/uploads/:token/:filename", (req: Request, res: Response) => {
+    const { token, filename } = req.params;
+    const entry = uploadTokens.get(token);
+    if (!entry || entry.filename !== filename || Date.now() > entry.expires) {
+      return res.status(403).json({ error: "Invalid or expired download token" });
+    }
+    const filePath = path.join(UPLOADS_DIR, path.basename(filename));
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    res.sendFile(filePath);
+  });
+
+  app.post("/api/calls/:callId/recording", authMiddleware, upload.single("recording"), async (req: Request, res: Response) => {
+    try {
+      const { callId } = req.params;
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No audio file provided" });
+      }
+
+      const host = `${req.protocol}://${req.get("host")}`;
+      const downloadToken = createUploadToken(file.filename);
+      const publicUrl = `${host}/api/uploads/${downloadToken}/${file.filename}`;
+
+      const key = AIRTABLE_API_KEY();
+      const base = AIRTABLE_BASE_ID();
+      if (!key || !base) {
+        fs.unlinkSync(file.path);
+        return res.status(500).json({ error: "Airtable not configured" });
+      }
+
+      const patchUrl = `https://api.airtable.com/v0/${base}/${encodeURIComponent("Calls")}/${callId}`;
+      const patchRes = await fetch(patchUrl, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            Recording: [{ url: publicUrl, filename: file.originalname }],
+          },
+        }),
+      });
+
+      if (!patchRes.ok) {
+        const errText = await patchRes.text();
+        log(`Recording attach failed for call ${callId}: ${patchRes.status} ${errText.slice(0, 200)}`, "today");
+        fs.unlinkSync(file.path);
+        return res.status(500).json({ error: "Failed to attach recording to Airtable" });
+      }
+
+      log(`Recording attached to call ${callId}: ${file.originalname} (${(file.size / 1024).toFixed(0)}KB)`, "today");
+
+      setTimeout(() => {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch {}
+      }, 5 * 60 * 1000);
+
+      res.json({
+        ok: true,
+        call_id: callId,
+        filename: file.originalname,
+        size: file.size,
+      });
+    } catch (err: any) {
+      log(`Recording upload error: ${err.message}`, "today");
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      res.status(500).json({ error: "Failed to upload recording" });
     }
   });
 
