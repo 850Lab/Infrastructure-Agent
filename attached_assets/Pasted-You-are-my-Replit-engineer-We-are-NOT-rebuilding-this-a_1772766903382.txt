@@ -1,0 +1,149 @@
+You are my Replit engineer. We are NOT rebuilding this app. We are efficiently splitting the existing app into:
+
+1) Admin Platform mode
+2) Client Machine mode
+
+The current client-facing experience already exists and must be preserved and reused. Do not recreate existing pages, engines, or UI unless absolutely necessary.
+
+GOAL
+Turn the current app into the platform shell, while reusing the existing experience as the client machine. Then provision Texas Cool Down Trailers as Client #1 so I can go through the full onboarding flow myself.
+
+NON-NEGOTIABLES
+- Do NOT rebuild the app from scratch
+- Do NOT duplicate existing pages or engines
+- Do NOT create a separate project
+- Reuse existing motherboard, onboarding, briefing, today, follow-ups, lead engine, contacts, analytics, playbooks, and all backend engines
+- Make the switch with minimal code changes and minimal spend
+
+IMPLEMENTATION PLAN
+
+STEP 1 — ROUTE SPLIT, NOT REBUILD
+Create two route groups / layouts:
+
+A) /admin/*
+For platform control pages
+
+B) /machine/*
+For the existing client machine pages
+
+Move or alias existing client-facing routes into /machine without rewriting their internals:
+- /machine/login
+- /machine/onboarding
+- /machine/briefing
+- /machine/dashboard
+- /machine/today
+- /machine/followups
+- /machine/lead-engine
+- /machine/contacts
+- /machine/analytics
+- /machine/call-mode
+
+If possible, preserve current components and just wrap them in a new MachineLayout.
+
+STEP 2 — ADD ADMIN LAYOUT
+Create a lightweight AdminLayout with these pages only:
+- /admin/dashboard
+- /admin/clients
+- /admin/provision
+- /admin/runs
+
+Do not overbuild admin UI. Use simple clean cards/tables.
+
+STEP 3 — CLIENT REGISTRY
+Create Clients table / model:
+- Client_ID
+- Client_Name
+- Machine_Name
+- Industry_Config
+- Territory
+- Decision_Maker_Focus
+- Status
+- Created_At
+- Last_Run_At
+
+Create Users table / model:
+- User_ID
+- Email
+- Password_Hash
+- Role
+- Client_ID
+- Created_At
+
+Roles:
+- PlatformAdmin
+- ClientAdmin
+- Operator
+
+STEP 4 — CLIENT CONTEXT
+Create server/client-context.ts
+
+Every machine route and API request must resolve client context:
+- client_id
+- machine_name
+- industry_config
+- territory
+- decision_maker_focus
+
+Existing backend engines should be updated only enough to accept client_id scope, not rewritten.
+
+STEP 5 — PROVISION CLIENT #1
+Add a provisioning action in /admin/provision that creates:
+
+Client:
+- Client_Name: Texas Cool Down Trailers
+- Machine_Name: Gulf Coast Heat Mitigation Engine
+- Industry_Config: industrial
+- Territory: Gulf Coast
+- Decision_Maker_Focus: Safety + Site Operations
+
+User:
+- my email as ClientAdmin
+- linked to Client #1
+
+STEP 6 — ONBOARDING EXPERIENCE
+After provisioning, I should be able to log in as Client #1 and go through the full onboarding flow using the existing onboarding system.
+
+Do not fake onboarding by injecting completed state.
+I want the real onboarding sequence:
+- machine initialization
+- onboarding questions
+- build machine flow
+- first briefing
+- motherboard dashboard
+
+STEP 7 — EXISTING DATA MIGRATION
+After Client #1 is provisioned, create a safe migration script that assigns the already-collected Texas Cool Down Trailers records to Client #1.
+
+Tables to scope:
+- Companies
+- Calls
+- Decision_Makers
+- Search_Queries
+- Opportunities
+- Run_History
+
+Add Client_ID where needed.
+This is assignment/scoping, not data recreation.
+
+STEP 8 — REDIRECT LOGIC
+Platform admin login should land on /admin/dashboard
+Client user login should land on:
+- /machine/onboarding if not completed
+- otherwise /machine/briefing or /machine/dashboard
+
+STEP 9 — MACHINE PLAQUE
+In machine mode, show:
+- Machine name
+- Client name
+- Territory
+- Focus
+
+This confirms the client is inside their own machine.
+
+DELIVERABLE
+Provide:
+1) files changed
+2) routes added
+3) provisioning result for Client #1
+4) confirmation that the existing client experience was reused, not rebuilt
+5) migration summary for existing TCDT data
