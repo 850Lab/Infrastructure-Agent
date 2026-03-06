@@ -323,7 +323,17 @@ export async function seed850LabWorkshops(): Promise<void> {
   log(`Seeded client: 850 Lab Workshops (${client.id})`, "seed");
 }
 
+async function deactivateDuplicateClients(): Promise<void> {
+  const clients = await storage.getAllClients();
+  const duplicates = clients.filter(c => c.clientName === "Texas Cooldown Trailers" && c.status === "active");
+  for (const dup of duplicates) {
+    await storage.updateClient(dup.id, { status: "inactive" } as any);
+    log(`Deactivated duplicate client "${dup.clientName}" (${dup.id})`, "seed");
+  }
+}
+
 export async function seedAllCampaigns(): Promise<void> {
+  await deactivateDuplicateClients();
   await seedTexasCoolDown();
   await seedTexasAutomation();
   await seed850LabWorkshops();
