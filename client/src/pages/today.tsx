@@ -569,13 +569,13 @@ export default function TodayPage() {
           </div>
           {companies.length > 0 && (
             <Button
-              onClick={() => navigate("/machine/call-mode")}
+              onClick={() => navigate("/machine/outreach")}
               className="rounded-lg text-sm font-semibold px-5 h-9 gap-2"
               style={{ background: TEXT, color: "#FFF" }}
-              data-testid="button-enter-call-mode"
+              data-testid="button-enter-outreach"
             >
               <Phone className="w-4 h-4" />
-              Call Mode
+              Outreach
             </Button>
           )}
         </div>

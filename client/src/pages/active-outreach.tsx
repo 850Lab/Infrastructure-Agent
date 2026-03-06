@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -30,10 +31,22 @@ import {
   Sparkles,
   X,
   Trash2,
+  Copy,
+  Check,
+  User,
+  Shield,
+  Zap,
+  Calendar,
+  Globe,
+  MapPin,
+  Mic,
+  Upload,
+  Brain,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const EMERALD = "#10B981";
+const EMERALD_DARK = "#059669";
 const TEXT = "#0F172A";
 const MUTED = "#94A3B8";
 const BORDER = "#E2E8F0";
@@ -105,6 +118,37 @@ interface EmailSendRecord {
   errorMessage: string | null;
 }
 
+interface TodayCompany {
+  id: string;
+  company_name: string;
+  phone: string;
+  bucket: string;
+  final_priority: number;
+  lead_status: string;
+  times_called: number;
+  last_outcome: string;
+  offer_dm_name: string;
+  offer_dm_title: string;
+  offer_dm_phone: string;
+  offer_dm_email: string;
+  rank_reason: string;
+  rank_evidence: string;
+  playbook_opener: string;
+  playbook_gatekeeper: string;
+  playbook_voicemail: string;
+  playbook_followup: string;
+  playbook_email_subject: string;
+  playbook_email_body: string;
+  followup_due: string;
+  website: string;
+  city: string;
+  gatekeeper_name: string;
+  playbook_strategy_notes: string;
+  playbook_applied_patches: string;
+  playbook_confidence: number;
+  playbook_learning_version: string;
+}
+
 const TOUCH_LABELS = [
   { num: 1, label: "Email", icon: Mail, day: 1, isEmail: true },
   { num: 2, label: "Call", icon: Phone, day: 3, isEmail: false },
@@ -119,6 +163,26 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
   COMPLETED: { bg: "rgba(148,163,184,0.08)", text: MUTED, border: BORDER },
   RESPONDED: { bg: "rgba(59,130,246,0.08)", text: BLUE, border: "rgba(59,130,246,0.3)" },
   NOT_INTERESTED: { bg: "rgba(239,68,68,0.08)", text: ERROR, border: "rgba(239,68,68,0.3)" },
+};
+
+const OUTCOMES = [
+  { value: "Decision Maker", label: "DM", color: EMERALD, icon: User, desc: "Spoke with decision maker" },
+  { value: "Gatekeeper", label: "Gatekeeper", color: BLUE, icon: Shield, desc: "Spoke with gatekeeper" },
+  { value: "No Answer", label: "No Answer", color: MUTED, icon: Phone, desc: "No one picked up" },
+  { value: "Qualified", label: "Qualified", color: EMERALD_DARK, icon: Zap, desc: "Qualified opportunity" },
+  { value: "Callback", label: "Callback", color: AMBER, icon: Calendar, desc: "Schedule callback" },
+  { value: "Not Interested", label: "Not Interested", color: ERROR, icon: X, desc: "Not a fit" },
+  { value: "NoAuthority", label: "Wrong Person", color: AMBER, icon: AlertTriangle, desc: "Not the decision maker" },
+] as const;
+
+const SIGNAL_MAP: Record<string, { title: string; description: string }> = {
+  "Decision Maker": { title: "Signal captured", description: "DM reached. Targeting will improve." },
+  "Gatekeeper": { title: "Intel gathered", description: "Gatekeeper mapped. Machine is learning." },
+  "No Answer": { title: "Noted", description: "Follow-up queued. Machine will try again." },
+  "Qualified": { title: "Opportunity created", description: "High-value target moved to pipeline." },
+  "Callback": { title: "Callback locked", description: "Machine will remind you at the right time." },
+  "Not Interested": { title: "Signal absorbed", description: "Targeting recalibrated. Moving on." },
+  "NoAuthority": { title: "Wrong person flagged", description: "Machine will find the right decision maker." },
 };
 
 function TouchTimeline({ touchesCompleted, nextTouchDate, pipelineStatus, createdAt }: {
@@ -465,7 +529,7 @@ function TrackingBadge({ send }: { send: EmailSendRecord }) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
         style={{ background: "rgba(245,158,11,0.08)", color: "#F59E0B", border: `1px solid rgba(245,158,11,0.3)` }}
-        title={(send as any).deferReason || "Deferred — daily limit reached"}
+        title={(send as any).deferReason || "Deferred -- daily limit reached"}
         data-testid={`badge-deferred-${send.id}`}
       >
         <Clock className="w-3 h-3" /> Deferred
@@ -641,16 +705,322 @@ function SendEmailButton({
   );
 }
 
+function CopyButton({ text, label, id }: { text: string; label: string; id: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button
+      onClick={copy}
+      className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono transition-colors"
+      style={{
+        background: copied ? `${EMERALD}15` : SUBTLE,
+        color: copied ? EMERALD : MUTED,
+        border: `1px solid ${copied ? `${EMERALD}30` : BORDER}`,
+      }}
+      data-testid={`copy-${id}`}
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
+
+function ScriptBlock({ title, text, copyId }: { title: string; text: string; copyId: string }) {
+  if (!text) return null;
+  return (
+    <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>{title}</span>
+        <CopyButton text={text} label="Copy" id={copyId} />
+      </div>
+      <p className="text-xs leading-relaxed" style={{ color: TEXT }}>{text}</p>
+    </div>
+  );
+}
+
+function CallTouchPanel({
+  item,
+  touchNumber,
+  companyData,
+  onOutcomeLogged,
+}: {
+  item: OutreachItem;
+  touchNumber: number;
+  companyData: TodayCompany | null;
+  onOutcomeLogged: (outcome: string, extras?: { notes?: string; gatekeeper_name?: string }) => void;
+}) {
+  const { getToken } = useAuth();
+  const token = getToken();
+  const { toast } = useToast();
+  const [showScripts, setShowScripts] = useState(false);
+  const [lastCallId, setLastCallId] = useState<string | null>(null);
+  const [uploaded, setUploaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const callPhone = companyData?.offer_dm_phone || companyData?.phone || "";
+  const askFor = companyData?.offer_dm_name
+    ? `${companyData.offer_dm_name}${companyData.offer_dm_title ? ` (${companyData.offer_dm_title})` : ""}`
+    : "Safety Manager / Site Superintendent";
+
+  const logCallMutation = useMutation({
+    mutationFn: async (data: { company_name: string; outcome: string; notes?: string; gatekeeper_name?: string }) => {
+      const res = await apiRequest("POST", "/api/calls/log", data);
+      return res.json();
+    },
+    onSuccess: (resData, vars) => {
+      if (resData?.call_id) {
+        setLastCallId(resData.call_id);
+      }
+      const fb = SIGNAL_MAP[vars.outcome];
+      toast({
+        title: fb?.title || `Signal: ${vars.outcome}`,
+        description: fb?.description || `${vars.company_name} logged.`,
+        duration: 2500,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/outreach/pipeline"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/today-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/outcomes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to log call",
+        description: err.message || "Something went wrong.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const PROMPTED_OUTCOMES = ["Gatekeeper", "Qualified", "Callback"];
+
+  const handleOutcome = (outcome: string, extras?: { notes?: string; gatekeeper_name?: string }) => {
+    if (PROMPTED_OUTCOMES.includes(outcome)) {
+      onOutcomeLogged(outcome, extras);
+      return;
+    }
+    logCallMutation.mutate({
+      company_name: item.companyName,
+      outcome,
+      ...extras,
+    });
+    onOutcomeLogged(outcome, extras);
+  };
+
+  const handleRecordingUpload = async (file: File) => {
+    if (!lastCallId) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("recording", file);
+      const res = await fetch(`/api/calls/${lastCallId}/recording`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      setUploaded(true);
+      toast({ title: "Recording uploaded", description: "Analyzing transcription..." });
+    } catch (e: any) {
+      toast({ title: "Upload failed", description: e.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 mt-2" data-testid={`call-panel-${touchNumber}-${item.id}`}>
+      {companyData && (
+        <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Contact</span>
+            <div className="flex gap-1.5">
+              {callPhone && <CopyButton text={callPhone} label="Phone" id={`phone-${item.id}`} />}
+              {companyData.offer_dm_email && <CopyButton text={companyData.offer_dm_email} label="Email" id={`email-${item.id}`} />}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <User className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+              <span className="text-sm font-semibold" style={{ color: TEXT }} data-testid={`text-ask-for-${item.id}`}>
+                Ask for: {askFor}
+              </span>
+            </div>
+            {callPhone && (
+              <a
+                href={`tel:${callPhone.replace(/\s/g, "")}`}
+                className="flex items-center gap-2 text-sm font-bold"
+                style={{ color: EMERALD }}
+                data-testid={`link-call-phone-${item.id}`}
+              >
+                <Phone className="w-4 h-4" /> {callPhone}
+              </a>
+            )}
+            {companyData.offer_dm_email && (
+              <a
+                href={`mailto:${companyData.offer_dm_email}`}
+                className="flex items-center gap-2 text-xs"
+                style={{ color: BLUE }}
+              >
+                <Mail className="w-3.5 h-3.5" /> {companyData.offer_dm_email}
+              </a>
+            )}
+            {companyData.gatekeeper_name && (
+              <div className="flex items-center gap-2">
+                <Shield className="w-3.5 h-3.5" style={{ color: AMBER }} />
+                <span className="text-xs" style={{ color: MUTED }}>
+                  Gatekeeper: <span style={{ color: TEXT, fontWeight: 500 }}>{companyData.gatekeeper_name}</span>
+                </span>
+              </div>
+            )}
+            {companyData.times_called > 0 && (
+              <div className="flex items-center gap-3 text-xs" style={{ color: MUTED }}>
+                <span>Called {companyData.times_called}x</span>
+                {companyData.last_outcome && <span>Last: {companyData.last_outcome}</span>}
+              </div>
+            )}
+            {companyData.city && (
+              <span className="flex items-center gap-1 text-xs" style={{ color: MUTED }}>
+                <MapPin className="w-3 h-3" /> {companyData.city}
+              </span>
+            )}
+            {companyData.website && (
+              <a
+                href={companyData.website.startsWith("http") ? companyData.website : `https://${companyData.website}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs"
+                style={{ color: BLUE }}
+              >
+                <Globe className="w-3 h-3" /> Website
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {companyData && (
+        <div>
+          <button
+            onClick={() => setShowScripts(!showScripts)}
+            className="flex items-center gap-2 text-xs font-semibold mb-2"
+            style={{ color: showScripts ? EMERALD : MUTED }}
+            data-testid={`button-toggle-scripts-${item.id}`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            {showScripts ? "Hide Scripts" : "Show Call Scripts"}
+            {showScripts ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+          {showScripts && (
+            <div className="space-y-2">
+              <ScriptBlock title="Call Opener" text={companyData.playbook_opener} copyId={`opener-${item.id}`} />
+              <ScriptBlock title="Gatekeeper Script" text={companyData.playbook_gatekeeper} copyId={`gatekeeper-${item.id}`} />
+              <ScriptBlock title="Voicemail" text={companyData.playbook_voicemail} copyId={`voicemail-${item.id}`} />
+              <ScriptBlock title="Follow-up Text" text={companyData.playbook_followup} copyId={`followup-${item.id}`} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {companyData?.rank_reason && (
+        <div className="rounded-lg p-3" style={{ background: "rgba(16,185,129,0.03)", border: `1px solid rgba(16,185,129,0.15)` }}>
+          <div className="flex items-center gap-1.5 mb-1">
+            <Brain className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Intel</span>
+          </div>
+          <p className="text-xs" style={{ color: TEXT }}>{companyData.rank_reason}</p>
+        </div>
+      )}
+
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>
+          Log Call Outcome
+        </div>
+        <div className="grid grid-cols-4 gap-1.5" data-testid={`outcomes-${item.id}`}>
+          {OUTCOMES.map((o) => {
+            const Icon = o.icon;
+            return (
+              <button
+                key={o.value}
+                onClick={() => handleOutcome(o.value)}
+                disabled={logCallMutation.isPending}
+                className="flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs font-semibold transition-colors"
+                style={{
+                  background: `${o.color}10`,
+                  color: o.color,
+                  border: `1px solid ${o.color}30`,
+                }}
+                data-testid={`button-outcome-${o.value.toLowerCase().replace(/\s+/g, "-")}-${item.id}`}
+              >
+                <Icon className="w-4 h-4" />
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {lastCallId && (
+        <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Mic className="w-3.5 h-3.5" style={{ color: MUTED }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Recording</span>
+          </div>
+          {uploaded ? (
+            <div className="flex items-center gap-2 text-xs" style={{ color: EMERALD }}>
+              <CheckCircle2 className="w-4 h-4" /> Recording uploaded and being analyzed
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: BLUE }}>
+              <input
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleRecordingUpload(file);
+                }}
+                data-testid={`input-recording-${item.id}`}
+              />
+              {uploading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+              {uploading ? "Uploading..." : "Upload call recording (optional)"}
+            </label>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OutreachCard({
   item,
   onStatusChange,
   isUpdating,
   emailSettings,
+  companyData,
+  onShowGkPrompt,
+  onShowQualPrompt,
+  onShowCbPrompt,
 }: {
   item: OutreachItem;
   onStatusChange: (id: number, status: string) => void;
   isUpdating: boolean;
   emailSettings: any;
+  companyData: TodayCompany | null;
+  onShowGkPrompt: (companyName: string, gkName: string) => void;
+  onShowQualPrompt: (companyName: string) => void;
+  onShowCbPrompt: (companyName: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingTouch, setEditingTouch] = useState<number | null>(null);
@@ -685,6 +1055,21 @@ function OutreachCard({
       default: return null;
     }
   }
+
+  const handleCallOutcome = useCallback((outcome: string, extras?: { notes?: string; gatekeeper_name?: string }) => {
+    if (outcome === "Gatekeeper") {
+      onShowGkPrompt(item.companyName, companyData?.gatekeeper_name || "");
+      return;
+    }
+    if (outcome === "Qualified") {
+      onShowQualPrompt(item.companyName);
+      return;
+    }
+    if (outcome === "Callback") {
+      onShowCbPrompt(item.companyName);
+      return;
+    }
+  }, [item.companyName, companyData, onShowGkPrompt, onShowQualPrompt, onShowCbPrompt]);
 
   return (
     <div
@@ -732,6 +1117,18 @@ function OutreachCard({
                   Due
                 </span>
               )}
+              {nextTouchInfo && item.pipelineStatus === "ACTIVE" && (
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                  style={{
+                    background: nextTouchInfo.isEmail ? "rgba(59,130,246,0.06)" : "rgba(16,185,129,0.06)",
+                    color: nextTouchInfo.isEmail ? BLUE : EMERALD,
+                    border: `1px solid ${nextTouchInfo.isEmail ? "rgba(59,130,246,0.2)" : "rgba(16,185,129,0.2)"}`,
+                  }}
+                >
+                  Next: {nextTouchInfo.label}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 text-xs" style={{ color: MUTED }}>
               {item.contactName && (
@@ -741,7 +1138,7 @@ function OutreachCard({
               {nextTouchInfo && item.pipelineStatus === "ACTIVE" && (
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  Next: {nextTouchInfo.label} (Day {nextTouchInfo.day})
+                  Day {nextTouchInfo.day}
                 </span>
               )}
             </div>
@@ -766,6 +1163,7 @@ function OutreachCard({
               const current = touch.num === nextTouch && item.pipelineStatus === "ACTIVE";
               const Icon = touch.icon;
               const existingSend = sendsByTouch[touch.num];
+              const isCallTouch = !touch.isEmail;
               return (
                 <div
                   key={touch.num}
@@ -780,7 +1178,7 @@ function OutreachCard({
                     <div className="flex items-center gap-2">
                       <Icon className="w-3.5 h-3.5" style={{ color: done ? EMERALD : current ? AMBER : MUTED }} />
                       <span className="text-xs font-semibold" style={{ color: done ? EMERALD : current ? AMBER : TEXT }}>
-                        Touch {touch.num} — {touch.label} (Day {touch.day})
+                        Touch {touch.num} -- {touch.label} (Day {touch.day})
                       </span>
                       {done && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: EMERALD }} />}
                       {current && (() => {
@@ -841,6 +1239,13 @@ function OutreachCard({
                       touchNumber={touch.num}
                       content={content}
                       onClose={() => setEditingTouch(null)}
+                    />
+                  ) : isCallTouch && current && item.pipelineStatus === "ACTIVE" ? (
+                    <CallTouchPanel
+                      item={item}
+                      touchNumber={touch.num}
+                      companyData={companyData}
+                      onOutcomeLogged={handleCallOutcome}
                     />
                   ) : content && (
                     <pre
@@ -908,10 +1313,32 @@ export default function ActiveOutreachPage() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
+  const [showGkPrompt, setShowGkPrompt] = useState(false);
+  const [gkCompany, setGkCompany] = useState("");
+  const [gkName, setGkName] = useState("");
+
+  const [showQualPrompt, setShowQualPrompt] = useState(false);
+  const [qualCompany, setQualCompany] = useState("");
+  const [qualNotes, setQualNotes] = useState("");
+
+  const [showCbPrompt, setShowCbPrompt] = useState(false);
+  const [cbCompany, setCbCompany] = useState("");
+  const [cbDate, setCbDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  });
+  const [cbNotes, setCbNotes] = useState("");
+
   const { data, isLoading } = useQuery<OutreachResponse>({
     queryKey: ["/api/outreach/pipeline"],
     enabled: !!token,
     refetchInterval: 30000,
+  });
+
+  const { data: todayData } = useQuery<{ companies: TodayCompany[]; count: number }>({
+    queryKey: ["/api/today-list"],
+    enabled: !!token,
   });
 
   const { data: emailSettings } = useQuery({
@@ -956,6 +1383,69 @@ export default function ActiveOutreachPage() {
     },
   });
 
+  const logCallForPrompt = useMutation({
+    mutationFn: async (data: { company_name: string; outcome: string; notes?: string; gatekeeper_name?: string }) => {
+      const res = await apiRequest("POST", "/api/calls/log", data);
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      const fb = SIGNAL_MAP[vars.outcome];
+      toast({
+        title: fb?.title || `Signal: ${vars.outcome}`,
+        description: fb?.description || `${vars.company_name} logged.`,
+        duration: 2500,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/outreach/pipeline"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/today-list"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to log call", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const companyMap = new Map<string, TodayCompany>();
+  if (todayData?.companies) {
+    for (const c of todayData.companies) {
+      const normalized = c.company_name.toLowerCase().trim();
+      companyMap.set(normalized, c);
+    }
+  }
+
+  function findCompanyData(companyName: string): TodayCompany | null {
+    return companyMap.get(companyName.toLowerCase().trim()) || null;
+  }
+
+  const submitGatekeeper = () => {
+    logCallForPrompt.mutate({
+      company_name: gkCompany,
+      outcome: "Gatekeeper",
+      gatekeeper_name: gkName || undefined,
+    });
+    setShowGkPrompt(false);
+    setGkName("");
+  };
+
+  const submitQualified = () => {
+    logCallForPrompt.mutate({
+      company_name: qualCompany,
+      outcome: "Qualified",
+      notes: qualNotes || undefined,
+    });
+    setShowQualPrompt(false);
+    setQualNotes("");
+  };
+
+  const submitCallback = () => {
+    const notes = `Callback date: ${cbDate}${cbNotes ? `. ${cbNotes}` : ""}`;
+    logCallForPrompt.mutate({
+      company_name: cbCompany,
+      outcome: "Callback",
+      notes,
+    });
+    setShowCbPrompt(false);
+    setCbNotes("");
+  };
+
   const stats = data?.stats || { total: 0, active: 0, completed: 0, responded: 0, notInterested: 0 };
   const items = data?.items || [];
   const filteredItems = statusFilter === "all" ? items : items.filter((i) => i.pipelineStatus === statusFilter);
@@ -995,10 +1485,10 @@ export default function ActiveOutreachPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold" style={{ color: TEXT }} data-testid="text-page-title">
-              Active Outreach
+              Outreach
             </h1>
             <p className="text-sm mt-1" style={{ color: MUTED }}>
-              6-touch outreach sequences for qualified companies
+              Execute emails and calls from your 6-touch outreach sequences
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1141,11 +1631,181 @@ export default function ActiveOutreachPage() {
                 onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
                 isUpdating={statusMutation.isPending}
                 emailSettings={emailSettings}
+                companyData={findCompanyData(item.companyName)}
+                onShowGkPrompt={(company, gk) => { setGkCompany(company); setGkName(gk); setShowGkPrompt(true); }}
+                onShowQualPrompt={(company) => { setQualCompany(company); setShowQualPrompt(true); }}
+                onShowCbPrompt={(company) => { setCbCompany(company); setShowCbPrompt(true); }}
               />
             ))}
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {showGkPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={() => setShowGkPrompt(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl p-6 w-80"
+              style={{ background: "#FFFFFF", border: `1px solid ${BORDER}` }}
+              data-testid="modal-gatekeeper"
+            >
+              <p className="text-sm font-bold mb-1" style={{ color: TEXT }}>Gatekeeper Name</p>
+              <p className="text-xs mb-3" style={{ color: MUTED }}>{gkCompany}</p>
+              <input
+                autoFocus
+                value={gkName}
+                onChange={(e) => setGkName(e.target.value)}
+                placeholder="Enter gatekeeper name..."
+                className="w-full px-3 py-2 rounded-lg text-sm mb-4"
+                style={{ background: SUBTLE, color: TEXT, border: `1px solid ${BORDER}` }}
+                onKeyDown={(e) => e.key === "Enter" && submitGatekeeper()}
+                data-testid="input-gk-name"
+              />
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => { setShowGkPrompt(false); setGkName(""); }}
+                  className="flex-1 text-sm" variant="outline"
+                  style={{ borderColor: BORDER, color: MUTED }}
+                  data-testid="button-gk-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={submitGatekeeper}
+                  className="flex-1 text-sm font-bold" style={{ background: BLUE, color: "#FFFFFF" }}
+                  data-testid="button-gk-submit"
+                >
+                  Log Gatekeeper
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showQualPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={() => setShowQualPrompt(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl p-6 w-80"
+              style={{ background: "#FFFFFF", border: `1px solid ${BORDER}` }}
+              data-testid="modal-qualified"
+            >
+              <p className="text-sm font-bold mb-1" style={{ color: TEXT }}>Qualified -- Quick Notes</p>
+              <p className="text-xs mb-3" style={{ color: MUTED }}>{qualCompany}</p>
+              <textarea
+                autoFocus
+                value={qualNotes}
+                onChange={(e) => setQualNotes(e.target.value)}
+                placeholder="Crew size? Timeline? Key details..."
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg text-sm mb-4 resize-none"
+                style={{ background: SUBTLE, color: TEXT, border: `1px solid ${BORDER}` }}
+                data-testid="input-qual-notes"
+              />
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => { setShowQualPrompt(false); setQualNotes(""); }}
+                  className="flex-1 text-sm" variant="outline"
+                  style={{ borderColor: BORDER, color: MUTED }}
+                  data-testid="button-qual-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={submitQualified}
+                  className="flex-1 text-sm font-bold" style={{ background: EMERALD_DARK, color: "#FFFFFF" }}
+                  data-testid="button-qual-submit"
+                >
+                  Log Qualified
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCbPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={() => setShowCbPrompt(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl p-6 w-80"
+              style={{ background: "#FFFFFF", border: `1px solid ${BORDER}` }}
+              data-testid="modal-callback"
+            >
+              <p className="text-sm font-bold mb-1" style={{ color: TEXT }}>Schedule Callback</p>
+              <p className="text-xs mb-3" style={{ color: MUTED }}>{cbCompany}</p>
+              <input
+                type="date"
+                value={cbDate}
+                onChange={(e) => setCbDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm mb-3"
+                style={{ background: SUBTLE, color: TEXT, border: `1px solid ${BORDER}` }}
+                data-testid="input-callback-date"
+              />
+              <input
+                value={cbNotes}
+                onChange={(e) => setCbNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                className="w-full px-3 py-2 rounded-lg text-sm mb-4"
+                style={{ background: SUBTLE, color: TEXT, border: `1px solid ${BORDER}` }}
+                onKeyDown={(e) => e.key === "Enter" && submitCallback()}
+                data-testid="input-callback-notes"
+              />
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => { setShowCbPrompt(false); setCbNotes(""); }}
+                  className="flex-1 text-sm" variant="outline"
+                  style={{ borderColor: BORDER, color: MUTED }}
+                  data-testid="button-cb-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={submitCallback}
+                  className="flex-1 text-sm font-bold" style={{ background: AMBER, color: TEXT }}
+                  data-testid="button-cb-submit"
+                >
+                  Log Callback
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

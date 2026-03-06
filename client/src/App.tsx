@@ -15,7 +15,6 @@ import LeadEnginePage from "@/pages/lead-engine";
 import ContactsPage from "@/pages/contacts";
 import AnalyticsPage from "@/pages/analytics";
 import PipelinePage from "@/pages/pipeline";
-import CallModePage from "@/pages/call-mode";
 import MachineSettingsPage from "@/pages/machine-settings";
 import CinematicPage from "@/pages/cinematic";
 import ActiveOutreachPage from "@/pages/active-outreach";
@@ -132,7 +131,6 @@ function Router() {
         <Route path="/machine/contacts"><MachineRoute><ContactsPage /></MachineRoute></Route>
         <Route path="/machine/analytics"><MachineRoute><AnalyticsPage /></MachineRoute></Route>
         <Route path="/machine/pipeline"><MachineRoute><PipelinePage /></MachineRoute></Route>
-        <Route path="/machine/call-mode"><MachineRoute><CallModePage /></MachineRoute></Route>
         <Route path="/machine/settings"><MachineRoute><MachineSettingsPage /></MachineRoute></Route>
         <Route path="/machine/outreach"><MachineRoute><ActiveOutreachPage /></MachineRoute></Route>
         <Route path="/machine/email-settings"><MachineRoute><EmailSettingsPage /></MachineRoute></Route>
@@ -148,7 +146,7 @@ function Router() {
         <Route path="/contacts"><Redirect to="/machine/contacts" /></Route>
         <Route path="/analytics"><Redirect to="/machine/analytics" /></Route>
         <Route path="/pipeline"><Redirect to="/machine/pipeline" /></Route>
-        <Route path="/call-mode"><Redirect to="/machine/call-mode" /></Route>
+        <Route path="/call-mode"><Redirect to="/machine/outreach" /></Route>
         <Route path="/machine-settings"><Redirect to="/machine/settings" /></Route>
 
         <Route path="/"><RoleRedirect /></Route>
