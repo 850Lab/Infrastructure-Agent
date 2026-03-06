@@ -601,6 +601,37 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/recovery/queue", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const activeOnly = req.query.active !== "false";
+      const queue = await storage.getRecoveryQueue(clientId, activeOnly);
+      const stats = {
+        total: queue.length,
+        byPriority: {} as Record<string, number>,
+        byStatus: {} as Record<string, number>,
+        dueNow: 0,
+      };
+      const now = new Date();
+      for (const item of queue) {
+        stats.byPriority[item.priority] = (stats.byPriority[item.priority] || 0) + 1;
+        stats.byStatus[item.dmStatus] = (stats.byStatus[item.dmStatus] || 0) + 1;
+        if (new Date(item.nextAttempt) <= now) stats.dueNow++;
+      }
+      res.json({ stats, items: queue });
+    } catch (err: any) {
+      log(`Recovery queue fetch error: ${err.message}`, "recovery-engine");
+      res.status(500).json({ error: "Failed to load recovery queue" });
+    }
+  });
+
   app.post("/api/dm-status/run", authMiddleware, async (req: Request, res: Response) => {
     try {
       let clientId = (req as any).user?.clientId;

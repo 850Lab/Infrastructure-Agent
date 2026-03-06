@@ -1,6 +1,6 @@
-import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, type MachineAlert, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends, machineAlerts } from "@shared/schema";
+import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, type MachineAlert, type RecoveryQueueItem, type InsertRecoveryQueueItem, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends, machineAlerts, recoveryQueue } from "@shared/schema";
 import { db } from "./db";
-import { desc, eq, and, gte } from "drizzle-orm";
+import { desc, eq, and, gte, lte } from "drizzle-orm";
 import { users } from "@shared/schema";
 
 export interface IStorage {
@@ -30,6 +30,12 @@ export interface IStorage {
   createMachineAlert(clientId: string, alertType: string, message: string, severity: string): Promise<MachineAlert>;
   getMachineAlerts(clientId: string | null | undefined, unresolvedOnly?: boolean): Promise<MachineAlert[]>;
   resolveMachineAlert(id: number, clientId?: string | null): Promise<MachineAlert | undefined>;
+  addToRecoveryQueue(item: InsertRecoveryQueueItem): Promise<RecoveryQueueItem>;
+  getRecoveryQueueDue(clientId: string, limit?: number): Promise<RecoveryQueueItem[]>;
+  getRecoveryQueue(clientId: string, activeOnly?: boolean): Promise<RecoveryQueueItem[]>;
+  getRecoveryQueueItem(companyId: string, clientId: string): Promise<RecoveryQueueItem | undefined>;
+  updateRecoveryQueueItem(id: number, data: Partial<{ attempts: number; nextAttempt: Date; lastResult: string; dmStatus: string; active: boolean; updatedAt: Date }>): Promise<RecoveryQueueItem | undefined>;
+  removeFromRecoveryQueue(companyId: string, clientId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -192,6 +198,57 @@ export class DatabaseStorage implements IStorage {
       .where(and(...conditions))
       .returning();
     return updated;
+  }
+
+  async addToRecoveryQueue(item: InsertRecoveryQueueItem): Promise<RecoveryQueueItem> {
+    const [created] = await db.insert(recoveryQueue).values(item).returning();
+    return created;
+  }
+
+  async getRecoveryQueueDue(clientId: string, limit = 20): Promise<RecoveryQueueItem[]> {
+    const now = new Date();
+    return db.select().from(recoveryQueue)
+      .where(and(
+        eq(recoveryQueue.clientId, clientId),
+        eq(recoveryQueue.active, true),
+        lte(recoveryQueue.nextAttempt, now)
+      ))
+      .orderBy(recoveryQueue.priority, recoveryQueue.nextAttempt)
+      .limit(limit);
+  }
+
+  async getRecoveryQueue(clientId: string, activeOnly = true): Promise<RecoveryQueueItem[]> {
+    const conditions = [eq(recoveryQueue.clientId, clientId)];
+    if (activeOnly) conditions.push(eq(recoveryQueue.active, true));
+    return db.select().from(recoveryQueue)
+      .where(and(...conditions))
+      .orderBy(recoveryQueue.priority, recoveryQueue.nextAttempt);
+  }
+
+  async getRecoveryQueueItem(companyId: string, clientId: string): Promise<RecoveryQueueItem | undefined> {
+    const [item] = await db.select().from(recoveryQueue)
+      .where(and(
+        eq(recoveryQueue.companyId, companyId),
+        eq(recoveryQueue.clientId, clientId)
+      ));
+    return item;
+  }
+
+  async updateRecoveryQueueItem(id: number, data: Partial<{ attempts: number; nextAttempt: Date; lastResult: string; dmStatus: string; active: boolean; updatedAt: Date }>): Promise<RecoveryQueueItem | undefined> {
+    const [updated] = await db.update(recoveryQueue)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(recoveryQueue.id, id))
+      .returning();
+    return updated;
+  }
+
+  async removeFromRecoveryQueue(companyId: string, clientId: string): Promise<void> {
+    await db.update(recoveryQueue)
+      .set({ active: false, updatedAt: new Date() })
+      .where(and(
+        eq(recoveryQueue.companyId, companyId),
+        eq(recoveryQueue.clientId, clientId)
+      ));
   }
 }
 

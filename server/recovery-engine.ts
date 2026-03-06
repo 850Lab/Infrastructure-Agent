@@ -1,19 +1,10 @@
 import { log } from "./logger";
 import { getClientAirtableConfig, scopedFormula } from "./airtable-scoped";
+import { storage } from "./storage";
 
 function logRecovery(msg: string) {
   log(msg, "recovery-engine");
 }
-
-interface RecoveryStrategy {
-  steps: string[];
-  actions: RecoveryAction[];
-}
-
-type RecoveryAction =
-  | { type: "re_enrich"; recordId: string }
-  | { type: "outscraper_lookup"; recordId: string; companyName: string }
-  | { type: "log_only" };
 
 const RECOVERY_STRATEGIES: Record<string, { steps: string[]; actionType: string }> = {
   NO_DM: {
@@ -67,16 +58,30 @@ const RECOVERY_STRATEGIES: Record<string, { steps: string[]; actionType: string 
 };
 
 const STATUSES_NEEDING_RECOVERY = new Set(Object.keys(RECOVERY_STRATEGIES));
-const MAX_RECOVERY_ATTEMPTS = 5;
-const MAX_PER_RUN = 20;
 
-interface CompanyForRecovery {
-  id: string;
-  companyName: string;
-  dmStatus: string;
-  website: string;
-  recoveryAttempts: number;
-  recoveryPlan: string;
+const PRIORITY_MAP: Record<string, string> = {
+  AUTHORITY_MISMATCH: "1_highest",
+  NO_DM: "2_high",
+  NO_EMAIL: "3_medium",
+  NO_PHONE: "3_medium",
+  GENERIC_CONTACT: "4_low",
+  NO_WEBSITE: "2_high",
+};
+
+const MAX_QUEUE_PROCESS = 20;
+const MAX_ATTEMPTS = 12;
+
+function computeNextAttempt(attempts: number): Date {
+  const now = new Date();
+  let daysToAdd: number;
+  if (attempts < 3) {
+    daysToAdd = 2;
+  } else if (attempts < 6) {
+    daysToAdd = 7;
+  } else {
+    daysToAdd = 30;
+  }
+  return new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 }
 
 async function airtableRequest(path: string, options: RequestInit = {}, config: { apiKey: string; baseId: string }): Promise<any> {
@@ -99,7 +104,6 @@ async function airtableRequest(path: string, options: RequestInit = {}, config: 
 function buildRecoveryPlan(dmStatus: string, companyName: string, attempt: number): string {
   const strategy = RECOVERY_STRATEGIES[dmStatus];
   if (!strategy) return "";
-
   const lines = [
     `Recovery Plan for: ${companyName}`,
     `Status: ${dmStatus}`,
@@ -108,12 +112,17 @@ function buildRecoveryPlan(dmStatus: string, companyName: string, attempt: numbe
     "",
     "Steps:",
   ];
-
   for (let i = 0; i < strategy.steps.length; i++) {
     lines.push(`  ${i + 1}. ${strategy.steps[i]}`);
   }
-
   return lines.join("\n");
+}
+
+interface CompanyForRecovery {
+  id: string;
+  companyName: string;
+  dmStatus: string;
+  website: string;
 }
 
 async function executeRecoveryAction(
@@ -151,7 +160,6 @@ async function executeRecoveryAction(
           const updates: Record<string, any> = {};
           if (result.site && !company.website) updates.Website = result.site;
           if (result.phone) updates.Primary_DM_Phone = result.phone;
-
           if (Object.keys(updates).length > 0) {
             await airtableRequest("Companies", {
               method: "PATCH",
@@ -237,18 +245,8 @@ async function ensureRecoveryFields(atConfig: { apiKey: string; baseId: string }
   }
 }
 
-export async function runRecoveryEngine(clientId?: string): Promise<{
-  total: number;
-  recovered: number;
-  skipped: number;
-  maxedOut: number;
-  breakdown: Record<string, { attempted: number; succeeded: number }>;
-}> {
-  const atConfig = clientId ? await getClientAirtableConfig(clientId) : {
-    apiKey: process.env.AIRTABLE_API_KEY || "",
-    baseId: process.env.AIRTABLE_BASE_ID || "",
-  };
-
+export async function populateRecoveryQueue(clientId: string): Promise<{ added: number; removed: number; alreadyQueued: number }> {
+  const atConfig = await getClientAirtableConfig(clientId);
   if (!atConfig.apiKey || !atConfig.baseId) {
     throw new Error("Airtable credentials not configured");
   }
@@ -260,9 +258,7 @@ export async function runRecoveryEngine(clientId?: string): Promise<{
     let offset: string | undefined;
     do {
       const params = new URLSearchParams({ pageSize: "100" });
-      if (useScope && clientId) {
-        params.set("filterByFormula", scopedFormula(clientId));
-      }
+      if (useScope) params.set("filterByFormula", scopedFormula(clientId));
       if (offset) params.set("offset", offset);
       const data = await airtableRequest(`${table}?${params}`, {}, atConfig);
       allRecords.push(...(data.records || []));
@@ -271,9 +267,9 @@ export async function runRecoveryEngine(clientId?: string): Promise<{
   }
 
   try {
-    await fetchAllPages(!!clientId);
+    await fetchAllPages(true);
   } catch (e: any) {
-    if (clientId && (e.message.includes("UNKNOWN_FIELD_NAME") || e.message.includes("Unknown field"))) {
+    if (e.message.includes("UNKNOWN_FIELD_NAME") || e.message.includes("Unknown field")) {
       logRecovery("Client_ID field not found — fetching all records");
       allRecords.length = 0;
       await fetchAllPages(false);
@@ -282,110 +278,171 @@ export async function runRecoveryEngine(clientId?: string): Promise<{
     }
   }
 
-  const companiesNeedingRecovery = allRecords
-    .filter(rec => {
-      const status = String(rec.fields.DM_Status || "").trim();
-      return STATUSES_NEEDING_RECOVERY.has(status);
-    })
-    .map(rec => {
-      const f = rec.fields;
-      return {
-        id: rec.id,
-        companyName: String(f.company_name || f.Company_Name || "").trim(),
-        dmStatus: String(f.DM_Status || "").trim(),
-        website: String(f.Website || f.website || "").trim(),
-        recoveryAttempts: Number(f.Recovery_Attempts || 0),
-        recoveryPlan: String(f.Recovery_Plan || "").trim(),
-      } as CompanyForRecovery;
-    });
+  let added = 0;
+  let removed = 0;
+  let alreadyQueued = 0;
 
-  logRecovery(`Found ${companiesNeedingRecovery.length} companies needing recovery out of ${allRecords.length} total`);
+  for (const rec of allRecords) {
+    const f = rec.fields;
+    const dmStatus = String(f.DM_Status || "").trim();
+    const companyName = String(f.company_name || f.Company_Name || "").trim();
+    const companyId = rec.id;
 
-  let recovered = 0;
-  let skipped = 0;
-  let maxedOut = 0;
-  let processed = 0;
-  const breakdown: Record<string, { attempted: number; succeeded: number }> = {};
-  const updates: Array<{ id: string; fields: Record<string, any> }> = [];
-  const now = new Date().toISOString();
-  let fieldsEnsured = false;
-
-  for (const company of companiesNeedingRecovery) {
-    if (processed >= MAX_PER_RUN) {
-      logRecovery(`Reached per-run limit of ${MAX_PER_RUN}, stopping`);
-      break;
-    }
-
-    if (company.recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
-      maxedOut++;
+    if (dmStatus === "DM_READY" || dmStatus === "READY_FOR_OUTREACH") {
+      const existing = await storage.getRecoveryQueueItem(companyId, clientId);
+      if (existing && existing.active) {
+        await storage.removeFromRecoveryQueue(companyId, clientId);
+        removed++;
+        logRecovery(`Removed ${companyName} from queue — status is now ${dmStatus}`);
+      }
       continue;
     }
 
-    const strategy = RECOVERY_STRATEGIES[company.dmStatus];
+    if (!STATUSES_NEEDING_RECOVERY.has(dmStatus)) continue;
+
+    const existing = await storage.getRecoveryQueueItem(companyId, clientId);
+    if (existing && existing.active) {
+      if (existing.dmStatus !== dmStatus) {
+        await storage.updateRecoveryQueueItem(existing.id, { dmStatus, priority: PRIORITY_MAP[dmStatus] || "3_medium" });
+      }
+      alreadyQueued++;
+      continue;
+    }
+
+    await storage.addToRecoveryQueue({
+      clientId,
+      companyId,
+      companyName,
+      dmStatus,
+      priority: PRIORITY_MAP[dmStatus] || "3_medium",
+      attempts: 0,
+      nextAttempt: new Date(),
+      active: true,
+    });
+    added++;
+  }
+
+  logRecovery(`Queue populated: ${added} added, ${removed} removed (DM_READY), ${alreadyQueued} already queued`);
+  return { added, removed, alreadyQueued };
+}
+
+export async function processRecoveryQueue(clientId: string): Promise<{
+  processed: number;
+  recovered: number;
+  skipped: number;
+  maxedOut: number;
+  breakdown: Record<string, { attempted: number; succeeded: number }>;
+}> {
+  const atConfig = await getClientAirtableConfig(clientId);
+  if (!atConfig.apiKey || !atConfig.baseId) {
+    throw new Error("Airtable credentials not configured");
+  }
+
+  const dueItems = await storage.getRecoveryQueueDue(clientId, MAX_QUEUE_PROCESS);
+  logRecovery(`Processing ${dueItems.length} due items from recovery queue`);
+
+  let processed = 0;
+  let recovered = 0;
+  let skipped = 0;
+  let maxedOut = 0;
+  const breakdown: Record<string, { attempted: number; succeeded: number }> = {};
+  const airtableUpdates: Array<{ id: string; fields: Record<string, any> }> = [];
+  const now = new Date().toISOString();
+  let fieldsEnsured = false;
+
+  for (const item of dueItems) {
+    if (item.attempts >= MAX_ATTEMPTS) {
+      await storage.updateRecoveryQueueItem(item.id, { active: false });
+      maxedOut++;
+      logRecovery(`[${item.dmStatus}] ${item.companyName}: deactivated (max ${MAX_ATTEMPTS} attempts reached)`);
+      continue;
+    }
+
+    const strategy = RECOVERY_STRATEGIES[item.dmStatus];
     if (!strategy) {
       skipped++;
       continue;
     }
 
-    if (!breakdown[company.dmStatus]) {
-      breakdown[company.dmStatus] = { attempted: 0, succeeded: 0 };
+    if (!breakdown[item.dmStatus]) {
+      breakdown[item.dmStatus] = { attempted: 0, succeeded: 0 };
     }
-    breakdown[company.dmStatus].attempted++;
+    breakdown[item.dmStatus].attempted++;
     processed++;
 
-    const newAttempt = company.recoveryAttempts + 1;
-    const plan = buildRecoveryPlan(company.dmStatus, company.companyName, newAttempt);
+    let website = "";
+    try {
+      const encoded = encodeURIComponent("Companies");
+      const rec = await airtableRequest(`${encoded}/${item.companyId}`, {}, atConfig);
+      website = String(rec.fields?.Website || rec.fields?.website || "").trim();
+    } catch {}
+
+    const company: CompanyForRecovery = {
+      id: item.companyId,
+      companyName: item.companyName,
+      dmStatus: item.dmStatus,
+      website,
+    };
 
     const actionResult = await executeRecoveryAction(company, strategy, atConfig);
 
-    const dataFound = actionResult.executed && !actionResult.result.includes("found no") && !actionResult.result.includes("returned no") && !actionResult.result.includes("not configured");
-
-    if (dataFound) {
-      recovered++;
-      breakdown[company.dmStatus].succeeded++;
-    }
+    const dataFound = actionResult.executed &&
+      !actionResult.result.includes("found no") &&
+      !actionResult.result.includes("returned no") &&
+      !actionResult.result.includes("not configured");
 
     if (!actionResult.executed && actionResult.result.includes("not configured")) {
       skipped++;
-      logRecovery(`[${company.dmStatus}] ${company.companyName}: skipped (action not available)`);
+      logRecovery(`[${item.dmStatus}] ${item.companyName}: skipped (action not available)`);
       continue;
     }
 
+    const newAttempts = item.attempts + 1;
+    const nextAttempt = computeNextAttempt(newAttempts);
+
+    if (dataFound) {
+      recovered++;
+      breakdown[item.dmStatus].succeeded++;
+    }
+
+    await storage.updateRecoveryQueueItem(item.id, {
+      attempts: newAttempts,
+      nextAttempt,
+      lastResult: actionResult.result,
+    });
+
+    const plan = buildRecoveryPlan(item.dmStatus, item.companyName, newAttempts);
     const planWithResult = `${plan}\n\nResult: ${actionResult.result}`;
 
-    updates.push({
-      id: company.id,
+    airtableUpdates.push({
+      id: item.companyId,
       fields: {
         Recovery_Plan: planWithResult,
-        Recovery_Attempts: newAttempt,
+        Recovery_Attempts: newAttempts,
         Recovery_Last_Run: now,
       },
     });
 
-    logRecovery(`[${company.dmStatus}] ${company.companyName}: attempt ${newAttempt} — ${actionResult.result}`);
+    logRecovery(`[${item.dmStatus}] ${item.companyName}: attempt ${newAttempts} — ${actionResult.result} (next: ${nextAttempt.toISOString().slice(0, 10)})`);
   }
 
   const batchSize = 10;
-  let written = 0;
-
-  for (let i = 0; i < updates.length; i += batchSize) {
-    const batch = updates.slice(i, i + batchSize);
+  for (let i = 0; i < airtableUpdates.length; i += batchSize) {
+    const batch = airtableUpdates.slice(i, i + batchSize);
     try {
-      await airtableRequest(table, {
+      await airtableRequest("Companies", {
         method: "PATCH",
         body: JSON.stringify({ records: batch }),
       }, atConfig);
-      written += batch.length;
     } catch (e: any) {
-      if (!fieldsEnsured && (e.message.includes("Recovery_Plan") || e.message.includes("Recovery_Attempts") || e.message.includes("Recovery_Last_Run")) && e.message.includes("UNKNOWN_FIELD_NAME")) {
+      if (!fieldsEnsured && e.message.includes("UNKNOWN_FIELD_NAME")) {
         fieldsEnsured = true;
         await ensureRecoveryFields(atConfig);
         try {
-          await airtableRequest(table, {
+          await airtableRequest("Companies", {
             method: "PATCH",
             body: JSON.stringify({ records: batch }),
           }, atConfig);
-          written += batch.length;
         } catch (retryErr: any) {
           logRecovery(`Batch update retry error: ${retryErr.message}`);
         }
@@ -395,13 +452,22 @@ export async function runRecoveryEngine(clientId?: string): Promise<{
     }
   }
 
-  logRecovery(`Recovery complete: ${recovered} recovered, ${skipped} skipped, ${maxedOut} maxed out, ${written} records updated`);
+  logRecovery(`Queue processing complete: ${processed} processed, ${recovered} recovered, ${skipped} skipped, ${maxedOut} maxed out`);
+  return { processed, recovered, skipped, maxedOut, breakdown };
+}
 
-  return {
-    total: companiesNeedingRecovery.length,
-    recovered,
-    skipped,
-    maxedOut,
-    breakdown,
-  };
+export async function runRecoveryEngine(clientId?: string): Promise<{
+  queue: { added: number; removed: number; alreadyQueued: number };
+  processing: { processed: number; recovered: number; skipped: number; breakdown: Record<string, { attempted: number; succeeded: number }> };
+}> {
+  if (!clientId) {
+    const allClients = await storage.getAllClients();
+    if (allClients.length > 0) clientId = allClients[0].id;
+  }
+  if (!clientId) throw new Error("Client context required");
+
+  const queueResult = await populateRecoveryQueue(clientId);
+  const processingResult = await processRecoveryQueue(clientId);
+
+  return { queue: queueResult, processing: processingResult };
 }

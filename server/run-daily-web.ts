@@ -146,7 +146,7 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
         const r = await runRecoveryEngine(clientId);
         eventBus.publish("TRIGGER_FIRED", {
           trigger: "recovery_engine",
-          company: `${r.recovered}/${r.total} recovered`,
+          company: `${r.processing.recovered}/${r.processing.processed} recovered, ${r.queue.added} queued`,
           ts: Date.now(),
         }, clientId);
         return r;

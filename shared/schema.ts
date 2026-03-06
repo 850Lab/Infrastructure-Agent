@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -141,3 +141,22 @@ export const machineAlerts = pgTable("machine_alerts", {
 export const insertMachineAlertSchema = createInsertSchema(machineAlerts).omit({ id: true, createdAt: true });
 export type InsertMachineAlert = z.infer<typeof insertMachineAlertSchema>;
 export type MachineAlert = typeof machineAlerts.$inferSelect;
+
+export const recoveryQueue = pgTable("recovery_queue", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name").notNull(),
+  dmStatus: text("dm_status").notNull(),
+  priority: text("priority").notNull().default("medium"),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttempt: timestamp("next_attempt").notNull(),
+  lastResult: text("last_result"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertRecoveryQueueSchema = createInsertSchema(recoveryQueue).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRecoveryQueueItem = z.infer<typeof insertRecoveryQueueSchema>;
+export type RecoveryQueueItem = typeof recoveryQueue.$inferSelect;
