@@ -1,7 +1,7 @@
 import { type Express, type Request, type Response } from "express";
 import { authMiddleware } from "./auth";
 import { db } from "./db";
-import { clientEmailSettings, emailReplies } from "@shared/schema";
+import { clientEmailSettings, emailReplies, emailSends } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import {
   sendOutreachEmail,
@@ -386,6 +386,102 @@ export function registerEmailRoutes(app: Express) {
         return;
       }
       res.json(quota);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Email performance analytics — per-touch aggregation
+  app.get("/api/email/analytics", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        res.status(400).json({ error: "No client context" });
+        return;
+      }
+
+      const sends = await db
+        .select({
+          touchNumber: emailSends.touchNumber,
+          status: emailSends.status,
+          openCount: emailSends.openCount,
+          clickCount: emailSends.clickCount,
+          replyDetectedAt: emailSends.replyDetectedAt,
+          sentVia: emailSends.sentVia,
+          sentAt: emailSends.sentAt,
+        })
+        .from(emailSends)
+        .where(eq(emailSends.clientId, clientId));
+
+      const touchMap: Record<number, {
+        touchNumber: number;
+        sent: number;
+        failed: number;
+        deferred: number;
+        opened: number;
+        clicked: number;
+        replied: number;
+        totalOpens: number;
+        totalClicks: number;
+        autoSent: number;
+        manualSent: number;
+      }> = {};
+
+      for (const touch of [1, 3, 5]) {
+        touchMap[touch] = {
+          touchNumber: touch,
+          sent: 0, failed: 0, deferred: 0,
+          opened: 0, clicked: 0, replied: 0,
+          totalOpens: 0, totalClicks: 0,
+          autoSent: 0, manualSent: 0,
+        };
+      }
+
+      let totalSent = 0;
+      let totalOpened = 0;
+      let totalClicked = 0;
+      let totalReplied = 0;
+
+      for (const s of sends) {
+        const t = touchMap[s.touchNumber];
+        if (!t) continue;
+
+        if (s.status === "sent") {
+          t.sent++;
+          totalSent++;
+          if (s.openCount > 0) { t.opened++; totalOpened++; }
+          if (s.clickCount > 0) { t.clicked++; totalClicked++; }
+          if (s.replyDetectedAt) { t.replied++; totalReplied++; }
+          t.totalOpens += s.openCount;
+          t.totalClicks += s.clickCount;
+          if (s.sentVia === "auto") t.autoSent++;
+          else t.manualSent++;
+        } else if (s.status === "failed") {
+          t.failed++;
+        } else if (s.status === "deferred") {
+          t.deferred++;
+        }
+      }
+
+      const touchStats = Object.values(touchMap).map((t) => ({
+        ...t,
+        openRate: t.sent > 0 ? Math.round((t.opened / t.sent) * 100) : 0,
+        clickRate: t.sent > 0 ? Math.round((t.clicked / t.sent) * 100) : 0,
+        replyRate: t.sent > 0 ? Math.round((t.replied / t.sent) * 100) : 0,
+      }));
+
+      res.json({
+        touchStats,
+        totals: {
+          sent: totalSent,
+          opened: totalOpened,
+          clicked: totalClicked,
+          replied: totalReplied,
+          openRate: totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0,
+          clickRate: totalSent > 0 ? Math.round((totalClicked / totalSent) * 100) : 0,
+          replyRate: totalSent > 0 ? Math.round((totalReplied / totalSent) * 100) : 0,
+        },
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
