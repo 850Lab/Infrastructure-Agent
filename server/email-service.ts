@@ -1,7 +1,8 @@
 import * as nodemailer from "nodemailer";
 import { db } from "./db";
 import { clientEmailSettings, emailSends, emailTrackingEvents } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull, desc } from "drizzle-orm";
+import { detectProviderFromHost, getProviderProfile } from "./email-providers";
 
 // Tracking pixel: 1x1 transparent GIF
 const TRACKING_PIXEL = Buffer.from(
@@ -68,7 +69,7 @@ export function processEmailForTracking(
   return processed;
 }
 
-// Get SMTP settings for a client, with daily limit reset
+// Get SMTP settings for a client, with daily limit reset and provider auto-detection
 export async function getEmailSettings(clientId: string) {
   const [settings] = await db
     .select()
@@ -77,13 +78,31 @@ export async function getEmailSettings(clientId: string) {
   if (!settings) return null;
 
   const today = new Date().toISOString().slice(0, 10);
+  const updates: Record<string, any> = {};
+
+  // Reset daily counter if new day
   if (settings.lastResetDate !== today) {
-    await db
-      .update(clientEmailSettings)
-      .set({ sentToday: 0, lastResetDate: today, updatedAt: new Date() })
-      .where(eq(clientEmailSettings.id, settings.id));
+    updates.sentToday = 0;
+    updates.lastResetDate = today;
     settings.sentToday = 0;
     settings.lastResetDate = today;
+  }
+
+  // Auto-detect provider if still set to default "custom" and host is known
+  const detected = detectProviderFromHost(settings.smtpHost);
+  if (settings.providerType === "custom" && detected.type !== "custom") {
+    updates.providerType = detected.type;
+    updates.providerMaxLimit = detected.maxDailyLimit;
+    settings.providerType = detected.type;
+    settings.providerMaxLimit = detected.maxDailyLimit;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    updates.updatedAt = new Date();
+    await db
+      .update(clientEmailSettings)
+      .set(updates)
+      .where(eq(clientEmailSettings.id, settings.id));
   }
 
   return settings;
@@ -111,6 +130,22 @@ function createTransporter(settings: {
   });
 }
 
+// Per-client send timestamps for throttle pacing (in-memory)
+const lastSendTimestamps = new Map<string, number>();
+
+// Enforce throttle delay between sends for a client
+async function enforceThrottle(clientId: string, intervalMs: number): Promise<void> {
+  const lastSend = lastSendTimestamps.get(clientId);
+  if (lastSend) {
+    const elapsed = Date.now() - lastSend;
+    if (elapsed < intervalMs) {
+      const waitMs = intervalMs - elapsed;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  lastSendTimestamps.set(clientId, Date.now());
+}
+
 // Send an outreach email for a specific touch
 export async function sendOutreachEmail(params: {
   clientId: string;
@@ -120,12 +155,37 @@ export async function sendOutreachEmail(params: {
   recipientName?: string;
   companyId: string;
   companyName?: string;
-}): Promise<{ success: boolean; emailSendId?: number; error?: string }> {
+}): Promise<{ success: boolean; emailSendId?: number; error?: string; deferred?: boolean; deferReason?: string }> {
   const settings = await getEmailSettings(params.clientId);
   if (!settings) return { success: false, error: "Email settings not configured" };
   if (!settings.enabled) return { success: false, error: "Email sending is disabled" };
-  if (settings.sentToday >= settings.dailyLimit) {
-    return { success: false, error: `Daily send limit reached (${settings.dailyLimit})` };
+
+  // Provider-aware daily limit enforcement
+  const effectiveLimit = Math.min(settings.dailyLimit, settings.providerMaxLimit);
+  if (settings.sentToday >= effectiveLimit) {
+    const profile = getProviderProfile(settings.providerType);
+    const reason = `Daily limit reached: ${settings.sentToday}/${effectiveLimit} (${profile.label} max: ${settings.providerMaxLimit}/day)`;
+
+    const [deferredRecord] = await db
+      .insert(emailSends)
+      .values({
+        clientId: params.clientId,
+        outreachPipelineId: params.outreachPipelineId,
+        companyId: params.companyId,
+        companyName: params.companyName || null,
+        contactEmail: params.recipientEmail,
+        contactName: params.recipientName || null,
+        touchNumber: params.touchNumber,
+        subject: "(deferred)",
+        bodyHtml: "",
+        trackingId: crypto.randomUUID(),
+        status: "deferred",
+        deferredAt: new Date(),
+        deferReason: reason,
+      })
+      .returning();
+
+    return { success: false, emailSendId: deferredRecord.id, error: reason, deferred: true, deferReason: reason };
   }
 
   // Fetch the outreach pipeline item
@@ -175,6 +235,9 @@ export async function sendOutreachEmail(params: {
     .returning();
 
   try {
+    // Enforce throttle pacing between sends
+    await enforceThrottle(params.clientId, settings.sendIntervalMs);
+
     const transporter = createTransporter(settings);
     const sendResult = await transporter.sendMail({
       from: `"${settings.fromName}" <${settings.fromEmail}>`,
@@ -318,4 +381,40 @@ export function getTrackingPixel() {
     buffer: TRACKING_PIXEL,
     contentType: "image/gif",
   };
+}
+
+// Get sending quota status for a client
+export async function getSendQuotaStatus(clientId: string) {
+  const settings = await getEmailSettings(clientId);
+  if (!settings) return null;
+
+  const profile = getProviderProfile(settings.providerType);
+  const effectiveLimit = Math.min(settings.dailyLimit, settings.providerMaxLimit);
+
+  return {
+    providerType: settings.providerType,
+    providerLabel: profile.label,
+    providerMaxLimit: settings.providerMaxLimit,
+    userDailyLimit: settings.dailyLimit,
+    effectiveLimit,
+    sentToday: settings.sentToday,
+    remaining: Math.max(0, effectiveLimit - settings.sentToday),
+    sendIntervalMs: settings.sendIntervalMs,
+    isAtLimit: settings.sentToday >= effectiveLimit,
+    notes: profile.notes,
+  };
+}
+
+// Get deferred sends for a client (emails that couldn't send due to limits)
+export async function getDeferredSends(clientId: string) {
+  return db
+    .select()
+    .from(emailSends)
+    .where(
+      and(
+        eq(emailSends.clientId, clientId),
+        eq(emailSends.status, "deferred")
+      )
+    )
+    .orderBy(desc(emailSends.sentAt));
 }

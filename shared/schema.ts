@@ -197,10 +197,13 @@ export const clientEmailSettings = pgTable("client_email_settings", {
   imapHost: text("imap_host"),
   imapPort: integer("imap_port").default(993),
   imapSecure: boolean("imap_secure").default(true),
+  providerType: text("provider_type").notNull().default("custom"),
   fromName: text("from_name").notNull(),
   fromEmail: text("from_email").notNull(),
   signature: text("signature"),
   dailyLimit: integer("daily_limit").notNull().default(50),
+  providerMaxLimit: integer("provider_max_limit").notNull().default(500),
+  sendIntervalMs: integer("send_interval_ms").notNull().default(5000),
   sentToday: integer("sent_today").notNull().default(0),
   lastResetDate: text("last_reset_date"),
   replyCheckEnabled: boolean("reply_check_enabled").notNull().default(false),
@@ -235,6 +238,8 @@ export const emailSends = pgTable("email_sends", {
   clickCount: integer("click_count").notNull().default(0),
   firstClickedAt: timestamp("first_clicked_at"),
   replyDetectedAt: timestamp("reply_detected_at"),
+  deferredAt: timestamp("deferred_at"),
+  deferReason: text("defer_reason"),
 });
 
 export const insertEmailSendSchema = createInsertSchema(emailSends).omit({ id: true, sentAt: true, openCount: true, firstOpenedAt: true, clickCount: true, firstClickedAt: true });

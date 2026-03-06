@@ -11,8 +11,11 @@ import {
   getTrackingEvents,
   getTrackingPixel,
   getEmailSettings,
+  getSendQuotaStatus,
+  getDeferredSends,
 } from "./email-service";
 import { runReplyCheck, getRepliesForPipeline } from "./reply-checker";
+import { detectProviderFromHost, clampDailyLimit } from "./email-providers";
 
 export function registerEmailRoutes(app: Express) {
   // === PUBLIC TRACKING ROUTES (no auth) ===
@@ -101,13 +104,17 @@ export function registerEmailRoutes(app: Express) {
       const {
         smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure,
         imapHost, imapPort, imapSecure, replyCheckEnabled,
-        fromName, fromEmail, signature, dailyLimit, enabled,
+        fromName, fromEmail, signature, dailyLimit, sendIntervalMs, enabled,
       } = req.body;
 
       if (!smtpHost || !smtpUser || !fromName || !fromEmail) {
         res.status(400).json({ error: "Missing required fields" });
         return;
       }
+
+      // Auto-detect provider from SMTP host
+      const provider = detectProviderFromHost(smtpHost);
+      const { limit: clampedLimit, clamped } = clampDailyLimit(dailyLimit || 50, provider.type);
 
       const [existing] = await db
         .select()
@@ -124,14 +131,16 @@ export function registerEmailRoutes(app: Express) {
           imapPort: imapPort || 993,
           imapSecure: imapSecure !== false,
           replyCheckEnabled: replyCheckEnabled || false,
+          providerType: provider.type,
+          providerMaxLimit: provider.maxDailyLimit,
           fromName,
           fromEmail,
           signature: signature || null,
-          dailyLimit: dailyLimit || 50,
+          dailyLimit: clampedLimit,
+          sendIntervalMs: sendIntervalMs || provider.recommendedIntervalMs,
           enabled: enabled !== false,
           updatedAt: new Date(),
         };
-        // Only update password if it's not the masked value
         if (smtpPass && smtpPass !== "••••••••") {
           updateData.smtpPass = smtpPass;
         }
@@ -142,7 +151,11 @@ export function registerEmailRoutes(app: Express) {
           .where(eq(clientEmailSettings.id, existing.id))
           .returning();
         const { smtpPass: _p, ...safe } = updated;
-        res.json({ ...safe, smtpPass: "••••••••" });
+        const response: any = { ...safe, smtpPass: "••••••••" };
+        if (clamped) {
+          response._warning = `Daily limit was reduced from ${dailyLimit} to ${clampedLimit} (${provider.label} max: ${provider.maxDailyLimit}/day)`;
+        }
+        res.json(response);
       } else {
         if (!smtpPass) {
           res.status(400).json({ error: "SMTP password is required for initial setup" });
@@ -161,10 +174,13 @@ export function registerEmailRoutes(app: Express) {
             imapPort: imapPort || 993,
             imapSecure: imapSecure !== false,
             replyCheckEnabled: replyCheckEnabled || false,
+            providerType: provider.type,
+            providerMaxLimit: provider.maxDailyLimit,
             fromName,
             fromEmail,
             signature: signature || null,
-            dailyLimit: dailyLimit || 50,
+            dailyLimit: clampedLimit,
+            sendIntervalMs: sendIntervalMs || provider.recommendedIntervalMs,
             enabled: enabled !== false,
           })
           .returning();
@@ -237,6 +253,8 @@ export function registerEmailRoutes(app: Express) {
 
       if (result.success) {
         res.json({ success: true, emailSendId: result.emailSendId });
+      } else if (result.deferred) {
+        res.status(429).json({ success: false, deferred: true, error: result.error, deferReason: result.deferReason });
       } else {
         res.status(400).json({ success: false, error: result.error });
       }
@@ -345,6 +363,40 @@ export function registerEmailRoutes(app: Express) {
         .where(eq(emailReplies.clientId, clientId))
         .orderBy(desc(emailReplies.receivedAt));
       res.json(replies);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get sending quota status for current client
+  app.get("/api/email/quota", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        res.status(400).json({ error: "No client context" });
+        return;
+      }
+      const quota = await getSendQuotaStatus(clientId);
+      if (!quota) {
+        res.json(null);
+        return;
+      }
+      res.json(quota);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get deferred sends for current client
+  app.get("/api/email/deferred", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        res.status(400).json({ error: "No client context" });
+        return;
+      }
+      const deferred = await getDeferredSends(clientId);
+      res.json(deferred);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

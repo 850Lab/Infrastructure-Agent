@@ -137,6 +137,17 @@ function TouchTimeline({ touchesCompleted }: { touchesCompleted: number }) {
 }
 
 function TrackingBadge({ send }: { send: EmailSendRecord }) {
+  if (send.status === "deferred") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+        style={{ background: "rgba(245,158,11,0.08)", color: "#F59E0B", border: `1px solid rgba(245,158,11,0.3)` }}
+        title={(send as any).deferReason || "Deferred — daily limit reached"}
+        data-testid={`badge-deferred-${send.id}`}
+      >
+        <Clock className="w-3 h-3" /> Deferred
+      </span>
+    );
+  }
   if (send.status === "failed") {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
@@ -208,22 +219,31 @@ function SendEmailButton({
   const [showInput, setShowInput] = useState(false);
 
   const sendMutation = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", "/api/email/send", {
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/email/send", {
         outreachPipelineId: item.id,
         touchNumber,
         recipientEmail,
         recipientName: item.contactName || undefined,
         companyId: item.companyId,
         companyName: item.companyName,
-      }),
+      });
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/sends", item.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/quota"] });
       setShowInput(false);
       toast({ title: "Email sent", description: `Touch ${touchNumber} email sent to ${recipientEmail}` });
     },
     onError: (err: any) => {
-      toast({ title: "Send failed", description: err.message, variant: "destructive" });
+      const msg = err.message || "Unknown error";
+      const isDeferred = msg.toLowerCase().includes("daily limit");
+      toast({
+        title: isDeferred ? "Daily limit reached" : "Send failed",
+        description: isDeferred ? "This email has been deferred. It will be eligible to send when the daily counter resets." : msg,
+        variant: "destructive",
+      });
     },
   });
 
@@ -231,7 +251,7 @@ function SendEmailButton({
     return <TrackingBadge send={existingSend} />;
   }
 
-  if (existingSend && existingSend.status === "failed") {
+  if (existingSend && (existingSend.status === "failed" || existingSend.status === "deferred")) {
     return (
       <div className="flex items-center gap-2">
         <TrackingBadge send={existingSend} />
@@ -535,6 +555,20 @@ export default function ActiveOutreachPage() {
     enabled: !!token,
   });
 
+  const { data: sendQuota } = useQuery<{
+    providerType: string;
+    providerLabel: string;
+    effectiveLimit: number;
+    sentToday: number;
+    remaining: number;
+    sendIntervalMs: number;
+    isAtLimit: boolean;
+  } | null>({
+    queryKey: ["/api/email/quota"],
+    enabled: !!token,
+    refetchInterval: 30000,
+  });
+
   const runMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/outreach/run"),
     onSuccess: () => {
@@ -630,6 +664,35 @@ export default function ActiveOutreachPage() {
             </Button>
           </div>
         </div>
+
+        {sendQuota && emailSettings && (
+          <div
+            className="rounded-xl p-3 flex items-center justify-between mb-4"
+            style={{
+              background: sendQuota.isAtLimit ? "rgba(239,68,68,0.04)" : SUBTLE,
+              border: `1px solid ${sendQuota.isAtLimit ? "rgba(239,68,68,0.2)" : BORDER}`,
+            }}
+            data-testid="outreach-quota-bar"
+          >
+            <div className="flex items-center gap-2">
+              <Mail className="w-3.5 h-3.5" style={{ color: sendQuota.isAtLimit ? ERROR : EMERALD }} />
+              <span className="text-xs font-semibold" style={{ color: TEXT }} data-testid="text-outreach-quota">
+                {sendQuota.sentToday} / {sendQuota.effectiveLimit} emails sent today
+              </span>
+              <span className="text-[10px]" style={{ color: MUTED }}>
+                ({sendQuota.remaining} remaining)
+              </span>
+              {sendQuota.isAtLimit && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: "rgba(239,68,68,0.08)", color: ERROR }}>
+                  LIMIT REACHED
+                </span>
+              )}
+            </div>
+            <span className="text-[10px]" style={{ color: MUTED }}>
+              {sendQuota.providerLabel} &middot; {(sendQuota.sendIntervalMs / 1000).toFixed(0)}s pacing
+            </span>
+          </div>
+        )}
 
         {!emailSettings && (
           <div

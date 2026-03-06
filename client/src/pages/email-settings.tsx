@@ -17,6 +17,11 @@ import {
   EyeOff,
   MessageSquareReply,
   RefreshCw,
+  Shield,
+  Timer,
+  Gauge,
+  Clock,
+  PauseCircle,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -37,6 +42,9 @@ interface EmailSettings {
   imapHost: string | null;
   imapPort: number | null;
   imapSecure: boolean | null;
+  providerType: string;
+  providerMaxLimit: number;
+  sendIntervalMs: number;
   replyCheckEnabled: boolean;
   lastReplyCheck: string | null;
   fromName: string;
@@ -45,6 +53,30 @@ interface EmailSettings {
   dailyLimit: number;
   sentToday: number;
   enabled: boolean;
+  _warning?: string;
+}
+
+interface QuotaStatus {
+  providerType: string;
+  providerLabel: string;
+  providerMaxLimit: number;
+  userDailyLimit: number;
+  effectiveLimit: number;
+  sentToday: number;
+  remaining: number;
+  sendIntervalMs: number;
+  isAtLimit: boolean;
+  notes: string;
+}
+
+interface DeferredSend {
+  id: number;
+  companyName: string | null;
+  contactEmail: string;
+  touchNumber: number;
+  subject: string;
+  deferReason: string | null;
+  sentAt: string;
 }
 
 const SMTP_PRESETS = [
@@ -75,6 +107,7 @@ export default function EmailSettingsPage() {
   const [fromEmail, setFromEmail] = useState("");
   const [signature, setSignature] = useState("");
   const [dailyLimit, setDailyLimit] = useState(50);
+  const [sendIntervalMs, setSendIntervalMs] = useState(5000);
   const [enabled, setEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [testEmail, setTestEmail] = useState("");
@@ -82,6 +115,17 @@ export default function EmailSettingsPage() {
 
   const { data: settings, isLoading } = useQuery<EmailSettings | null>({
     queryKey: ["/api/email/settings"],
+    enabled: !!token,
+  });
+
+  const { data: quota } = useQuery<QuotaStatus | null>({
+    queryKey: ["/api/email/quota"],
+    enabled: !!token,
+    refetchInterval: 30000,
+  });
+
+  const { data: deferredSends } = useQuery<DeferredSend[]>({
+    queryKey: ["/api/email/deferred"],
     enabled: !!token,
   });
 
@@ -100,7 +144,11 @@ export default function EmailSettingsPage() {
       setFromEmail(settings.fromEmail || "");
       setSignature(settings.signature || "");
       setDailyLimit(settings.dailyLimit || 50);
+      setSendIntervalMs(settings.sendIntervalMs || 5000);
       setEnabled(settings.enabled !== false);
+      if (settings._warning) {
+        toast({ title: "Limit adjusted", description: settings._warning });
+      }
     }
   }, [settings]);
 
@@ -109,12 +157,13 @@ export default function EmailSettingsPage() {
       apiRequest("POST", "/api/email/settings", {
         smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure,
         imapHost: imapHost || null, imapPort, imapSecure, replyCheckEnabled,
-        fromName, fromEmail, signature, dailyLimit, enabled,
+        fromName, fromEmail, signature, dailyLimit, sendIntervalMs, enabled,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/quota"] });
       setHasChanges(false);
-      toast({ title: "Email settings saved", description: "Your SMTP configuration has been updated." });
+      toast({ title: "Email settings saved", description: "Your configuration has been updated." });
     },
     onError: (err: any) => {
       toast({ title: "Failed to save", description: err.message, variant: "destructive" });
@@ -209,12 +258,6 @@ export default function EmailSettingsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {settings && (
-              <div className="flex items-center gap-1.5 text-xs mr-3" style={{ color: MUTED }}>
-                <Mail className="w-3.5 h-3.5" />
-                {settings.sentToday} / {settings.dailyLimit} sent today
-              </div>
-            )}
             <Button
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending}
@@ -227,6 +270,63 @@ export default function EmailSettingsPage() {
             </Button>
           </div>
         </div>
+
+        {quota && (
+          <div
+            className="rounded-xl p-4 mb-6"
+            style={{
+              background: quota.isAtLimit ? "rgba(239,68,68,0.04)" : "rgba(16,185,129,0.04)",
+              border: `1px solid ${quota.isAtLimit ? "rgba(239,68,68,0.2)" : "rgba(16,185,129,0.2)"}`,
+            }}
+            data-testid="quota-status-card"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ background: quota.isAtLimit ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)" }}
+                >
+                  <Gauge className="w-4.5 h-4.5" style={{ color: quota.isAtLimit ? ERROR : EMERALD }} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold" style={{ color: TEXT }} data-testid="text-quota-sent">
+                      {quota.sentToday} / {quota.effectiveLimit}
+                    </span>
+                    <span className="text-xs" style={{ color: MUTED }}>sent today</span>
+                    {quota.isAtLimit && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: "rgba(239,68,68,0.08)", color: ERROR }}>
+                        LIMIT REACHED
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] font-medium" style={{ color: MUTED }} data-testid="text-provider-label">
+                      <Shield className="w-3 h-3 inline mr-0.5" style={{ verticalAlign: "middle" }} />
+                      {quota.providerLabel}
+                    </span>
+                    <span className="text-[10px]" style={{ color: MUTED }}>
+                      {quota.remaining} remaining
+                    </span>
+                    <span className="text-[10px]" style={{ color: MUTED }}>
+                      <Timer className="w-3 h-3 inline mr-0.5" style={{ verticalAlign: "middle" }} />
+                      {(quota.sendIntervalMs / 1000).toFixed(0)}s pacing
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="w-32 h-2 rounded-full overflow-hidden" style={{ background: BORDER }}>
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, (quota.sentToday / quota.effectiveLimit) * 100)}%`,
+                    background: quota.sentToday / quota.effectiveLimit > 0.9 ? ERROR : quota.sentToday / quota.effectiveLimit > 0.7 ? "#F59E0B" : EMERALD,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-6">
           <div
@@ -373,10 +473,21 @@ export default function EmailSettingsPage() {
             className="rounded-xl p-5"
             style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}
           >
-            <h2 className="text-sm font-bold mb-4" style={{ color: TEXT }}>
-              Sending Controls
+            <h2 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: TEXT }}>
+              <Shield className="w-4 h-4" style={{ color: EMERALD }} />
+              Sending Limits & Throttling
             </h2>
-            <div className="grid grid-cols-2 gap-4">
+            {quota && (
+              <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg" style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.15)` }}>
+                <Shield className="w-3.5 h-3.5 flex-shrink-0" style={{ color: EMERALD }} />
+                <p className="text-[11px]" style={{ color: TEXT }}>
+                  Detected provider: <strong>{quota.providerLabel}</strong>.
+                  Provider max: {quota.providerMaxLimit}/day.
+                  {quota.notes && <span style={{ color: MUTED }}> {quota.notes}</span>}
+                </p>
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label style={labelStyle}>Daily Send Limit</label>
                 <input
@@ -384,12 +495,27 @@ export default function EmailSettingsPage() {
                   value={dailyLimit}
                   onChange={(e) => { setDailyLimit(parseInt(e.target.value) || 50); setHasChanges(true); }}
                   min={1}
-                  max={500}
+                  max={quota?.providerMaxLimit || 500}
                   style={inputStyle}
                   data-testid="input-daily-limit"
                 />
                 <p className="text-[10px] mt-1" style={{ color: MUTED }}>
-                  Gmail: 500/day, Outlook: 300/day, SendGrid: varies by plan
+                  {quota ? `Max ${quota.providerMaxLimit} for ${quota.providerLabel}` : "Set based on your provider"}
+                </p>
+              </div>
+              <div>
+                <label style={labelStyle}>Send Pacing (seconds)</label>
+                <input
+                  type="number"
+                  value={Math.round(sendIntervalMs / 1000)}
+                  onChange={(e) => { setSendIntervalMs(Math.max(1, parseInt(e.target.value) || 5) * 1000); setHasChanges(true); }}
+                  min={1}
+                  max={60}
+                  style={inputStyle}
+                  data-testid="input-send-interval"
+                />
+                <p className="text-[10px] mt-1" style={{ color: MUTED }}>
+                  Minimum delay between sends to avoid flagging
                 </p>
               </div>
               <div className="flex items-center gap-3 pt-5">
@@ -544,6 +670,56 @@ export default function EmailSettingsPage() {
               </div>
             )}
           </div>
+
+          {deferredSends && deferredSends.length > 0 && (
+            <div
+              className="rounded-xl p-5"
+              style={{ background: "rgba(245,158,11,0.04)", border: `1px solid rgba(245,158,11,0.2)` }}
+            >
+              <h2 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: TEXT }}>
+                <PauseCircle className="w-4 h-4" style={{ color: "#F59E0B" }} />
+                Deferred Sends ({deferredSends.length})
+              </h2>
+              <p className="text-xs mb-3" style={{ color: MUTED }}>
+                These emails could not be sent because the daily limit was reached. They will be eligible to send on the next day when the counter resets.
+              </p>
+              <div className="space-y-2">
+                {deferredSends.slice(0, 10).map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg"
+                    style={{ background: "#FFFFFF", border: `1px solid ${BORDER}` }}
+                    data-testid={`deferred-send-${d.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-medium truncate block" style={{ color: TEXT }}>
+                        {d.companyName || d.contactEmail} — Touch {d.touchNumber}
+                      </span>
+                      <span className="text-[10px] block truncate" style={{ color: MUTED }}>
+                        {d.subject}
+                      </span>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-3">
+                      <span className="text-[10px] block" style={{ color: "#F59E0B" }}>
+                        <Clock className="w-3 h-3 inline mr-0.5" style={{ verticalAlign: "middle" }} />
+                        Deferred
+                      </span>
+                      {d.deferReason && (
+                        <span className="text-[9px] block" style={{ color: MUTED }}>
+                          {d.deferReason.substring(0, 50)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {deferredSends.length > 10 && (
+                  <p className="text-[10px] text-center" style={{ color: MUTED }}>
+                    + {deferredSends.length - 10} more deferred sends
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {smtpHost.includes("gmail") && (
             <div
