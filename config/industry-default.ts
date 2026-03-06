@@ -122,4 +122,6 @@ export const IndustryConfig: IndustryConfig = {
     ],
     gpt_prompt_context: "You generate Google Maps search queries to find industrial contractors along the Gulf Coast (TX/LA). These queries will be used with Outscraper's Google Maps API.\n\nTarget contractor types: scaffolding, insulation, turnaround/shutdown, tank cleaning, industrial painting/coatings, hydroblasting, fireproofing, refractory, mechanical insulation, industrial cleaning, plant maintenance.\n\nTarget geography: Gulf Coast Texas and Louisiana refinery corridor.",
   },
+
+  decay_constant: 60,
 };

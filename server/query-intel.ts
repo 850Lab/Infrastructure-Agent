@@ -2,6 +2,7 @@ import { log } from "./logger";
 import OpenAI from "openai";
 import { getIndustryConfig } from "./config";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
+import { getTimeWeight } from "./time-weight";
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -406,14 +407,15 @@ async function attributeAndScore(
   }
 
   function attributeCompanyToQuery(queryId: string, c: CompanyRecord) {
-    if (c.winFlag) queryWins.set(queryId, (queryWins.get(queryId) || 0) + 1);
-    if (c.primaryDMName) queryDMFound.set(queryId, (queryDMFound.get(queryId) || 0) + 1);
-    if (c.winTier === 'closed') queryClosed.set(queryId, (queryClosed.get(queryId) || 0) + 1);
-    else if (c.winTier === 'pipeline') queryPipeline.set(queryId, (queryPipeline.get(queryId) || 0) + 1);
-    else if (c.winTier === 'qualified') queryQualified.set(queryId, (queryQualified.get(queryId) || 0) + 1);
+    const weight = getTimeWeight(c.firstSeen);
+    if (c.winFlag) queryWins.set(queryId, (queryWins.get(queryId) || 0) + weight);
+    if (c.primaryDMName) queryDMFound.set(queryId, (queryDMFound.get(queryId) || 0) + weight);
+    if (c.winTier === 'closed') queryClosed.set(queryId, (queryClosed.get(queryId) || 0) + weight);
+    else if (c.winTier === 'pipeline') queryPipeline.set(queryId, (queryPipeline.get(queryId) || 0) + weight);
+    else if (c.winTier === 'qualified') queryQualified.set(queryId, (queryQualified.get(queryId) || 0) + weight);
     const outcomeLower = c.lastOutcome.toLowerCase();
     if (outcomeLower === 'not interested') {
-      queryNotInterested.set(queryId, (queryNotInterested.get(queryId) || 0) + 1);
+      queryNotInterested.set(queryId, (queryNotInterested.get(queryId) || 0) + weight);
     }
   }
 
@@ -466,15 +468,16 @@ async function attributeAndScore(
     const qualified = queryQualified.get(q.id) || 0;
     const notInterested = queryNotInterested.get(q.id) || 0;
 
-    const perfScore = (closed * 50) + (pipeline * 30) + (qualified * 15) - (notInterested * 15);
+    const perfScore = Math.round((closed * 50) + (pipeline * 30) + (qualified * 15) - (notInterested * 15));
 
     const computedRuns = (q.status === "Done" || q.status === "Error") ? Math.max(q.runs, 1) : q.runs;
 
-    if (wins !== q.wins || perfScore !== q.performanceScore || computedRuns !== q.runs) {
+    const roundedWins = Math.round(wins);
+    if (roundedWins !== q.wins || perfScore !== q.performanceScore || computedRuns !== q.runs) {
       updates.push({
         id: q.id,
         fields: {
-          Wins: wins,
+          Wins: roundedWins,
           Runs: computedRuns,
           Performance_Score: perfScore,
         },

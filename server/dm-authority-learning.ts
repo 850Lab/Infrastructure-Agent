@@ -1,5 +1,6 @@
 import { log } from "./logger";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
+import { getTimeWeight } from "./time-weight";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -121,6 +122,7 @@ export async function computeTitleEffectiveness(clientId?: string): Promise<DMAu
   const fields = [
     "Company_Name", "Category", "Opportunity_Type",
     "Offer_DM_Title_At_Contact", "Offer_DM_Outcome", "Offer_DM_Title",
+    "Offer_DM_Last_Selected",
   ];
 
   logAuth("Fetching companies with DM outcomes...");
@@ -147,6 +149,8 @@ export async function computeTitleEffectiveness(clientId?: string): Promise<DMAu
     const bucket = titleBucket(rawTitle);
     const outcome = String(f.Offer_DM_Outcome || "").trim();
     const category = String(f.Category || f.Opportunity_Type || "").trim();
+    const contactDate = f.Offer_DM_Last_Selected || null;
+    const weight = getTimeWeight(contactDate);
 
     if (!titleMap.has(bucket)) {
       titleMap.set(bucket, {
@@ -162,12 +166,12 @@ export async function computeTitleEffectiveness(clientId?: string): Promise<DMAu
     }
 
     const stats = titleMap.get(bucket)!;
-    stats.total_contacts++;
-    if (outcome === "reached_dm") stats.reached_dm++;
-    else if (outcome === "converted") stats.converted++;
-    else if (outcome === "wrong_person") stats.wrong_person++;
-    else if (outcome === "no_authority") stats.no_authority++;
-    else if (outcome === "rejected") stats.rejected++;
+    stats.total_contacts += weight;
+    if (outcome === "reached_dm") stats.reached_dm += weight;
+    else if (outcome === "converted") stats.converted += weight;
+    else if (outcome === "wrong_person") stats.wrong_person += weight;
+    else if (outcome === "no_authority") stats.no_authority += weight;
+    else if (outcome === "rejected") stats.rejected += weight;
 
     if (category) {
       const catKey = `${bucket}|||${category}`;
@@ -185,12 +189,12 @@ export async function computeTitleEffectiveness(clientId?: string): Promise<DMAu
         });
       }
       const catStats = catTitleMap.get(catKey)!;
-      catStats.total_contacts++;
-      if (outcome === "reached_dm") catStats.reached_dm++;
-      else if (outcome === "converted") catStats.converted++;
-      else if (outcome === "wrong_person") catStats.wrong_person++;
-      else if (outcome === "no_authority") catStats.no_authority++;
-      else if (outcome === "rejected") catStats.rejected++;
+      catStats.total_contacts += weight;
+      if (outcome === "reached_dm") catStats.reached_dm += weight;
+      else if (outcome === "converted") catStats.converted += weight;
+      else if (outcome === "wrong_person") catStats.wrong_person += weight;
+      else if (outcome === "no_authority") catStats.no_authority += weight;
+      else if (outcome === "rejected") catStats.rejected += weight;
     }
   }
 

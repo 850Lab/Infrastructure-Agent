@@ -240,6 +240,20 @@ export default function DashboardPage() {
     refetchInterval: 300000,
   });
 
+  const { data: weightedSignals } = useQuery<{
+    hasData: boolean;
+    recentSignals: number;
+    historicalSignals: number;
+    totalSignals: number;
+    recentWeightPct: number;
+    historicalWeightPct: number;
+    decayConstant: number;
+  }>({
+    queryKey: ["/api/analytics/weighted-signals"],
+    enabled: !!token,
+    refetchInterval: 300000,
+  });
+
   const { data: latestDiff } = useQuery<{
     run_id: string | null;
     started_at?: number;
@@ -906,7 +920,8 @@ export default function DashboardPage() {
         {((dmAuthorityData?.title_rankings && dmAuthorityData.title_rankings.length > 0) ||
           (queryIntelData?.topQueries && queryIntelData.topQueries.length > 0) ||
           queryIntelData?.winPatterns ||
-          authorityMissData?.hasData) && (
+          authorityMissData?.hasData ||
+          weightedSignals?.hasData) && (
           <div className="mt-6">
             <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
               Intelligence
@@ -1050,6 +1065,81 @@ export default function DashboardPage() {
                       : authorityMissData.missRate > 10
                       ? "Moderate — machine is learning correct targets"
                       : "Low — DM targeting is accurate"}
+                  </p>
+                </div>
+              )}
+
+              {weightedSignals?.hasData && (
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  }}
+                  data-testid="card-weighted-signals"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
+                      Signal Recency
+                    </p>
+                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
+                      {weightedSignals.totalSignals} signals
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-3 mb-3">
+                    <span
+                      className="text-3xl font-bold font-mono"
+                      style={{ color: "#10B981" }}
+                      data-testid="text-recent-weight-pct"
+                    >
+                      {weightedSignals.recentWeightPct}%
+                    </span>
+                    <span className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>
+                      recent influence
+                    </span>
+                  </div>
+                  <div className="w-full rounded-full flex overflow-hidden" style={{ height: "8px" }}>
+                    <div
+                      className="rounded-l-full"
+                      style={{
+                        width: `${weightedSignals.recentWeightPct}%`,
+                        background: "#10B981",
+                        transition: "width 0.5s ease",
+                      }}
+                    />
+                    <div
+                      className="rounded-r-full"
+                      style={{
+                        width: `${weightedSignals.historicalWeightPct}%`,
+                        background: "#94A3B8",
+                        transition: "width 0.5s ease",
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full" style={{ background: "#10B981" }} />
+                      <span className="text-xs font-mono" style={{ color: "#64748B" }} data-testid="text-recent-signals-count">
+                        {weightedSignals.recentSignals} recent
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full" style={{ background: "#94A3B8" }} />
+                      <span className="text-xs font-mono" style={{ color: "#64748B" }} data-testid="text-historical-signals-count">
+                        {weightedSignals.historicalSignals} historical
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs font-mono mt-2" style={{ color: "#94A3B8" }}>
+                    {weightedSignals.recentWeightPct >= 70
+                      ? "Strong recent signal base — learning is fresh"
+                      : weightedSignals.recentWeightPct >= 40
+                      ? "Balanced signal mix — good learning stability"
+                      : "Heavy historical influence — need fresh engagement data"}
+                  </p>
+                  <p className="text-xs font-mono mt-1" style={{ color: "#CBD5E1" }}>
+                    Decay window: {weightedSignals.decayConstant} days
                   </p>
                 </div>
               )}

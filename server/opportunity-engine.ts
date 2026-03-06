@@ -1,6 +1,7 @@
 import { resolveAndWriteDMs, type DMResolutionSummary } from "./dm-resolver";
 import { getIndustryConfig } from "./config";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
+import { getTimeWeight } from "./time-weight";
 
 interface CompanyRecord {
   id: string;
@@ -241,9 +242,10 @@ function deriveEngagementFacts(companyName: string, calls: CallRecord[]): Engage
 
 function computeFinalPriority(c: CompanyRecord): number {
   const cfg = getIndustryConfig().scoring;
+  const recencyWeight = getTimeWeight(c.firstSeen);
   let score = Math.floor(c.priorityScore * cfg.priority_weight);
-  score += Math.min(c.engagementScore, cfg.engagement_weight);
-  score += Math.min(c.opportunityScore, cfg.opportunity_weight);
+  score += Math.min(Math.round(c.engagementScore * recencyWeight), cfg.engagement_weight);
+  score += Math.min(Math.round(c.opportunityScore * recencyWeight), cfg.opportunity_weight);
   score += Math.min(Math.floor(c.activeWorkScore / 3), 20);
   if (c.phone && c.phone.length > 5) score += cfg.dm_phone_bonus * 2;
   if (c.priorityTier === "A") score += 15;

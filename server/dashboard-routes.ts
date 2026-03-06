@@ -14,6 +14,7 @@ import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { storage } from "./storage";
+import { getTimeWeight, getSignalAge, getDecayConstant } from "./time-weight";
 
 export { authMiddleware } from "./auth";
 
@@ -685,6 +686,99 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     } catch (err: any) {
       log(`Authority miss rate error: ${err.message}`, "analytics");
       res.status(500).json({ error: "Failed to compute authority miss rate" });
+    }
+  });
+
+  app.get("/api/analytics/weighted-signals", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const perms = getPermissions(req);
+      const clientId = perms?.clientId;
+
+      let key: string, base: string;
+      if (clientId) {
+        const cfg = await getClientAirtableConfig(clientId);
+        key = cfg.apiKey;
+        base = cfg.baseId;
+      } else {
+        key = AIRTABLE_API_KEY();
+        base = AIRTABLE_BASE_ID();
+      }
+      if (!key || !base) {
+        return res.json({ hasData: false });
+      }
+
+      const formula = clientId
+        ? scopedFormula(clientId, "{Times_Called}>0")
+        : "{Times_Called}>0";
+      const fields = ["First_Seen", "Engagement_Score", "Last_Outcome", "Lead_Status", "Win_Flag"]
+        .map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
+
+      let records: any[] = [];
+      let offset: string | undefined;
+
+      do {
+        const params = new URLSearchParams({ filterByFormula: formula, pageSize: "100" });
+        if (offset) params.set("offset", offset);
+        const resp = await fetch(
+          `https://api.airtable.com/v0/${base}/Companies?${params}&${fields}`,
+          { headers: { Authorization: `Bearer ${key}` } }
+        );
+        if (!resp.ok) break;
+        const data = await resp.json();
+        records = records.concat(data.records || []);
+        offset = data.offset;
+      } while (offset);
+
+      if (records.length === 0) {
+        return res.json({ hasData: false });
+      }
+
+      let recentWeightedSum = 0;
+      let historicalWeightedSum = 0;
+      let recentCount = 0;
+      let midCount = 0;
+      let historicalCount = 0;
+
+      const decayConstant = getDecayConstant();
+
+      for (const rec of records) {
+        const f = rec.fields;
+        const firstSeen = f.First_Seen || null;
+        const engagement = parseInt(f.Engagement_Score || "0", 10) || 0;
+        const age = getSignalAge(firstSeen);
+        const weight = getTimeWeight(firstSeen, decayConstant);
+
+        const signalStrength = Math.max(1, engagement);
+        const weightedSignal = signalStrength * weight;
+
+        if (age === "recent") {
+          recentCount++;
+          recentWeightedSum += weightedSignal;
+        } else if (age === "mid") {
+          midCount++;
+          historicalWeightedSum += weightedSignal;
+        } else {
+          historicalCount++;
+          historicalWeightedSum += weightedSignal;
+        }
+      }
+
+      const totalWeighted = recentWeightedSum + historicalWeightedSum;
+      const recentPct = totalWeighted > 0 ? Math.round((recentWeightedSum / totalWeighted) * 100) : 0;
+      const historicalPct = totalWeighted > 0 ? Math.round((historicalWeightedSum / totalWeighted) * 100) : 0;
+
+      res.json({
+        hasData: true,
+        recentSignals: recentCount,
+        historicalSignals: midCount + historicalCount,
+        totalSignals: records.length,
+        recentWeightPct: recentPct,
+        historicalWeightPct: historicalPct,
+        decayConstant,
+      });
+    } catch (err: any) {
+      log(`Weighted signals error: ${err.message}`, "analytics");
+      res.status(500).json({ error: "Failed to compute weighted signals" });
     }
   });
 }

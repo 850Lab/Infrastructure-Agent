@@ -54,4 +54,6 @@ export interface IndustryConfig {
     query_seeds: string[];
     gpt_prompt_context: string;
   };
+
+  decay_constant?: number;
 }
