@@ -1,7 +1,582 @@
 [
   {
+    "run_id": "run_1772813066230_n9szpu",
+    "started_at": 1772813066231,
+    "steps": [
+      {
+        "step": "recovery_engine",
+        "started_at": 1772813066933,
+        "status": "running"
+      }
+    ],
+    "errors": [],
+    "status": "running",
+    "clientId": "3dfe54de-caca-40de-a47a-7b825118738d",
+    "_airtable_id": "rectanwVA3NmtfawL"
+  },
+  {
+    "run_id": "run_1772813028922_tn5lzv",
+    "started_at": 1772813028922,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
+    "_airtable_id": "recIVQvaBC5EcIbE8"
+  },
+  {
+    "run_id": "run_1772812499067_i419gh",
+    "started_at": 1772812499067,
+    "finished_at": 1772812714131,
+    "status": "error",
+    "steps": [
+      {
+        "step": "recovery_engine",
+        "started_at": 1772812499792,
+        "status": "ok",
+        "finished_at": 1772812698795,
+        "duration_ms": 199003,
+        "stats": {
+          "queue": {
+            "added": 0,
+            "removed": 0,
+            "alreadyQueued": 429
+          },
+          "processing": {
+            "processed": 20,
+            "recovered": 2,
+            "skipped": 0,
+            "maxedOut": 0,
+            "ceilingReached": 0,
+            "breakdown": {
+              "NO_DM": {
+                "attempted": 20,
+                "succeeded": 2
+              }
+            }
+          }
+        }
+      },
+      {
+        "step": "outreach_engine",
+        "started_at": 1772812698796,
+        "status": "ok",
+        "finished_at": 1772812699032,
+        "duration_ms": 236,
+        "stats": {
+          "populate": {
+            "added": 0,
+            "skipped": 2
+          },
+          "advance": {
+            "advanced": 0,
+            "completed": 0,
+            "due": 0
+          }
+        }
+      },
+      {
+        "step": "opportunity_engine",
+        "started_at": 1772812699065,
+        "status": "error",
+        "finished_at": 1772812699193,
+        "duration_ms": 128
+      },
+      {
+        "step": "dm_coverage",
+        "started_at": 1772812699193,
+        "status": "error",
+        "finished_at": 1772812699350,
+        "duration_ms": 156
+      },
+      {
+        "step": "dm_fit",
+        "started_at": 1772812699350,
+        "status": "error",
+        "finished_at": 1772812699696,
+        "duration_ms": 346
+      },
+      {
+        "step": "dm_status",
+        "started_at": 1772812699697,
+        "status": "ok",
+        "finished_at": 1772812712364,
+        "duration_ms": 12667,
+        "stats": {
+          "total": 435,
+          "updated": 435,
+          "breakdown": {
+            "NO_DM": 392,
+            "NO_WEBSITE": 37,
+            "DM_READY": 1,
+            "DM_WEAK": 4,
+            "READY_FOR_OUTREACH": 1
+          }
+        }
+      },
+      {
+        "step": "playbooks",
+        "started_at": 1772812712365,
+        "status": "error",
+        "finished_at": 1772812712505,
+        "duration_ms": 140
+      },
+      {
+        "step": "call_engine",
+        "started_at": 1772812712720,
+        "status": "error",
+        "finished_at": 1772812712963,
+        "duration_ms": 243
+      },
+      {
+        "step": "sales_learning",
+        "started_at": 1772812712964,
+        "status": "ok",
+        "finished_at": 1772812713084,
+        "duration_ms": 120,
+        "stats": {
+          "calls_processed": 0,
+          "observations_created": 0,
+          "learning_records_created": 0,
+          "patterns_created": 0,
+          "patterns_updated": 0,
+          "patches_created": 0,
+          "patches_skipped": 0,
+          "errors": [
+            "fetch: Airtable error (422): {\"error\":{\"type\":\"UNKNOWN_FIELD_NAME\",\"message\":\"Unknown field name: \\\"Client_ID\\\"\"}}"
+          ],
+          "duration_ms": 120
+        }
+      },
+      {
+        "step": "query_intel",
+        "started_at": 1772812713085,
+        "status": "error",
+        "finished_at": 1772812713231,
+        "duration_ms": 146
+      }
+    ],
+    "summary": {
+      "errors_count": 6,
+      "warnings_count": 0,
+      "diff": {
+        "companies_added": 0,
+        "dms_added": 0,
+        "today_call_list_delta": 0,
+        "offer_dm_updated": 0,
+        "playbooks_generated": 0,
+        "queries_inserted": 0,
+        "queries_retired": 0,
+        "before": {
+          "companies_total": 0,
+          "dms_total": 0,
+          "today_call_list": 0,
+          "offer_dm_filled": 0,
+          "playbook_filled": 0,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772812499661
+        },
+        "after": {
+          "companies_total": 0,
+          "dms_total": 0,
+          "today_call_list": 0,
+          "offer_dm_filled": 0,
+          "playbook_filled": 0,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772812714131
+        }
+      },
+      "changeset": null
+    },
+    "errors": [
+      "Opportunity Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Coverage: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Fit: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Playbooks: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Call Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Query Intel: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}"
+    ],
+    "duration_ms": 215064,
+    "_airtable_id": "recOvMJ4paG5SHcuL"
+  },
+  {
+    "run_id": "run_1772811103749_wzl6so",
+    "started_at": 1772811103750,
+    "finished_at": 1772811310195,
+    "status": "error",
+    "steps": [
+      {
+        "step": "recovery_engine",
+        "started_at": 1772811104363,
+        "status": "ok",
+        "finished_at": 1772811295470,
+        "duration_ms": 191107,
+        "stats": {
+          "queue": {
+            "added": 0,
+            "removed": 0,
+            "alreadyQueued": 429
+          },
+          "processing": {
+            "processed": 20,
+            "recovered": 7,
+            "skipped": 0,
+            "maxedOut": 0,
+            "ceilingReached": 0,
+            "breakdown": {
+              "NO_DM": {
+                "attempted": 19,
+                "succeeded": 6
+              },
+              "NO_WEBSITE": {
+                "attempted": 1,
+                "succeeded": 1
+              }
+            }
+          }
+        }
+      },
+      {
+        "step": "outreach_engine",
+        "started_at": 1772811295471,
+        "status": "ok",
+        "finished_at": 1772811295721,
+        "duration_ms": 250,
+        "stats": {
+          "populate": {
+            "added": 0,
+            "skipped": 2
+          },
+          "advance": {
+            "advanced": 0,
+            "completed": 0,
+            "due": 0
+          }
+        }
+      },
+      {
+        "step": "opportunity_engine",
+        "started_at": 1772811295753,
+        "status": "error",
+        "finished_at": 1772811295921,
+        "duration_ms": 168
+      },
+      {
+        "step": "dm_coverage",
+        "started_at": 1772811295922,
+        "status": "error",
+        "finished_at": 1772811296071,
+        "duration_ms": 149
+      },
+      {
+        "step": "dm_fit",
+        "started_at": 1772811296072,
+        "status": "error",
+        "finished_at": 1772811296395,
+        "duration_ms": 323
+      },
+      {
+        "step": "dm_status",
+        "started_at": 1772811296396,
+        "status": "ok",
+        "finished_at": 1772811308357,
+        "duration_ms": 11961,
+        "stats": {
+          "total": 435,
+          "updated": 435,
+          "breakdown": {
+            "NO_DM": 392,
+            "NO_WEBSITE": 37,
+            "DM_READY": 1,
+            "DM_WEAK": 4,
+            "READY_FOR_OUTREACH": 1
+          }
+        }
+      },
+      {
+        "step": "playbooks",
+        "started_at": 1772811308358,
+        "status": "error",
+        "finished_at": 1772811308462,
+        "duration_ms": 104
+      },
+      {
+        "step": "call_engine",
+        "started_at": 1772811308695,
+        "status": "error",
+        "finished_at": 1772811308948,
+        "duration_ms": 252
+      },
+      {
+        "step": "sales_learning",
+        "started_at": 1772811308948,
+        "status": "ok",
+        "finished_at": 1772811309085,
+        "duration_ms": 136,
+        "stats": {
+          "calls_processed": 0,
+          "observations_created": 0,
+          "learning_records_created": 0,
+          "patterns_created": 0,
+          "patterns_updated": 0,
+          "patches_created": 0,
+          "patches_skipped": 0,
+          "errors": [
+            "fetch: Airtable error (422): {\"error\":{\"type\":\"UNKNOWN_FIELD_NAME\",\"message\":\"Unknown field name: \\\"Client_ID\\\"\"}}"
+          ],
+          "duration_ms": 135
+        }
+      },
+      {
+        "step": "query_intel",
+        "started_at": 1772811309085,
+        "status": "error",
+        "finished_at": 1772811309221,
+        "duration_ms": 136
+      }
+    ],
+    "summary": {
+      "errors_count": 6,
+      "warnings_count": 0,
+      "diff": {
+        "companies_added": 0,
+        "dms_added": 0,
+        "today_call_list_delta": 0,
+        "offer_dm_updated": 0,
+        "playbooks_generated": 0,
+        "queries_inserted": 0,
+        "queries_retired": 0,
+        "before": {
+          "companies_total": 0,
+          "dms_total": 0,
+          "today_call_list": 0,
+          "offer_dm_filled": 0,
+          "playbook_filled": 0,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772811104192
+        },
+        "after": {
+          "companies_total": 0,
+          "dms_total": 0,
+          "today_call_list": 0,
+          "offer_dm_filled": 0,
+          "playbook_filled": 0,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772811310194
+        }
+      },
+      "changeset": null
+    },
+    "errors": [
+      "Opportunity Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Coverage: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Fit: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Playbooks: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Call Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Query Intel: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}"
+    ],
+    "duration_ms": 206445,
+    "_airtable_id": "reciX7Je0mHPKu3N6"
+  },
+  {
+    "run_id": "run_1772810791142_k0g8wj",
+    "started_at": 1772810791143,
+    "finished_at": 1772811030143,
+    "status": "error",
+    "steps": [
+      {
+        "step": "bootstrap",
+        "started_at": 1772810791620,
+        "status": "ok",
+        "finished_at": 1772810808176,
+        "duration_ms": 16555,
+        "stats": {
+          "created": 91
+        }
+      },
+      {
+        "step": "recovery_engine",
+        "started_at": 1772810808285,
+        "status": "ok",
+        "finished_at": 1772810993393,
+        "duration_ms": 185108,
+        "stats": {
+          "queue": {
+            "added": 429,
+            "removed": 0,
+            "alreadyQueued": 0
+          },
+          "processing": {
+            "processed": 20,
+            "recovered": 4,
+            "skipped": 0,
+            "maxedOut": 0,
+            "ceilingReached": 0,
+            "breakdown": {
+              "NO_DM": {
+                "attempted": 18,
+                "succeeded": 4
+              },
+              "NO_WEBSITE": {
+                "attempted": 2,
+                "succeeded": 0
+              }
+            }
+          }
+        }
+      },
+      {
+        "step": "outreach_engine",
+        "started_at": 1772810993396,
+        "status": "ok",
+        "finished_at": 1772811015166,
+        "duration_ms": 21770,
+        "stats": {
+          "populate": {
+            "added": 2,
+            "skipped": 0
+          },
+          "advance": {
+            "advanced": 0,
+            "completed": 0,
+            "due": 0
+          }
+        }
+      },
+      {
+        "step": "opportunity_engine",
+        "started_at": 1772811015200,
+        "status": "error",
+        "finished_at": 1772811015498,
+        "duration_ms": 298
+      },
+      {
+        "step": "dm_coverage",
+        "started_at": 1772811015499,
+        "status": "error",
+        "finished_at": 1772811015666,
+        "duration_ms": 167
+      },
+      {
+        "step": "dm_fit",
+        "started_at": 1772811015667,
+        "status": "error",
+        "finished_at": 1772811016022,
+        "duration_ms": 354
+      },
+      {
+        "step": "dm_status",
+        "started_at": 1772811016022,
+        "status": "ok",
+        "finished_at": 1772811028349,
+        "duration_ms": 12327,
+        "stats": {
+          "total": 435,
+          "updated": 435,
+          "breakdown": {
+            "NO_DM": 392,
+            "NO_WEBSITE": 37,
+            "DM_READY": 1,
+            "DM_WEAK": 4,
+            "READY_FOR_OUTREACH": 1
+          }
+        }
+      },
+      {
+        "step": "playbooks",
+        "started_at": 1772811028350,
+        "status": "error",
+        "finished_at": 1772811028459,
+        "duration_ms": 109
+      },
+      {
+        "step": "call_engine",
+        "started_at": 1772811028742,
+        "status": "error",
+        "finished_at": 1772811029012,
+        "duration_ms": 270
+      },
+      {
+        "step": "sales_learning",
+        "started_at": 1772811029013,
+        "status": "ok",
+        "finished_at": 1772811029144,
+        "duration_ms": 131,
+        "stats": {
+          "calls_processed": 0,
+          "observations_created": 0,
+          "learning_records_created": 0,
+          "patterns_created": 0,
+          "patterns_updated": 0,
+          "patches_created": 0,
+          "patches_skipped": 0,
+          "errors": [
+            "fetch: Airtable error (422): {\"error\":{\"type\":\"UNKNOWN_FIELD_NAME\",\"message\":\"Unknown field name: \\\"Client_ID\\\"\"}}"
+          ],
+          "duration_ms": 129
+        }
+      },
+      {
+        "step": "query_intel",
+        "started_at": 1772811029145,
+        "status": "error",
+        "finished_at": 1772811029256,
+        "duration_ms": 111
+      }
+    ],
+    "summary": {
+      "errors_count": 6,
+      "warnings_count": 0,
+      "diff": {
+        "companies_added": 0,
+        "dms_added": 0,
+        "today_call_list_delta": 0,
+        "offer_dm_updated": 0,
+        "playbooks_generated": 0,
+        "queries_inserted": 0,
+        "queries_retired": 0,
+        "before": {
+          "companies_total": 0,
+          "dms_total": 0,
+          "today_call_list": 0,
+          "offer_dm_filled": 0,
+          "playbook_filled": 0,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772810791618
+        },
+        "after": {
+          "companies_total": 0,
+          "dms_total": 0,
+          "today_call_list": 0,
+          "offer_dm_filled": 0,
+          "playbook_filled": 0,
+          "queries_active": 0,
+          "queries_retired": 0,
+          "taken_at": 1772811030142
+        }
+      },
+      "changeset": null
+    },
+    "errors": [
+      "Opportunity Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Coverage: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Fit: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Playbooks: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Call Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Query Intel: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}"
+    ],
+    "duration_ms": 239000,
+    "_airtable_id": "receA0yYrZyM3IlyC"
+  },
+  {
     "run_id": "run_1772774694613_87i20y",
     "started_at": 1772774694613,
+    "finished_at": 1772774696388,
+    "status": "error",
     "steps": [
       {
         "step": "opportunity_engine",
@@ -66,19 +641,6 @@
         "duration_ms": 101
       }
     ],
-    "errors": [
-      "Opportunity Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
-      "DM Coverage: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
-      "DM Fit: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
-      "Playbooks: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
-      "Call Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
-      "Query Intel: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}"
-    ],
-    "status": "error",
-    "clientId": "3dfe54de-caca-40de-a47a-7b825118738d",
-    "_airtable_id": "recJKJT1z1AUNuYw0",
-    "finished_at": 1772774696388,
-    "duration_ms": 1775,
     "summary": {
       "errors_count": 6,
       "warnings_count": 0,
@@ -112,7 +674,17 @@
         }
       },
       "changeset": null
-    }
+    },
+    "errors": [
+      "Opportunity Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Coverage: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "DM Fit: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Playbooks: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Call Engine: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}",
+      "Query Intel: Airtable error (422): {\"error\":{\"type\":\"INVALID_FILTER_BY_FORMULA\",\"message\":\"The formula for filtering records is invalid: Unknown field names: client_id\"}}"
+    ],
+    "duration_ms": 1775,
+    "_airtable_id": "recJKJT1z1AUNuYw0"
   },
   {
     "run_id": "run_1772774591824_6x5274",

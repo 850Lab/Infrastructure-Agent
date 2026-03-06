@@ -9,6 +9,7 @@ import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
 import { exportTableCSV } from "./data-export";
 import { migrateClientData } from "./migrate-client-data";
 import { aggregatePlatformInsights, getPlatformInsightsForIndustry } from "./platform-insights";
+import { getSchedulerStatus, startScheduler, stopScheduler } from "./scheduler";
 
 const provisionSchema = z.object({
   clientName: z.string().min(1),
@@ -338,5 +339,21 @@ export async function registerAdminRoutes(app: Express): Promise<void> {
       log(`Platform insights aggregation error: ${err.message}`, "admin");
       res.status(500).json({ error: "Aggregation failed", message: err.message });
     }
+  });
+
+  app.get("/api/admin/scheduler", authMiddleware, requireRole("platform_admin"), (_req: Request, res: Response) => {
+    res.json(getSchedulerStatus());
+  });
+
+  app.post("/api/admin/scheduler/start", authMiddleware, requireRole("platform_admin"), (req: Request, res: Response) => {
+    const intervalHours = req.body?.intervalHours;
+    const intervalMs = intervalHours ? Math.max(intervalHours * 60 * 60 * 1000, 60 * 60 * 1000) : undefined;
+    startScheduler(intervalMs);
+    res.json({ success: true, ...getSchedulerStatus() });
+  });
+
+  app.post("/api/admin/scheduler/stop", authMiddleware, requireRole("platform_admin"), (_req: Request, res: Response) => {
+    stopScheduler();
+    res.json({ success: true, ...getSchedulerStatus() });
   });
 }
