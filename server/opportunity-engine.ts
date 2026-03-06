@@ -127,51 +127,65 @@ async function airtableRequest(path: string, options: RequestInit = {}, config?:
 async function fetchAllCompanies(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CompanyRecord[]> {
   const table = encodeURIComponent("Companies");
   const companies: CompanyRecord[] = [];
-  let offset: string | undefined;
 
-  do {
-    let params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
-    if (clientId) {
-      const formula = encodeURIComponent(scopedFormula(clientId));
-      params += `&filterByFormula=${formula}`;
-    }
-    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
+  const fetchPages = async (useScope: boolean) => {
+    companies.length = 0;
+    let offset: string | undefined;
+    do {
+      let params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
+      if (useScope && clientId) {
+        const formula = encodeURIComponent(scopedFormula(clientId));
+        if (formula) params += `&filterByFormula=${formula}`;
+      }
+      const data = await airtableRequest(`${table}${params}`, {}, atConfig);
+      for (const rec of data.records || []) {
+        const f = rec.fields;
+        companies.push({
+          id: rec.id,
+          companyName: String(f.company_name || f.Company_Name || "").trim(),
+          phone: String(f.phone || f.Phone || "").trim(),
+          leadStatus: String(f.Lead_Status || "").trim(),
+          priorityTier: String(f.Priority_Tier || "").trim(),
+          priorityScore: parseInt(f.Priority_Score || "0", 10) || 0,
+          engagementScore: parseInt(f.Engagement_Score || "0", 10) || 0,
+          opportunityScore: parseInt(f.Opportunity_Score || "0", 10) || 0,
+          activeWorkScore: parseInt(f.Active_Work_Score || "0", 10) || 0,
+          firstSeen: f.First_Seen || null,
+          timesCalled: parseInt(f.Times_Called || "0", 10) || 0,
+          lastOutcome: String(f.Last_Outcome || "").trim(),
+          followupDue: f.Followup_Due || null,
+          finalPriority: parseInt(f.Final_Priority || "0", 10) || 0,
+          todayCallList: !!f.Today_Call_List,
+          normalizedDomain: f.Normalized_Domain || null,
+          primaryDMName: String(f.Primary_DM_Name || "").trim(),
+          primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
+          primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
+          primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
+          primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
+          gatekeeperName: String(f.Gatekeeper_Name || "").trim(),
+          opportunityType: String(f.Opportunity_Type || "").trim(),
+          opportunitySignal: String(f.Opportunity_Signal || "").trim(),
+          existingRankVersion: String(f.Rank_Version || "").trim(),
+          offerDMName: String(f.Offer_DM_Name || "").trim(),
+          offerDMTitle: String(f.Offer_DM_Title || "").trim(),
+          offerDMFitScore: parseInt(f.Offer_DM_FitScore || "0", 10) || 0,
+        });
+      }
+      offset = data.offset;
+    } while (offset);
+  };
 
-    for (const rec of data.records || []) {
-      const f = rec.fields;
-      companies.push({
-        id: rec.id,
-        companyName: String(f.company_name || f.Company_Name || "").trim(),
-        phone: String(f.phone || f.Phone || "").trim(),
-        leadStatus: String(f.Lead_Status || "").trim(),
-        priorityTier: String(f.Priority_Tier || "").trim(),
-        priorityScore: parseInt(f.Priority_Score || "0", 10) || 0,
-        engagementScore: parseInt(f.Engagement_Score || "0", 10) || 0,
-        opportunityScore: parseInt(f.Opportunity_Score || "0", 10) || 0,
-        activeWorkScore: parseInt(f.Active_Work_Score || "0", 10) || 0,
-        firstSeen: f.First_Seen || null,
-        timesCalled: parseInt(f.Times_Called || "0", 10) || 0,
-        lastOutcome: String(f.Last_Outcome || "").trim(),
-        followupDue: f.Followup_Due || null,
-        finalPriority: parseInt(f.Final_Priority || "0", 10) || 0,
-        todayCallList: !!f.Today_Call_List,
-        normalizedDomain: f.Normalized_Domain || null,
-        primaryDMName: String(f.Primary_DM_Name || "").trim(),
-        primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
-        primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
-        primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
-        primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
-        gatekeeperName: String(f.Gatekeeper_Name || "").trim(),
-        opportunityType: String(f.Opportunity_Type || "").trim(),
-        opportunitySignal: String(f.Opportunity_Signal || "").trim(),
-        existingRankVersion: String(f.Rank_Version || "").trim(),
-        offerDMName: String(f.Offer_DM_Name || "").trim(),
-        offerDMTitle: String(f.Offer_DM_Title || "").trim(),
-        offerDMFitScore: parseInt(f.Offer_DM_FitScore || "0", 10) || 0,
-      });
+  try {
+    await fetchPages(!!clientId);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      await fetchPages(false);
+    } else {
+      throw e;
     }
-    offset = data.offset;
-  } while (offset);
+  }
 
   return companies;
 }
@@ -179,28 +193,42 @@ async function fetchAllCompanies(clientId?: string, atConfig?: { apiKey: string;
 async function fetchAllCalls(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CallRecord[]> {
   const table = encodeURIComponent("Calls");
   const calls: CallRecord[] = [];
-  let offset: string | undefined;
 
-  do {
-    let params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
-    if (clientId) {
-      const formula = encodeURIComponent(scopedFormula(clientId));
-      params += `&filterByFormula=${formula}`;
-    }
-    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
+  const fetchPages = async (useScope: boolean) => {
+    calls.length = 0;
+    let offset: string | undefined;
+    do {
+      let params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
+      if (useScope && clientId) {
+        const formula = encodeURIComponent(scopedFormula(clientId));
+        if (formula) params += `&filterByFormula=${formula}`;
+      }
+      const data = await airtableRequest(`${table}${params}`, {}, atConfig);
+      for (const rec of data.records || []) {
+        const f = rec.fields;
+        calls.push({
+          id: rec.id,
+          company: String(f.Company || "").trim(),
+          outcome: String(f.Outcome || "").trim(),
+          callTime: String(f.Call_Time || ""),
+          nextFollowup: f.Next_Followup || null,
+        });
+      }
+      offset = data.offset;
+    } while (offset);
+  };
 
-    for (const rec of data.records || []) {
-      const f = rec.fields;
-      calls.push({
-        id: rec.id,
-        company: String(f.Company || "").trim(),
-        outcome: String(f.Outcome || "").trim(),
-        callTime: String(f.Call_Time || ""),
-        nextFollowup: f.Next_Followup || null,
-      });
+  try {
+    await fetchPages(!!clientId);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      await fetchPages(false);
+    } else {
+      throw e;
     }
-    offset = data.offset;
-  } while (offset);
+  }
 
   return calls;
 }

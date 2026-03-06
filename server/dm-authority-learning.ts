@@ -116,17 +116,28 @@ function titleBucketToPattern(bucket: string): RegExp {
 
 export async function computeTitleEffectiveness(clientId?: string): Promise<DMAuthorityReport> {
   const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
-  const sf = (formula: string) => clientId ? scopedFormula(clientId, formula) : formula;
+  const sf = (f: string) => clientId ? scopedFormula(clientId, f) : f;
 
-  const formula = sf("{Offer_DM_Outcome}!=''");
+  const baseFormula = "{Offer_DM_Outcome}!=''";
   const fields = [
-    "Company_Name", "Category", "Opportunity_Type",
+    "company_name", "category", "Opportunity_Type",
     "Offer_DM_Title_At_Contact", "Offer_DM_Outcome", "Offer_DM_Title",
     "Offer_DM_Last_Selected",
   ];
 
   logAuth("Fetching companies with DM outcomes...");
-  const records = await fetchAllPaginated("Companies", formula, fields, atConfig);
+  let records;
+  try {
+    records = await fetchAllPaginated("Companies", sf(baseFormula), fields, atConfig);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      records = await fetchAllPaginated("Companies", baseFormula, fields, atConfig);
+    } else {
+      throw e;
+    }
+  }
   logAuth(`Found ${records.length} companies with DM outcome data`);
 
   if (records.length === 0) {
@@ -148,7 +159,7 @@ export async function computeTitleEffectiveness(clientId?: string): Promise<DMAu
 
     const bucket = titleBucket(rawTitle);
     const outcome = String(f.Offer_DM_Outcome || "").trim();
-    const category = String(f.Category || f.Opportunity_Type || "").trim();
+    const category = String(f.category || f.Category || f.Opportunity_Type || "").trim();
     const contactDate = f.Offer_DM_Last_Selected || null;
     const weight = getTimeWeight(contactDate);
 

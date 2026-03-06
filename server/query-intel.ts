@@ -185,18 +185,32 @@ export interface QueryIntelResult {
 export async function runQueryIntel(config: QueryIntelConfig, clientId?: string): Promise<QueryIntelResult> {
   logQI("Fetching all data...");
 
-  const clientFilter = clientId ? scopedFormula(clientId) : undefined;
+  const fetchData = async (useScope: boolean) => {
+    const clientFilter = useScope && clientId ? scopedFormula(clientId) : undefined;
+    return Promise.all([
+      fetchAllPaginated("Search_Queries", clientFilter),
+      fetchAllPaginated("Companies", clientFilter, [
+        "company_name", "category", "city", "state",
+        "Source_Query", "First_Seen", "Times_Called", "Lead_Status", "Engagement_Score",
+        "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone", "Final_Priority",
+        "Last_Outcome", "Win_Flag", "Notes"
+      ]),
+      fetchAllPaginated("Opportunities", clientFilter, ["Company", "Stage"]).catch(() => []),
+    ]);
+  };
 
-  const [queryRecords, companyRecords, opportunityRecords] = await Promise.all([
-    fetchAllPaginated("Search_Queries", clientFilter),
-    fetchAllPaginated("Companies", clientFilter, [
-      "company_name", "Company_Name", "Category", "category", "city", "City", "state", "State",
-      "Source_Query", "First_Seen", "Times_Called", "Lead_Status", "Engagement_Score",
-      "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone", "Final_Priority",
-      "Last_Outcome", "Win_Flag", "Notes", "notes", "Opportunity_Stage"
-    ]),
-    fetchAllPaginated("Opportunities", clientFilter, ["Company", "Stage"]).catch(() => []),
-  ]);
+  let queryRecords, companyRecords, opportunityRecords;
+  try {
+    [queryRecords, companyRecords, opportunityRecords] = await fetchData(!!clientId);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      [queryRecords, companyRecords, opportunityRecords] = await fetchData(false);
+    } else {
+      throw e;
+    }
+  }
 
   const opportunityStageMap = new Map<string, string>();
   for (const rec of opportunityRecords) {
@@ -327,7 +341,23 @@ export async function runQueryIntel(config: QueryIntelConfig, clientId?: string)
           });
           queriesInserted += batch.length;
         } catch (e: any) {
-          logQI(`Insert error: ${e.message}`);
+          if (clientId && (e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+            const recordsNoScope = records.map((r: any) => {
+              const { Client_ID, ...rest } = r.fields;
+              return { fields: rest };
+            });
+            try {
+              await airtableRequest(table, {
+                method: "POST",
+                body: JSON.stringify({ records: recordsNoScope }),
+              });
+              queriesInserted += batch.length;
+            } catch (e2: any) {
+              logQI(`Insert error: ${e2.message}`);
+            }
+          } else {
+            logQI(`Insert error: ${e.message}`);
+          }
         }
       }
     }
@@ -735,18 +765,32 @@ export interface QueryIntelSummary {
 }
 
 export async function getQueryIntelSummary(clientId?: string): Promise<QueryIntelSummary> {
-  const clientFilter = clientId ? scopedFormula(clientId) : undefined;
+  const fetchData = async (useScope: boolean) => {
+    const clientFilter = useScope && clientId ? scopedFormula(clientId) : undefined;
+    return Promise.all([
+      fetchAllPaginated("Search_Queries", clientFilter),
+      fetchAllPaginated("Companies", clientFilter, [
+        "company_name", "category", "city", "state",
+        "Source_Query", "First_Seen", "Times_Called", "Lead_Status", "Engagement_Score",
+        "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone", "Final_Priority",
+        "Last_Outcome", "Win_Flag", "Notes"
+      ]),
+      fetchAllPaginated("Opportunities", clientFilter, ["Company", "Stage"]).catch(() => []),
+    ]);
+  };
 
-  const [queryRecords, companyRecords, opportunityRecords] = await Promise.all([
-    fetchAllPaginated("Search_Queries", clientFilter),
-    fetchAllPaginated("Companies", clientFilter, [
-      "company_name", "Company_Name", "Category", "category", "city", "City", "state", "State",
-      "Source_Query", "First_Seen", "Times_Called", "Lead_Status", "Engagement_Score",
-      "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone", "Final_Priority",
-      "Last_Outcome", "Win_Flag", "Notes", "notes", "Opportunity_Stage"
-    ]),
-    fetchAllPaginated("Opportunities", clientFilter, ["Company", "Stage"]).catch(() => []),
-  ]);
+  let queryRecords, companyRecords, opportunityRecords;
+  try {
+    [queryRecords, companyRecords, opportunityRecords] = await fetchData(!!clientId);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      [queryRecords, companyRecords, opportunityRecords] = await fetchData(false);
+    } else {
+      throw e;
+    }
+  }
 
   const opportunityStageMap = new Map<string, string>();
   for (const rec of opportunityRecords) {

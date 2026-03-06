@@ -95,25 +95,39 @@ async function airtableRequest(path: string, options: RequestInit = {}, config?:
 export async function fetchUnprocessedCalls(clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CallRecord[]> {
   const table = encodeURIComponent("Calls");
   const baseFormula = "AND({Outcome} != '', {Call_Time} != '', NOT({Processed}))";
-  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const calls: CallRecord[] = [];
-  let offset: string | undefined;
 
-  do {
-    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`, {}, atConfig);
+  const fetchPages = async (useScope: boolean) => {
+    calls.length = 0;
+    const formula = encodeURIComponent(useScope && clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+    let offset: string | undefined;
+    do {
+      const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`, {}, atConfig);
+      for (const rec of data.records || []) {
+        calls.push({
+          id: rec.id,
+          company: String(rec.fields.Company || "").trim(),
+          outcome: String(rec.fields.Outcome || "").trim(),
+          callTime: String(rec.fields.Call_Time || ""),
+          notes: String(rec.fields.Notes || ""),
+          gatekeeperName: String(rec.fields.Gatekeeper_Name || "").trim(),
+        });
+      }
+      offset = data.offset;
+    } while (offset);
+  };
 
-    for (const rec of data.records || []) {
-      calls.push({
-        id: rec.id,
-        company: String(rec.fields.Company || "").trim(),
-        outcome: String(rec.fields.Outcome || "").trim(),
-        callTime: String(rec.fields.Call_Time || ""),
-        notes: String(rec.fields.Notes || ""),
-        gatekeeperName: String(rec.fields.Gatekeeper_Name || "").trim(),
-      });
+  try {
+    await fetchPages(!!clientId);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      await fetchPages(false);
+    } else {
+      throw e;
     }
-    offset = data.offset;
-  } while (offset);
+  }
 
   return calls;
 }
@@ -133,10 +147,25 @@ async function findCompanyByName(companyName: string, clientId?: string, atConfi
   const table = encodeURIComponent("Companies");
   const escaped = companyName.replace(/'/g, "\\'");
   const baseFormula = `LOWER({company_name}) = LOWER('${escaped}')`;
-  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+
+  const tryFetch = async (useScope: boolean) => {
+    const formula = encodeURIComponent(useScope && clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+    return airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`, {}, atConfig);
+  };
 
   try {
-    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1`, {}, atConfig);
+    let data;
+    try {
+      data = await tryFetch(!!clientId);
+    } catch (e: any) {
+      if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+        const { markClientIdMissing } = await import("./airtable-scoped");
+        markClientIdMissing();
+        data = await tryFetch(false);
+      } else {
+        throw e;
+      }
+    }
     const rec = data.records?.[0];
     if (!rec) return null;
     return {

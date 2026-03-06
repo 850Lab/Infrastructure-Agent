@@ -1,5 +1,5 @@
 import { log } from "./logger";
-import { getClientAirtableConfig, scopedFormula } from "./airtable-scoped";
+import { getClientAirtableConfig, scopedFormula, markClientIdMissing } from "./airtable-scoped";
 import { storage } from "./storage";
 
 function logRecovery(msg: string) {
@@ -159,7 +159,7 @@ async function executeRecoveryAction(
         const result = await searchGoogleMaps(company.companyName);
         if (result && (result.site || result.phone)) {
           const updates: Record<string, any> = {};
-          if (result.site && !company.website) updates.Website = result.site;
+          if (result.site && !company.website) updates.website = result.site;
           if (result.phone) updates.Primary_DM_Phone = result.phone;
           if (Object.keys(updates).length > 0) {
             await airtableRequest("Companies", {
@@ -284,6 +284,7 @@ export async function populateRecoveryQueue(clientId: string): Promise<{ added: 
   } catch (e: any) {
     if (e.message.includes("UNKNOWN_FIELD_NAME") || e.message.includes("Unknown field")) {
       logRecovery("Client_ID field not found — fetching all records");
+      markClientIdMissing();
       allRecords.length = 0;
       await fetchAllPages(false);
     } else {

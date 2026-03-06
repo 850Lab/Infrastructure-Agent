@@ -44,23 +44,34 @@ interface UnprocessedCall {
 async function fetchUnprocessedCalls(clientId: string, limit: number): Promise<UnprocessedCall[]> {
   const table = encodeURIComponent("Calls");
   const baseFormula = `AND({Transcription}!='',OR({Sales_Learning_Processed}=FALSE(),{Sales_Learning_Processed}=BLANK()))`;
-  const formula = encodeURIComponent(scopedFormula(clientId, baseFormula));
-  const fields = ["Company", "Outcome", "Gatekeeper_Name", "Call_Time", "Transcription", "Client_ID"];
+  const fields = ["Company", "Outcome", "Gatekeeper_Name", "Call_Time", "Transcription"];
   const fieldParams = fields.map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
 
-  const all: UnprocessedCall[] = [];
-  let offset: string | undefined;
+  const fetchPages = async (useScope: boolean) => {
+    const formula = encodeURIComponent(useScope ? scopedFormula(clientId, baseFormula) : baseFormula);
+    const all: UnprocessedCall[] = [];
+    let offset: string | undefined;
+    do {
+      let url = `${table}?pageSize=100&filterByFormula=${formula}&sort[0][field]=Call_Time&sort[0][direction]=desc&${fieldParams}`;
+      if (offset) url += `&offset=${offset}`;
+      const data = await airtableRequest(url);
+      all.push(...(data.records || []));
+      offset = data.offset;
+      if (all.length >= limit) break;
+    } while (offset);
+    return all.slice(0, limit);
+  };
 
-  do {
-    let url = `${table}?pageSize=100&filterByFormula=${formula}&sort[0][field]=Call_Time&sort[0][direction]=desc&${fieldParams}`;
-    if (offset) url += `&offset=${offset}`;
-    const data = await airtableRequest(url);
-    all.push(...(data.records || []));
-    offset = data.offset;
-    if (all.length >= limit) break;
-  } while (offset);
-
-  return all.slice(0, limit);
+  try {
+    return await fetchPages(true);
+  } catch (e: any) {
+    if (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field")) {
+      const { markClientIdMissing } = await import("../airtable-scoped");
+      markClientIdMissing();
+      return await fetchPages(false);
+    }
+    throw e;
+  }
 }
 
 async function markProcessed(callId: string): Promise<void> {

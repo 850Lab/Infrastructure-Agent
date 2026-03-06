@@ -43,3 +43,6 @@ Key features include a **Command Center Dashboard**, **Lead Engine**, **DM Enric
 -   **Apollo.io**: Used for decision-maker enrichment and data acquisition.
 -   **Outscraper**: Utilized for Google Maps searches and website lookup services.
 -   **PostgreSQL**: Stores webhook processing logs, user accounts, and client registry.
+
+## Airtable Field Name Reference
+The Airtable Companies table uses **lowercase** field names for core fields: `company_name`, `category`, `website`, `city`, `state`. These do NOT have uppercase variants (no `Company_Name`, `Category`, `Website`, `City`, `State`). The `Client_ID` field does NOT exist in Companies, Calls, or Search_Queries tables — all scoped fetches use the `markClientIdMissing()` fallback pattern. The `notes` field is `Notes` (uppercase). Fields like `Source_Query`, `First_Seen`, `Times_Called`, `Lead_Status`, etc. remain mixed-case. The `Opportunity_Stage` field does NOT exist on Companies — opportunity stages come from the separate `Opportunities` table.

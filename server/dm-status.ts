@@ -151,6 +151,8 @@ export async function updateDMStatus(clientId?: string): Promise<{ total: number
   } catch (e: any) {
     if (clientId && (e.message.includes("UNKNOWN_FIELD_NAME") || e.message.includes("Unknown field"))) {
       logStatus("Client_ID field not found — fetching all records without scope filter");
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
       allRecords.length = 0;
       await fetchAllPages(false);
     } else {

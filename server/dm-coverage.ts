@@ -52,35 +52,49 @@ interface CallListCompany {
 async function fetchCallListCompanies(top: number, clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<CallListCompany[]> {
   const table = encodeURIComponent("Companies");
   const baseFormula = "{Today_Call_List}=TRUE()";
-  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const companies: CallListCompany[] = [];
-  let offset: string | undefined;
 
-  do {
-    const params = `?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`;
-    const data = await airtableRequest(`${table}${params}`, {}, atConfig);
+  const fetchPages = async (useScope: boolean) => {
+    companies.length = 0;
+    const formula = encodeURIComponent(useScope && clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+    let offset: string | undefined;
+    do {
+      const params = `?filterByFormula=${formula}&pageSize=100${offset ? `&offset=${offset}` : ""}`;
+      const data = await airtableRequest(`${table}${params}`, {}, atConfig);
+      for (const rec of data.records || []) {
+        const f = rec.fields;
+        companies.push({
+          id: rec.id,
+          companyName: String(f.company_name || "").trim(),
+          website: String(f.website || "").trim(),
+          normalizedDomain: f.Normalized_Domain || null,
+          dmCoverageStatus: String(f.DM_Coverage_Status || "").trim(),
+          dmLastEnriched: f.DM_Last_Enriched || null,
+          dmCount: parseInt(f.DM_Count || "0", 10) || 0,
+          finalPriority: parseInt(f.Final_Priority || "0", 10) || 0,
+          bucket: String(f.Bucket || "").trim(),
+          primaryDMName: String(f.Primary_DM_Name || "").trim(),
+          primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
+          primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
+          primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
+          primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
+        });
+      }
+      offset = data.offset;
+    } while (offset);
+  };
 
-    for (const rec of data.records || []) {
-      const f = rec.fields;
-      companies.push({
-        id: rec.id,
-        companyName: String(f.company_name || "").trim(),
-        website: String(f.website || "").trim(),
-        normalizedDomain: f.Normalized_Domain || null,
-        dmCoverageStatus: String(f.DM_Coverage_Status || "").trim(),
-        dmLastEnriched: f.DM_Last_Enriched || null,
-        dmCount: parseInt(f.DM_Count || "0", 10) || 0,
-        finalPriority: parseInt(f.Final_Priority || "0", 10) || 0,
-        bucket: String(f.Bucket || "").trim(),
-        primaryDMName: String(f.Primary_DM_Name || "").trim(),
-        primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
-        primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
-        primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
-        primaryDMConfidence: parseInt(f.Primary_DM_Confidence || "0", 10) || 0,
-      });
+  try {
+    await fetchPages(!!clientId);
+  } catch (e: any) {
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      await fetchPages(false);
+    } else {
+      throw e;
     }
-    offset = data.offset;
-  } while (offset);
+  }
 
   companies.sort((a, b) => b.finalPriority - a.finalPriority);
   return companies.slice(0, top);

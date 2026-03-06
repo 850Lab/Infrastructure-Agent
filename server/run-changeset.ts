@@ -64,18 +64,18 @@ async function airtableRequest(pathStr: string, options: RequestInit = {}): Prom
 export async function snapshotTodayListFields(clientId?: string): Promise<Map<string, { companyName: string; fields: Record<string, any> }>> {
   const table = encodeURIComponent("Companies");
   const baseFormula = `{Today_Call_List}=TRUE()`;
-  const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
   const allFields = getAllTrackedFields();
   const fieldParams = allFields.map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
 
   const snapshot = new Map<string, { companyName: string; fields: Record<string, any> }>();
-  let offset: string | undefined;
 
-  try {
+  const fetchPages = async (useScope: boolean) => {
+    snapshot.clear();
+    const formula = encodeURIComponent(useScope && clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+    let offset: string | undefined;
     do {
       let url = `${table}?pageSize=100&filterByFormula=${formula}&fields[]=${encodeURIComponent("company_name")}&${fieldParams}`;
       if (offset) url += `&offset=${offset}`;
-
       const data = await airtableRequest(url);
       for (const rec of data.records || []) {
         const fields: Record<string, any> = {};
@@ -89,8 +89,22 @@ export async function snapshotTodayListFields(clientId?: string): Promise<Map<st
       }
       offset = data.offset;
     } while (offset);
+  };
+
+  try {
+    await fetchPages(!!clientId);
   } catch (e: any) {
-    log(`Snapshot error: ${e.message}`, "changeset");
+    if (clientId && (e.message.includes("INVALID_FILTER") || e.message.includes("UNKNOWN_FIELD") || e.message.includes("Unknown field"))) {
+      const { markClientIdMissing } = await import("./airtable-scoped");
+      markClientIdMissing();
+      try {
+        await fetchPages(false);
+      } catch (e2: any) {
+        log(`Snapshot error: ${e2.message}`, "changeset");
+      }
+    } else {
+      log(`Snapshot error: ${e.message}`, "changeset");
+    }
   }
 
   return snapshot;

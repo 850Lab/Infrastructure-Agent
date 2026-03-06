@@ -36,7 +36,7 @@ async function airtableCount(table: string, formula?: string): Promise<number> {
 
   try {
     do {
-      const params = new URLSearchParams({ pageSize: "100", "fields[]": "Name" });
+      const params = new URLSearchParams({ pageSize: "100" });
       if (formula) params.set("filterByFormula", formula);
       if (offset) params.set("offset", offset);
 

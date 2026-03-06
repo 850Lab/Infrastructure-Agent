@@ -310,6 +310,7 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
         return r;
       }, clientId);
     } catch (e: any) {
+      log(`Query Intel failed: ${e.message}`, "daily-web");
       errors.push(`Query Intel: ${e.message}`);
     }
 

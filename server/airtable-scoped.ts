@@ -1,11 +1,28 @@
 import { storage } from "./storage";
+import { log } from "./logger";
+
+let clientIdFieldKnownMissing = false;
 
 export function scopedFormula(clientId: string, existingFormula?: string): string {
+  if (clientIdFieldKnownMissing) {
+    return existingFormula || "";
+  }
   const clientFilter = `{Client_ID}='${clientId}'`;
   if (!existingFormula || existingFormula.trim() === "") {
     return clientFilter;
   }
   return `AND(${clientFilter}, ${existingFormula})`;
+}
+
+export function markClientIdMissing(): void {
+  if (!clientIdFieldKnownMissing) {
+    clientIdFieldKnownMissing = true;
+    log("Client_ID field not found in Airtable — all subsequent queries will skip scope filter", "airtable-scoped");
+  }
+}
+
+export function isClientIdFieldAvailable(): boolean {
+  return !clientIdFieldKnownMissing;
 }
 
 export async function getClientAirtableConfig(clientId: string): Promise<{ apiKey: string; baseId: string }> {
