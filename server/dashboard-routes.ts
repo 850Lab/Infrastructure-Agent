@@ -581,6 +581,83 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/query-performance", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const perms = getPermissions(req);
+      const clientId = perms?.clientId;
+
+      let key: string, base: string;
+      if (clientId) {
+        const cfg = await getClientAirtableConfig(clientId);
+        key = cfg.apiKey;
+        base = cfg.baseId;
+      } else {
+        key = AIRTABLE_API_KEY();
+        base = AIRTABLE_BASE_ID();
+      }
+      if (!key || !base) {
+        return res.json({ ColdStart: null, QueryIntel: null, WinPattern: null, hasData: false });
+      }
+
+      const modes = ["ColdStart", "QueryIntel", "WinPattern"] as const;
+      const result: Record<string, { leads: number; dm_found: number; dm_rate: number; positive_calls: number; positive_call_rate: number; opportunities: number; opportunity_rate: number } | null> = {};
+
+      for (const mode of modes) {
+        const baseFormula = `{Source_Query_Mode} = '${mode}'`;
+        const filter = clientId ? scopedFormula(clientId, baseFormula) : baseFormula;
+        const fields = ["Source_Query_Mode", "DM_Coverage_Status", "Last_Outcome", "Lead_Status", "Win_Flag"].map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
+
+        let records: any[] = [];
+        let offset: string | undefined;
+
+        do {
+          const params = new URLSearchParams({ filterByFormula: filter, pageSize: "100" });
+          if (offset) params.set("offset", offset);
+
+          const resp = await fetch(
+            `https://api.airtable.com/v0/${base}/Companies?${params}&${fields}`,
+            { headers: { Authorization: `Bearer ${key}` } }
+          );
+          if (!resp.ok) break;
+          const data = await resp.json();
+          records = records.concat(data.records || []);
+          offset = data.offset;
+        } while (offset);
+
+        if (records.length === 0) {
+          result[mode] = null;
+          continue;
+        }
+
+        const leads = records.length;
+        const dmFound = records.filter((r: any) => r.fields.DM_Coverage_Status === "Ready").length;
+        const positiveCalls = records.filter((r: any) => {
+          const outcome = r.fields.Last_Outcome;
+          return outcome === "Decision Maker" || outcome === "Qualified" || outcome === "Callback" || outcome === "Won";
+        }).length;
+        const opportunities = records.filter((r: any) => {
+          return r.fields.Lead_Status === "Won" || r.fields.Win_Flag === true;
+        }).length;
+
+        result[mode] = {
+          leads,
+          dm_found: dmFound,
+          dm_rate: leads > 0 ? Math.round((dmFound / leads) * 100) : 0,
+          positive_calls: positiveCalls,
+          positive_call_rate: leads > 0 ? Math.round((positiveCalls / leads) * 100) : 0,
+          opportunities,
+          opportunity_rate: leads > 0 ? Math.round((opportunities / leads) * 100) : 0,
+        };
+      }
+
+      const hasData = Object.values(result).some(v => v !== null);
+      res.json({ ...result, hasData });
+    } catch (err: any) {
+      log(`Query performance error: ${err.message}`, "analytics");
+      res.status(500).json({ error: "Failed to compute query performance" });
+    }
+  });
+
   app.get("/api/analytics/authority-miss-rate", authMiddleware, async (req: Request, res: Response) => {
     try {
       const clientId = (req as any).user?.clientId;

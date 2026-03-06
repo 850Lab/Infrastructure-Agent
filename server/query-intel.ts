@@ -313,6 +313,7 @@ export async function runQueryIntel(config: QueryIntelConfig, clientId?: string)
             Wins: 0,
             Performance_Score: 0,
             Last_Generated_By: generatedBy,
+            Generation_Mode: generatedBy,
             Notes: `Rationale: ${q.rationale}`,
             ...(clientId ? { Client_ID: clientId } : {}),
           },

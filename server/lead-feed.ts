@@ -251,6 +251,8 @@ Return a JSON array of ${count} query strings.`,
           category: catMatch ? catMatch[0] : cfg.company_categories[0] || "Other",
           status: "Queued",
           results_count: 0,
+          Last_Generated_By: "ColdStart",
+          Generation_Mode: "ColdStart",
           ...(clientId ? { Client_ID: clientId } : {}),
         },
       };
@@ -271,7 +273,7 @@ Return a JSON array of ${count} query strings.`,
   return { generated: queries.length, written, duplicatesSkipped, queries: newQueries };
 }
 
-async function fetchQueuedQueries(limit: number, clientId?: string): Promise<Array<{ id: string; query: string; market: string; category: string }>> {
+async function fetchQueuedQueries(limit: number, clientId?: string): Promise<Array<{ id: string; query: string; market: string; category: string; generationMode: string }>> {
   const table = encodeURIComponent(QUERIES_TABLE);
   const baseFormula = "{status} = 'Queued'";
   const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
@@ -282,6 +284,7 @@ async function fetchQueuedQueries(limit: number, clientId?: string): Promise<Arr
     query: r.fields.query_text || "",
     market: r.fields.market || "",
     category: r.fields.category || "",
+    generationMode: r.fields.Generation_Mode || r.fields.Last_Generated_By || "ColdStart",
   })).filter((q: any) => q.query);
 }
 
@@ -500,12 +503,14 @@ export async function runOutscraper(queryLimit: number = 5, clientId?: string): 
               queryUpdated++;
             }
           } else {
+            const queryMode = q.generationMode === "SetupWizard" ? "ColdStart" : q.generationMode;
             const newFields: Record<string, any> = {
               company_name: parsed.name,
               Normalized_Name: normalizedName,
               Dedupe_Key: dedupeKey,
               source: "Outscraper",
               Source_Query: q.query,
+              Source_Query_Mode: queryMode,
               Lead_Status: "New",
               Priority_Score: score,
               ...(clientId ? { Client_ID: clientId } : {}),

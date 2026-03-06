@@ -205,6 +205,21 @@ const SEARCH_QUERIES_FIELDS: FieldSpec[] = [
   { name: "Runs", type: "number", options: { precision: 0 } },
   { name: "Wins", type: "number", options: { precision: 0 } },
   { name: "Last_Generated_By", type: "singleLineText" },
+  {
+    name: "Generation_Mode",
+    type: "singleSelect",
+    options: {
+      choices: [
+        { name: "ColdStart", color: "blueLight2" },
+        { name: "QueryIntel", color: "cyanLight2" },
+        { name: "WinPattern", color: "greenLight2" },
+      ],
+    },
+  },
+  { name: "Leads_Produced", type: "number", options: { precision: 0 } },
+  { name: "DM_Found_Count", type: "number", options: { precision: 0 } },
+  { name: "Positive_Call_Count", type: "number", options: { precision: 0 } },
+  { name: "Opportunity_Count", type: "number", options: { precision: 0 } },
   { name: "Retired", type: "checkbox", options: { color: "greenBright", icon: "check" } },
 ];
 
@@ -348,6 +363,7 @@ const COMPANIES_FIELDS: FieldSpec[] = [
   },
   { name: "DM_Count", type: "number", options: { precision: 0 } },
   { name: "Source_Query", type: "singleLineText" },
+  { name: "Source_Query_Mode", type: "singleLineText" },
   { name: "Win_Flag", type: "checkbox", options: { color: "greenBright", icon: "check" } },
   { name: "Gatekeeper_Name", type: "singleLineText" },
   { name: "Gatekeeper_Phone", type: "singleLineText" },

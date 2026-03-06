@@ -2,7 +2,7 @@ import AppLayout from "@/components/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Clock, CheckCircle, Loader2, Target, Trophy, XCircle } from "lucide-react";
+import { Activity, Clock, CheckCircle, Loader2, Target, Trophy, XCircle, Search, Users, Phone, TrendingUp } from "lucide-react";
 import { useLatestRun } from "@/lib/use-latest-run";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -39,6 +39,29 @@ interface OppSummary {
   total_value: number;
 }
 
+interface ModeStats {
+  leads: number;
+  dm_found: number;
+  dm_rate: number;
+  positive_calls: number;
+  positive_call_rate: number;
+  opportunities: number;
+  opportunity_rate: number;
+}
+
+interface QueryPerformanceData {
+  ColdStart: ModeStats | null;
+  QueryIntel: ModeStats | null;
+  WinPattern: ModeStats | null;
+  hasData: boolean;
+}
+
+const MODE_CONFIG: Record<string, { label: string; color: string; desc: string }> = {
+  ColdStart: { label: "Cold Start", color: "#3B82F6", desc: "Industry-based seed queries" },
+  QueryIntel: { label: "Query Intel", color: "#8B5CF6", desc: "Performance-optimized queries" },
+  WinPattern: { label: "Win Pattern", color: "#10B981", desc: "Win-data driven queries" },
+};
+
 export default function AnalyticsPage() {
   const { getToken } = useAuth();
   const token = getToken();
@@ -46,6 +69,11 @@ export default function AnalyticsPage() {
 
   const { data: oppSummary } = useQuery<OppSummary>({
     queryKey: ["/api/opportunities/summary"],
+    enabled: !!token,
+  });
+
+  const { data: queryPerf } = useQuery<QueryPerformanceData>({
+    queryKey: ["/api/query-performance"],
     enabled: !!token,
   });
 
@@ -120,6 +148,123 @@ export default function AnalyticsPage() {
                   <span className="text-sm" style={{ color: "#64748B" }}>{oppSummary.total_lost} lost</span>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {queryPerf?.hasData && (
+          <Card style={{ border: "1px solid #E2E8F0" }} data-testid="card-query-strategy-performance">
+            <CardHeader>
+              <CardTitle className="text-lg font-bold" style={{ color: "#0F172A" }}>Query Strategy Performance</CardTitle>
+              <p className="text-sm" style={{ color: "#94A3B8" }}>Compare lead quality across query generation modes</p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {(["ColdStart", "QueryIntel", "WinPattern"] as const).map((mode) => {
+                  const stats = queryPerf[mode];
+                  const cfg = MODE_CONFIG[mode];
+                  if (!stats) return (
+                    <div key={mode} className="rounded-lg p-4" style={{ background: "#F8FAFC", border: "1px solid #E2E8F0" }} data-testid={`card-mode-${mode.toLowerCase()}`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.color }} />
+                        <span className="text-sm font-semibold" style={{ color: "#0F172A" }}>{cfg.label}</span>
+                      </div>
+                      <p className="text-xs" style={{ color: "#94A3B8" }}>No data yet</p>
+                    </div>
+                  );
+
+                  const allModes = (["ColdStart", "QueryIntel", "WinPattern"] as const)
+                    .map(m => queryPerf[m])
+                    .filter(Boolean) as ModeStats[];
+                  const bestOpp = Math.max(...allModes.map(m => m.opportunity_rate));
+                  const isBest = stats.opportunity_rate === bestOpp && stats.opportunity_rate > 0;
+
+                  return (
+                    <div key={mode} className="rounded-lg p-4 relative" style={{
+                      background: isBest ? `${cfg.color}08` : "#F8FAFC",
+                      border: `1px solid ${isBest ? cfg.color + "40" : "#E2E8F0"}`,
+                    }} data-testid={`card-mode-${mode.toLowerCase()}`}>
+                      {isBest && (
+                        <div className="absolute top-2 right-2">
+                          <Badge style={{ background: cfg.color, color: "#fff", fontSize: "10px" }} data-testid={`badge-best-${mode.toLowerCase()}`}>Best</Badge>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.color }} />
+                        <span className="text-sm font-semibold" style={{ color: "#0F172A" }}>{cfg.label}</span>
+                      </div>
+                      <p className="text-xs mb-4" style={{ color: "#94A3B8" }}>{cfg.desc}</p>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Search className="w-3.5 h-3.5" style={{ color: "#94A3B8" }} />
+                            <span className="text-xs" style={{ color: "#64748B" }}>Leads</span>
+                          </div>
+                          <span className="text-sm font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`value-leads-${mode.toLowerCase()}`}>{stats.leads}</span>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5" style={{ color: "#94A3B8" }} />
+                              <span className="text-xs" style={{ color: "#64748B" }}>DM Coverage</span>
+                            </div>
+                            <span className="text-sm font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`value-dm-rate-${mode.toLowerCase()}`}>{stats.dm_rate}%</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full" style={{ background: "#E2E8F0" }}>
+                            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(stats.dm_rate, 100)}%`, background: cfg.color }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <Phone className="w-3.5 h-3.5" style={{ color: "#94A3B8" }} />
+                              <span className="text-xs" style={{ color: "#64748B" }}>Positive Calls</span>
+                            </div>
+                            <span className="text-sm font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`value-call-rate-${mode.toLowerCase()}`}>{stats.positive_call_rate}%</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full" style={{ background: "#E2E8F0" }}>
+                            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(stats.positive_call_rate, 100)}%`, background: cfg.color }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <TrendingUp className="w-3.5 h-3.5" style={{ color: "#94A3B8" }} />
+                              <span className="text-xs" style={{ color: "#64748B" }}>Opportunities</span>
+                            </div>
+                            <span className="text-sm font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`value-opp-rate-${mode.toLowerCase()}`}>{stats.opportunity_rate}%</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full" style={{ background: "#E2E8F0" }}>
+                            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(stats.opportunity_rate, 100)}%`, background: cfg.color }} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                const activeModes = (["ColdStart", "QueryIntel", "WinPattern"] as const)
+                  .filter(m => queryPerf[m] !== null)
+                  .map(m => ({ mode: m, stats: queryPerf[m]! }));
+                const totalLeads = activeModes.reduce((s, m) => s + m.stats.leads, 0);
+                return (
+                  <div className="flex items-center gap-4 pt-3" style={{ borderTop: "1px solid #E2E8F0" }}>
+                    <div className="flex items-center gap-1.5">
+                      <Search className="w-3.5 h-3.5" style={{ color: "#10B981" }} />
+                      <span className="text-sm font-semibold" style={{ color: "#0F172A" }} data-testid="value-total-tracked-leads">{totalLeads} tracked leads</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm" style={{ color: "#64748B" }}>{activeModes.length} active strategies</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
         )}

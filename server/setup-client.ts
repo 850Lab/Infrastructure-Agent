@@ -188,6 +188,7 @@ async function step4_seedQueries(cfg: IndustryConfig): Promise<{ seeded: number 
           Category: s.category,
           Status: "Queued",
           Last_Generated_By: "SetupWizard",
+          Generation_Mode: "ColdStart",
           Notes: "seed",
         },
       }));
