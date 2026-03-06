@@ -8,5 +8,16 @@
     "geo": "Gulf Coast",
     "industry_config_selected": "industrial",
     "created_at": 1772747877398
+  },
+  {
+    "email": "tcdt@texascooldowntrailers.com",
+    "machine_name": "Texas Cooldown Trailer Engine",
+    "market": "industrial",
+    "opportunity": "heat-mitigation",
+    "decision_maker_focus": "Operations",
+    "geo": "Gulf Coast",
+    "industry_config_selected": "industrial",
+    "created_at": 1772831077383,
+    "_airtable_id": "recTBBK5fdwyCAjn7"
   }
 ]
