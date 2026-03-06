@@ -70,6 +70,7 @@ const PRIORITY_MAP: Record<string, string> = {
 
 const MAX_QUEUE_PROCESS = 20;
 const MAX_ATTEMPTS = 12;
+const INFO_CEILING_THRESHOLD = 6;
 
 function computeNextAttempt(attempts: number): Date {
   const now = new Date();
@@ -240,6 +241,18 @@ async function ensureRecoveryFields(atConfig: { apiKey: string; baseId: string }
       }) });
       logRecovery("Created Recovery_Last_Run field");
     }
+    if (!existingFields.has("Info_Ceiling_Reached")) {
+      await fetch(createUrl, { method: "POST", headers, body: JSON.stringify({ name: "Info_Ceiling_Reached", type: "checkbox" }) });
+      logRecovery("Created Info_Ceiling_Reached field");
+    }
+    if (!existingFields.has("Info_Ceiling_Date")) {
+      await fetch(createUrl, { method: "POST", headers, body: JSON.stringify({
+        name: "Info_Ceiling_Date",
+        type: "dateTime",
+        options: { dateFormat: { name: "iso" }, timeFormat: { name: "24hour" }, timeZone: "America/Chicago" },
+      }) });
+      logRecovery("Created Info_Ceiling_Date field");
+    }
   } catch (e: any) {
     logRecovery(`Field creation failed: ${e.message}`);
   }
@@ -331,6 +344,7 @@ export async function processRecoveryQueue(clientId: string): Promise<{
   recovered: number;
   skipped: number;
   maxedOut: number;
+  ceilingReached: number;
   breakdown: Record<string, { attempted: number; succeeded: number }>;
 }> {
   const atConfig = await getClientAirtableConfig(clientId);
@@ -345,6 +359,7 @@ export async function processRecoveryQueue(clientId: string): Promise<{
   let recovered = 0;
   let skipped = 0;
   let maxedOut = 0;
+  let ceilingReached = 0;
   const breakdown: Record<string, { attempted: number; succeeded: number }> = {};
   const airtableUpdates: Array<{ id: string; fields: Record<string, any> }> = [];
   const now = new Date().toISOString();
@@ -405,25 +420,54 @@ export async function processRecoveryQueue(clientId: string): Promise<{
       breakdown[item.dmStatus].succeeded++;
     }
 
-    await storage.updateRecoveryQueueItem(item.id, {
-      attempts: newAttempts,
-      nextAttempt,
-      lastResult: actionResult.result,
-    });
+    const hitCeiling = actionResult.executed && !dataFound && newAttempts >= INFO_CEILING_THRESHOLD;
 
-    const plan = buildRecoveryPlan(item.dmStatus, item.companyName, newAttempts);
-    const planWithResult = `${plan}\n\nResult: ${actionResult.result}`;
+    if (hitCeiling) {
+      await storage.updateRecoveryQueueItem(item.id, {
+        attempts: newAttempts,
+        nextAttempt,
+        lastResult: `${actionResult.result} [INFO CEILING REACHED]`,
+        active: false,
+      });
+      ceilingReached++;
 
-    airtableUpdates.push({
-      id: item.companyId,
-      fields: {
-        Recovery_Plan: planWithResult,
-        Recovery_Attempts: newAttempts,
-        Recovery_Last_Run: now,
-      },
-    });
+      const plan = buildRecoveryPlan(item.dmStatus, item.companyName, newAttempts);
+      const planWithResult = `${plan}\n\nResult: ${actionResult.result}\n\nINFO CEILING REACHED — all automated recovery options exhausted.`;
 
-    logRecovery(`[${item.dmStatus}] ${item.companyName}: attempt ${newAttempts} — ${actionResult.result} (next: ${nextAttempt.toISOString().slice(0, 10)})`);
+      airtableUpdates.push({
+        id: item.companyId,
+        fields: {
+          Recovery_Plan: planWithResult,
+          Recovery_Attempts: newAttempts,
+          Recovery_Last_Run: now,
+          Info_Ceiling_Reached: true,
+          Info_Ceiling_Date: now,
+          DM_Status: "READY_FOR_OUTREACH",
+        },
+      });
+
+      logRecovery(`[${item.dmStatus}] ${item.companyName}: INFO CEILING after ${newAttempts} attempts — promoted to READY_FOR_OUTREACH`);
+    } else {
+      await storage.updateRecoveryQueueItem(item.id, {
+        attempts: newAttempts,
+        nextAttempt,
+        lastResult: actionResult.result,
+      });
+
+      const plan = buildRecoveryPlan(item.dmStatus, item.companyName, newAttempts);
+      const planWithResult = `${plan}\n\nResult: ${actionResult.result}`;
+
+      airtableUpdates.push({
+        id: item.companyId,
+        fields: {
+          Recovery_Plan: planWithResult,
+          Recovery_Attempts: newAttempts,
+          Recovery_Last_Run: now,
+        },
+      });
+
+      logRecovery(`[${item.dmStatus}] ${item.companyName}: attempt ${newAttempts} — ${actionResult.result} (next: ${nextAttempt.toISOString().slice(0, 10)})`);
+    }
   }
 
   const batchSize = 10;
@@ -452,13 +496,13 @@ export async function processRecoveryQueue(clientId: string): Promise<{
     }
   }
 
-  logRecovery(`Queue processing complete: ${processed} processed, ${recovered} recovered, ${skipped} skipped, ${maxedOut} maxed out`);
-  return { processed, recovered, skipped, maxedOut, breakdown };
+  logRecovery(`Queue processing complete: ${processed} processed, ${recovered} recovered, ${skipped} skipped, ${maxedOut} maxed out, ${ceilingReached} ceiling reached`);
+  return { processed, recovered, skipped, maxedOut, ceilingReached, breakdown };
 }
 
 export async function runRecoveryEngine(clientId?: string): Promise<{
   queue: { added: number; removed: number; alreadyQueued: number };
-  processing: { processed: number; recovered: number; skipped: number; breakdown: Record<string, { attempted: number; succeeded: number }> };
+  processing: { processed: number; recovered: number; skipped: number; maxedOut: number; ceilingReached: number; breakdown: Record<string, { attempted: number; succeeded: number }> };
 }> {
   if (!clientId) {
     const allClients = await storage.getAllClients();

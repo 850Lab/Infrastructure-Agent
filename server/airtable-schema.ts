@@ -472,6 +472,16 @@ const COMPANIES_FIELDS: FieldSpec[] = [
       timeZone: "America/Chicago",
     },
   },
+  { name: "Info_Ceiling_Reached", type: "checkbox" },
+  {
+    name: "Info_Ceiling_Date",
+    type: "dateTime",
+    options: {
+      dateFormat: { name: "iso" },
+      timeFormat: { name: "24hour" },
+      timeZone: "America/Chicago",
+    },
+  },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [
