@@ -110,6 +110,8 @@ app.use((req, res, next) => {
       startScheduler();
       const { startReplyChecker } = await import("./reply-checker");
       startReplyChecker();
+      const { startAutoSender } = await import("./auto-sender");
+      startAutoSender();
     },
   );
 })();

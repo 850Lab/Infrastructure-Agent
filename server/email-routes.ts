@@ -105,6 +105,7 @@ export function registerEmailRoutes(app: Express) {
         smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure,
         imapHost, imapPort, imapSecure, replyCheckEnabled,
         fromName, fromEmail, signature, dailyLimit, sendIntervalMs, enabled,
+        autoSendEnabled,
       } = req.body;
 
       if (!smtpHost || !smtpUser || !fromName || !fromEmail) {
@@ -131,6 +132,7 @@ export function registerEmailRoutes(app: Express) {
           imapPort: imapPort || 993,
           imapSecure: imapSecure !== false,
           replyCheckEnabled: replyCheckEnabled || false,
+          autoSendEnabled: autoSendEnabled || false,
           providerType: provider.type,
           providerMaxLimit: provider.maxDailyLimit,
           fromName,
@@ -174,6 +176,7 @@ export function registerEmailRoutes(app: Express) {
             imapPort: imapPort || 993,
             imapSecure: imapSecure !== false,
             replyCheckEnabled: replyCheckEnabled || false,
+            autoSendEnabled: autoSendEnabled || false,
             providerType: provider.type,
             providerMaxLimit: provider.maxDailyLimit,
             fromName,
@@ -249,6 +252,7 @@ export function registerEmailRoutes(app: Express) {
         recipientName,
         companyId,
         companyName,
+        sentVia: "manual",
       });
 
       if (result.success) {

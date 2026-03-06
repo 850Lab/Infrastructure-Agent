@@ -48,6 +48,7 @@ interface EmailSettings {
   providerMaxLimit: number;
   sendIntervalMs: number;
   replyCheckEnabled: boolean;
+  autoSendEnabled: boolean;
   lastReplyCheck: string | null;
   fromName: string;
   fromEmail: string;
@@ -105,6 +106,7 @@ export default function EmailSettingsPage() {
   const [imapPort, setImapPort] = useState(993);
   const [imapSecure, setImapSecure] = useState(true);
   const [replyCheckEnabled, setReplyCheckEnabled] = useState(false);
+  const [autoSendEnabled, setAutoSendEnabled] = useState(false);
   const [fromName, setFromName] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [signature, setSignature] = useState("");
@@ -142,6 +144,7 @@ export default function EmailSettingsPage() {
       setImapPort(settings.imapPort || 993);
       setImapSecure(settings.imapSecure !== false);
       setReplyCheckEnabled(settings.replyCheckEnabled || false);
+      setAutoSendEnabled(settings.autoSendEnabled || false);
       setFromName(settings.fromName || "");
       setFromEmail(settings.fromEmail || "");
       setSignature(settings.signature || "");
@@ -160,6 +163,7 @@ export default function EmailSettingsPage() {
         smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure,
         imapHost: imapHost || null, imapPort, imapSecure, replyCheckEnabled,
         fromName, fromEmail, signature, dailyLimit, sendIntervalMs, enabled,
+        autoSendEnabled,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/settings"] });
@@ -597,7 +601,7 @@ export default function EmailSettingsPage() {
                   Minimum delay between sends to avoid flagging
                 </p>
               </div>
-              <div className="flex items-center gap-3 pt-5">
+              <div className="flex flex-col gap-3 pt-5">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -609,8 +613,28 @@ export default function EmailSettingsPage() {
                     Email sending enabled
                   </span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoSendEnabled}
+                    onChange={(e) => { setAutoSendEnabled(e.target.checked); setHasChanges(true); }}
+                    data-testid="input-auto-send-enabled"
+                  />
+                  <span className="text-xs font-medium" style={{ color: TEXT }}>
+                    Auto-send when due
+                  </span>
+                </label>
               </div>
             </div>
+            {autoSendEnabled && (
+              <div className="mt-4 px-3 py-2 rounded-lg" style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.15)` }}>
+                <p className="text-[11px]" style={{ color: TEXT }}>
+                  <Send className="w-3 h-3 inline mr-1" style={{ color: EMERALD, verticalAlign: "middle" }} />
+                  <strong>Scheduled sending active.</strong> Email touches (1, 3, 5) will be sent automatically when they become due.
+                  Call touches (2, 4, 6) remain manual. The auto-sender checks every 15 minutes and respects your daily limit and pacing settings.
+                </p>
+              </div>
+            )}
           </div>
 
           <div

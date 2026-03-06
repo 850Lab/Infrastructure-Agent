@@ -219,6 +219,7 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
       companyId,
       companyName,
       contactName: dmName || null,
+      contactEmail: dmEmail || null,
       touch1Email,
       touch2Call,
       touch3Email,

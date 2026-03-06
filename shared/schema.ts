@@ -167,6 +167,7 @@ export const outreachPipeline = pgTable("outreach_pipeline", {
   companyId: varchar("company_id").notNull(),
   companyName: text("company_name").notNull(),
   contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
   touch1Email: text("touch_1_email"),
   touch2Call: text("touch_2_call"),
   touch3Email: text("touch_3_email"),
@@ -206,6 +207,7 @@ export const clientEmailSettings = pgTable("client_email_settings", {
   sendIntervalMs: integer("send_interval_ms").notNull().default(5000),
   sentToday: integer("sent_today").notNull().default(0),
   lastResetDate: text("last_reset_date"),
+  autoSendEnabled: boolean("auto_send_enabled").notNull().default(false),
   replyCheckEnabled: boolean("reply_check_enabled").notNull().default(false),
   lastReplyCheck: timestamp("last_reply_check"),
   enabled: boolean("enabled").notNull().default(true),
@@ -238,6 +240,7 @@ export const emailSends = pgTable("email_sends", {
   clickCount: integer("click_count").notNull().default(0),
   firstClickedAt: timestamp("first_clicked_at"),
   replyDetectedAt: timestamp("reply_detected_at"),
+  sentVia: text("sent_via"),
   deferredAt: timestamp("deferred_at"),
   deferReason: text("defer_reason"),
 });

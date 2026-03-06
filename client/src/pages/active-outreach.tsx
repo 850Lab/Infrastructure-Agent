@@ -42,6 +42,7 @@ interface OutreachItem {
   companyId: string;
   companyName: string;
   contactName: string | null;
+  contactEmail: string | null;
   touch1Email: string | null;
   touch2Call: string | null;
   touch3Email: string | null;
@@ -76,6 +77,7 @@ interface EmailSendRecord {
   subject: string;
   status: string;
   sentAt: string;
+  sentVia: string | null;
   openCount: number;
   firstOpenedAt: string | null;
   clickCount: number;
@@ -100,22 +102,42 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
   NOT_INTERESTED: { bg: "rgba(239,68,68,0.08)", text: ERROR, border: "rgba(239,68,68,0.3)" },
 };
 
-function TouchTimeline({ touchesCompleted }: { touchesCompleted: number }) {
+function TouchTimeline({ touchesCompleted, nextTouchDate, pipelineStatus, createdAt }: {
+  touchesCompleted: number;
+  nextTouchDate: string;
+  pipelineStatus: string;
+  createdAt: string;
+}) {
+  const now = new Date();
+  const nextDate = new Date(nextTouchDate);
+  const isDue = pipelineStatus === "ACTIVE" && nextDate <= now;
+  const created = new Date(createdAt);
+
+  function getScheduledDate(touchNum: number): string {
+    const schedule = TOUCH_LABELS.find((t) => t.num === touchNum);
+    if (!schedule) return "";
+    const d = new Date(created);
+    d.setDate(d.getDate() + schedule.day);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
   return (
     <div className="flex items-center gap-1" data-testid="touch-timeline">
       {TOUCH_LABELS.map((touch) => {
         const Icon = touch.icon;
         const done = touch.num <= touchesCompleted;
         const current = touch.num === touchesCompleted + 1;
+        const scheduledLabel = !done ? getScheduledDate(touch.num) : "";
+        const dueLabel = current && isDue ? " - DUE" : current ? ` - ${scheduledLabel}` : "";
         return (
           <div key={touch.num} className="flex items-center gap-1">
             <div
               className="w-7 h-7 rounded-full flex items-center justify-center"
               style={{
-                background: done ? EMERALD : current ? AMBER : SUBTLE,
-                border: `1.5px solid ${done ? EMERALD : current ? AMBER : BORDER}`,
+                background: done ? EMERALD : current && isDue ? ERROR : current ? AMBER : SUBTLE,
+                border: `1.5px solid ${done ? EMERALD : current && isDue ? ERROR : current ? AMBER : BORDER}`,
               }}
-              title={`Touch ${touch.num}: ${touch.label} (Day ${touch.day})${done ? " - Done" : current ? " - Next" : ""}`}
+              title={`Touch ${touch.num}: ${touch.label} (Day ${touch.day})${done ? " - Done" : dueLabel}`}
             >
               {done ? (
                 <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "#FFFFFF" }} />
@@ -165,7 +187,7 @@ function TrackingBadge({ send }: { send: EmailSendRecord }) {
         style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: `1px solid rgba(16,185,129,0.3)` }}
         data-testid={`badge-sent-${send.id}`}
       >
-        <MailCheck className="w-3 h-3" /> Sent
+        <MailCheck className="w-3 h-3" /> {send.sentVia === "auto" ? "Auto-Sent" : "Sent"}
       </span>
       {send.openCount > 0 ? (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
@@ -422,7 +444,7 @@ function OutreachCard({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <TouchTimeline touchesCompleted={item.touchesCompleted} />
+            <TouchTimeline touchesCompleted={item.touchesCompleted} nextTouchDate={item.nextTouchDate} pipelineStatus={item.pipelineStatus} createdAt={item.createdAt} />
             {expanded ? (
               <ChevronUp className="w-4 h-4" style={{ color: MUTED }} />
             ) : (
@@ -458,7 +480,18 @@ function OutreachCard({
                         Touch {touch.num} — {touch.label} (Day {touch.day})
                       </span>
                       {done && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: EMERALD }} />}
-                      {current && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.1)", color: AMBER }}>NEXT</span>}
+                      {current && (() => {
+                        const nextDate = new Date(item.nextTouchDate);
+                        const isDue = nextDate <= new Date();
+                        return isDue ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(239,68,68,0.1)", color: ERROR }} data-testid={`badge-due-${item.id}`}>DUE</span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.1)", color: AMBER }} data-testid={`badge-scheduled-${item.id}`}>
+                            <Clock className="w-3 h-3 inline mr-0.5" style={{ verticalAlign: "middle" }} />
+                            {nextDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        );
+                      })()}
                     </div>
                     {touch.isEmail && content && emailSettings && (
                       <SendEmailButton

@@ -155,10 +155,28 @@ export async function sendOutreachEmail(params: {
   recipientName?: string;
   companyId: string;
   companyName?: string;
+  sentVia?: string;
 }): Promise<{ success: boolean; emailSendId?: number; error?: string; deferred?: boolean; deferReason?: string }> {
   const settings = await getEmailSettings(params.clientId);
   if (!settings) return { success: false, error: "Email settings not configured" };
   if (!settings.enabled) return { success: false, error: "Email sending is disabled" };
+
+  const via = params.sentVia || "manual";
+
+  // Duplicate-send guard: check if already sent/sending for this pipeline+touch
+  const [existingSend] = await db
+    .select({ id: emailSends.id, status: emailSends.status })
+    .from(emailSends)
+    .where(
+      and(
+        eq(emailSends.outreachPipelineId, params.outreachPipelineId),
+        eq(emailSends.touchNumber, params.touchNumber)
+      )
+    )
+    .limit(1);
+  if (existingSend && (existingSend.status === "sent" || existingSend.status === "sending")) {
+    return { success: false, error: `Touch ${params.touchNumber} already sent (id: ${existingSend.id})` };
+  }
 
   // Provider-aware daily limit enforcement
   const effectiveLimit = Math.min(settings.dailyLimit, settings.providerMaxLimit);
@@ -180,6 +198,7 @@ export async function sendOutreachEmail(params: {
         bodyHtml: "",
         trackingId: crypto.randomUUID(),
         status: "deferred",
+        sentVia: via,
         deferredAt: new Date(),
         deferReason: reason,
       })
@@ -231,6 +250,7 @@ export async function sendOutreachEmail(params: {
       bodyHtml: trackedHtml,
       trackingId,
       status: "sending",
+      sentVia: via,
     })
     .returning();
 
