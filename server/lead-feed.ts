@@ -692,7 +692,10 @@ export async function enrichLeads(limit: number = 10, clientId?: string): Promis
       };
 
       if (emails.length > 0) updateFields.emails_found = emails.join(", ");
-      if (linkedinUrl) updateFields.linkedin_url = linkedinUrl;
+      if (linkedinUrl) {
+        updateFields.linkedin_url = linkedinUrl;
+        updateFields.Social_Media = linkedinUrl;
+      }
       if (notesSummary) updateFields.company_summary = notesSummary;
 
       const currentStatus = rec.fields.Lead_Status || "";

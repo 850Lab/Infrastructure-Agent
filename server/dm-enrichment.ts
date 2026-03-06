@@ -486,6 +486,7 @@ export async function writeDMsToAirtable(result: EnrichmentResult): Promise<numb
   if (result.apolloData) {
     if (result.apolloData.linkedin_url) {
       updateFields.linkedin_url = result.apolloData.linkedin_url;
+      updateFields.Social_Media = result.apolloData.linkedin_url;
     }
   }
 

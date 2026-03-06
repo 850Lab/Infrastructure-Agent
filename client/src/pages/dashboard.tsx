@@ -179,11 +179,13 @@ export default function DashboardPage() {
     confidence_score: number;
     explanation: string;
     components: {
-      dm_reached_rate: number;
-      qualified_rate: number;
-      won_rate: number;
-      not_interested_rate: number;
+      dm_name_rate: number;
+      dm_email_rate: number;
+      dm_phone_rate: number;
+      website_rate: number;
+      social_media_rate: number;
     };
+    total_companies: number;
   }>({
     queryKey: ["/api/confidence"],
     enabled: !!token,
@@ -461,20 +463,27 @@ export default function DashboardPage() {
               }}
               data-testid="card-targeting-accuracy"
             >
-              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-                Targeting Accuracy
-              </p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
+                  Targeting Accuracy
+                </p>
+                {confidenceData?.total_companies != null && (
+                  <p className="text-xs font-mono" style={{ color: "#94A3B8" }} data-testid="text-total-companies">
+                    {confidenceData.total_companies} companies
+                  </p>
+                )}
+              </div>
               <div className="flex items-end gap-3 mb-2">
                 <p
                   className="text-3xl font-bold font-mono"
                   style={{
-                    color: (confidenceData?.confidence_score ?? 50) >= 70 ? EMERALD
-                      : (confidenceData?.confidence_score ?? 50) >= 40 ? "#F59E0B"
+                    color: (confidenceData?.confidence_score ?? 0) >= 70 ? EMERALD
+                      : (confidenceData?.confidence_score ?? 0) >= 40 ? "#F59E0B"
                       : ERROR_RED,
                   }}
                   data-testid="text-confidence-score"
                 >
-                  {confidenceData?.confidence_score ?? 50}
+                  {confidenceData?.confidence_score ?? 0}
                 </p>
                 <p className="text-xs font-mono mb-1" style={{ color: "#94A3B8" }}>/100</p>
               </div>
@@ -482,16 +491,44 @@ export default function DashboardPage() {
                 <div
                   className="h-2 rounded-full transition-all duration-700"
                   style={{
-                    width: `${confidenceData?.confidence_score ?? 50}%`,
-                    background: (confidenceData?.confidence_score ?? 50) >= 70 ? EMERALD
-                      : (confidenceData?.confidence_score ?? 50) >= 40 ? "#F59E0B"
+                    width: `${confidenceData?.confidence_score ?? 0}%`,
+                    background: (confidenceData?.confidence_score ?? 0) >= 70 ? EMERALD
+                      : (confidenceData?.confidence_score ?? 0) >= 40 ? "#F59E0B"
                       : ERROR_RED,
                   }}
                   data-testid="confidence-bar"
                 />
               </div>
+              {confidenceData?.components && (
+                <div className="space-y-1.5 mb-3">
+                  {[
+                    { label: "DM Name", rate: confidenceData.components.dm_name_rate, testId: "bar-dm-name" },
+                    { label: "DM Email", rate: confidenceData.components.dm_email_rate, testId: "bar-dm-email" },
+                    { label: "DM Phone", rate: confidenceData.components.dm_phone_rate, testId: "bar-dm-phone" },
+                    { label: "Website", rate: confidenceData.components.website_rate, testId: "bar-website" },
+                    { label: "Social", rate: confidenceData.components.social_media_rate, testId: "bar-social" },
+                  ].map((item) => (
+                    <div key={item.label} className="flex items-center gap-2">
+                      <p className="text-[10px] font-mono w-16 text-right" style={{ color: "#94A3B8" }}>{item.label}</p>
+                      <div className="flex-1 h-1.5 rounded-full" style={{ background: "#F1F5F9" }}>
+                        <div
+                          className="h-1.5 rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.round(item.rate * 100)}%`,
+                            background: item.rate >= 0.9 ? EMERALD : item.rate >= 0.5 ? "#F59E0B" : ERROR_RED,
+                          }}
+                          data-testid={item.testId}
+                        />
+                      </div>
+                      <p className="text-[10px] font-mono w-8" style={{ color: item.rate >= 0.9 ? EMERALD : item.rate >= 0.5 ? "#F59E0B" : ERROR_RED }}>
+                        {Math.round(item.rate * 100)}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
               <p className="text-xs" style={{ color: "#64748B" }} data-testid="text-confidence-explanation">
-                {confidenceData?.explanation || "Baseline targeting score."}
+                {confidenceData?.explanation || "No companies in today's pull yet."}
               </p>
             </div>
 

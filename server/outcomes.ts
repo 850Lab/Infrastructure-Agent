@@ -60,11 +60,13 @@ export interface ConfidenceResult {
   confidence_score: number;
   explanation: string;
   components: {
-    dm_reached_rate: number;
-    qualified_rate: number;
-    won_rate: number;
-    not_interested_rate: number;
+    dm_name_rate: number;
+    dm_email_rate: number;
+    dm_phone_rate: number;
+    website_rate: number;
+    social_media_rate: number;
   };
+  total_companies: number;
   computed_at: number;
 }
 
@@ -144,47 +146,87 @@ export async function computeOutcomes(range: string, clientId?: string): Promise
 }
 
 export async function computeConfidence(clientId?: string): Promise<ConfidenceResult> {
-  const outcomes = await computeOutcomes("7d", clientId);
+  const sf = (formula: string) => clientId ? scopedFormula(clientId, formula) : formula;
 
-  const totalCalls = Math.max(1, outcomes.calls_made);
-  const dmReachedRate = outcomes.dm_reached / totalCalls;
-  const qualifiedRate = outcomes.qualified / totalCalls;
-  const wonRate = outcomes.won / Math.max(1, outcomes.dm_reached);
-  const notInterestedRate = outcomes.not_interested / totalCalls;
+  const companies = await airtableFetch(
+    "Companies",
+    sf("{Today_Call_List}=TRUE()"),
+    ["Company_Name", "Offer_DM_Name", "Offer_DM_Email", "Offer_DM_Phone", "Website", "Social_Media",
+     "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone"],
+  );
 
-  let score = 50;
-  score += dmReachedRate * 30;
-  score += qualifiedRate * 40;
-  score += wonRate * 60;
-  score -= notInterestedRate * 20;
-  score = Math.round(Math.max(0, Math.min(100, score)));
+  const total = companies.length;
 
-  const parts: string[] = [];
-  if (outcomes.calls_made === 0) {
-    parts.push("No calls logged yet — baseline score.");
-  } else {
-    if (dmReachedRate > 0.3) parts.push(`Strong DM reach rate (${(dmReachedRate * 100).toFixed(0)}%).`);
-    else if (dmReachedRate > 0) parts.push(`DM reach rate at ${(dmReachedRate * 100).toFixed(0)}%.`);
-    else parts.push("No DMs reached yet.");
-
-    if (qualifiedRate > 0.1) parts.push(`Good qualification rate (${(qualifiedRate * 100).toFixed(0)}%).`);
-    else if (outcomes.qualified > 0) parts.push(`${outcomes.qualified} qualified so far.`);
-
-    if (outcomes.won > 0) parts.push(`${outcomes.won} won — boosting confidence.`);
-    if (notInterestedRate > 0.5) parts.push(`High rejection rate (${(notInterestedRate * 100).toFixed(0)}%) — dragging score down.`);
+  if (total === 0) {
+    return {
+      confidence_score: 0,
+      explanation: "No companies in today's pull yet.",
+      components: { dm_name_rate: 0, dm_email_rate: 0, dm_phone_rate: 0, website_rate: 0, social_media_rate: 0 },
+      total_companies: 0,
+      computed_at: Date.now(),
+    };
   }
 
-  const explanation = parts.join(" ") || "Baseline targeting score.";
+  let hasDM = 0;
+  let hasEmail = 0;
+  let hasPhone = 0;
+  let hasWebsite = 0;
+  let hasSocial = 0;
+
+  for (const c of companies) {
+    const f = c.fields;
+    const dmName = String(f.Offer_DM_Name || f.Primary_DM_Name || "").trim();
+    const dmEmail = String(f.Offer_DM_Email || f.Primary_DM_Email || "").trim();
+    const dmPhone = String(f.Offer_DM_Phone || f.Primary_DM_Phone || "").trim();
+    const website = String(f.Website || "").trim();
+    const social = String(f.Social_Media || "").trim();
+
+    if (dmName) hasDM++;
+    if (dmEmail) hasEmail++;
+    if (dmPhone) hasPhone++;
+    if (website) hasWebsite++;
+    if (social) hasSocial++;
+  }
+
+  const dmNameRate = hasDM / total;
+  const dmEmailRate = hasEmail / total;
+  const dmPhoneRate = hasPhone / total;
+  const websiteRate = hasWebsite / total;
+  const socialRate = hasSocial / total;
+
+  const score = Math.round(((dmNameRate + dmEmailRate + dmPhoneRate + websiteRate + socialRate) / 5) * 100);
+
+  const parts: string[] = [];
+  parts.push(`${total} companies pulled.`);
+
+  const gaps: string[] = [];
+  if (dmNameRate < 1) gaps.push(`DM name (${Math.round(dmNameRate * 100)}%)`);
+  if (dmEmailRate < 1) gaps.push(`DM email (${Math.round(dmEmailRate * 100)}%)`);
+  if (dmPhoneRate < 1) gaps.push(`DM phone (${Math.round(dmPhoneRate * 100)}%)`);
+  if (websiteRate < 1) gaps.push(`website (${Math.round(websiteRate * 100)}%)`);
+  if (socialRate < 1) gaps.push(`social media (${Math.round(socialRate * 100)}%)`);
+
+  if (gaps.length === 0) {
+    parts.push("Full data coverage — every company has all 5 fields.");
+  } else if (gaps.length <= 2) {
+    parts.push(`Gaps: ${gaps.join(", ")}.`);
+  } else {
+    parts.push(`Missing data in ${gaps.length} categories.`);
+    const worst = gaps[gaps.length - 1];
+    parts.push(`Weakest: ${worst}.`);
+  }
 
   return {
     confidence_score: score,
-    explanation,
+    explanation: parts.join(" "),
     components: {
-      dm_reached_rate: Math.round(dmReachedRate * 100) / 100,
-      qualified_rate: Math.round(qualifiedRate * 100) / 100,
-      won_rate: Math.round(wonRate * 100) / 100,
-      not_interested_rate: Math.round(notInterestedRate * 100) / 100,
+      dm_name_rate: Math.round(dmNameRate * 100) / 100,
+      dm_email_rate: Math.round(dmEmailRate * 100) / 100,
+      dm_phone_rate: Math.round(dmPhoneRate * 100) / 100,
+      website_rate: Math.round(websiteRate * 100) / 100,
+      social_media_rate: Math.round(socialRate * 100) / 100,
     },
+    total_companies: total,
     computed_at: Date.now(),
   };
 }

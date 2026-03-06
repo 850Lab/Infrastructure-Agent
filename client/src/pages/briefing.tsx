@@ -131,11 +131,13 @@ export default function BriefingPage() {
     confidence_score: number;
     explanation: string;
     components: {
-      dm_reached_rate: number;
-      qualified_rate: number;
-      won_rate: number;
-      not_interested_rate: number;
+      dm_name_rate: number;
+      dm_email_rate: number;
+      dm_phone_rate: number;
+      website_rate: number;
+      social_media_rate: number;
     };
+    total_companies: number;
   }>({
     queryKey: ["/api/confidence"],
     enabled: !!token,
