@@ -2,6 +2,20 @@ import { log } from "./logger";
 
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 
+let apolloExhausted = false;
+let apolloExhaustedAt = 0;
+const EXHAUSTION_COOLDOWN_MS = 60 * 60 * 1000;
+
+function isApolloExhausted(): boolean {
+  if (!apolloExhausted) return false;
+  if (Date.now() - apolloExhaustedAt > EXHAUSTION_COOLDOWN_MS) {
+    apolloExhausted = false;
+    log("Apollo exhaustion cooldown expired, re-enabling API calls", "apollo");
+    return false;
+  }
+  return true;
+}
+
 export interface ApolloOrg {
   id: string;
   name: string;
@@ -73,6 +87,13 @@ async function apolloRequest(path: string, body: any, retries = 3): Promise<any>
 
     if (!res.ok) {
       const text = await res.text();
+      if ((res.status === 422 && text.includes("insufficient credits")) ||
+          (res.status === 403 && text.includes("API_INACCESSIBLE"))) {
+        apolloExhausted = true;
+        apolloExhaustedAt = Date.now();
+        log(`Apollo credits exhausted or plan restricted (${res.status}) — disabling for 1 hour`, "apollo");
+        return null;
+      }
       if (attempt < retries && res.status >= 500) {
         log(`Apollo server error ${res.status} (attempt ${attempt}/${retries}) — retrying`, "apollo");
         await new Promise(r => setTimeout(r, 2000 * attempt));
@@ -88,8 +109,13 @@ async function apolloRequest(path: string, body: any, retries = 3): Promise<any>
 }
 
 export async function enrichOrganization(domain: string): Promise<ApolloOrg | null> {
+  if (isApolloExhausted()) {
+    log(`Apollo skipped for ${domain} — credits exhausted (cooldown active)`, "apollo");
+    return null;
+  }
   try {
     const data = await apolloRequest("/organizations/enrich", { domain });
+    if (!data) return null;
     const org = data.organization;
     if (!org) return null;
 
@@ -119,6 +145,10 @@ export async function searchPeopleByDomain(
   titles?: string[],
   limit = 10
 ): Promise<ApolloPerson[]> {
+  if (isApolloExhausted()) {
+    log(`Apollo People Search skipped for ${domain} — credits exhausted (cooldown active)`, "apollo");
+    return [];
+  }
   const searchTitles = titles && titles.length > 0 ? titles : TARGET_TITLES;
 
   log(`Apollo People Search: ${domain} (${searchTitles.length} title filters, limit=${limit})`, "apollo");
@@ -131,6 +161,7 @@ export async function searchPeopleByDomain(
       per_page: Math.min(limit, 25),
     });
 
+    if (!data) return [];
     const people = data.people || [];
     log(`Apollo People Search returned ${people.length} results for ${domain}`, "apollo");
 
@@ -189,9 +220,9 @@ export async function enrichPerson(apolloId: string): Promise<ApolloPerson | nul
 }
 
 export function isApolloAvailable(): boolean {
-  return !!APOLLO_API_KEY;
+  return !!APOLLO_API_KEY && !isApolloExhausted();
 }
 
 export function isPeopleSearchAvailable(): boolean {
-  return !!APOLLO_API_KEY;
+  return !!APOLLO_API_KEY && !isApolloExhausted();
 }
