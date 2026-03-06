@@ -22,6 +22,8 @@ import {
   Gauge,
   Clock,
   PauseCircle,
+  User,
+  FileSignature,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -428,9 +430,13 @@ export default function EmailSettingsPage() {
             className="rounded-xl p-5"
             style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}
           >
-            <h2 className="text-sm font-bold mb-4" style={{ color: TEXT }}>
+            <h2 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: TEXT }}>
+              <User className="w-4 h-4" style={{ color: EMERALD }} />
               Sender Identity
             </h2>
+            <p className="text-[11px] mb-4" style={{ color: MUTED }}>
+              These settings control how your name and email appear to recipients in all outreach emails.
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label style={labelStyle}>From Name</label>
@@ -442,6 +448,9 @@ export default function EmailSettingsPage() {
                   style={inputStyle}
                   data-testid="input-from-name"
                 />
+                <p className="text-[10px] mt-1" style={{ color: MUTED }}>
+                  The display name recipients see (e.g. "John Smith")
+                </p>
               </div>
               <div>
                 <label style={labelStyle}>From Email</label>
@@ -453,20 +462,90 @@ export default function EmailSettingsPage() {
                   style={inputStyle}
                   data-testid="input-from-email"
                 />
+                <p className="text-[10px] mt-1" style={{ color: MUTED }}>
+                  The email address used for sending
+                </p>
               </div>
             </div>
 
             <div className="mt-4">
-              <label style={labelStyle}>Email Signature</label>
+              <label style={labelStyle} className="flex items-center gap-1.5">
+                <FileSignature className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+                Email Signature
+              </label>
               <textarea
                 value={signature}
                 onChange={(e) => { setSignature(e.target.value); setHasChanges(true); }}
-                placeholder="Best regards,&#10;John Smith&#10;Account Executive&#10;(555) 123-4567"
-                rows={4}
-                style={{ ...inputStyle, resize: "vertical" as const }}
+                placeholder={"Best regards,\nJohn Smith\nAccount Executive | Company Name\n(555) 123-4567\njohn@company.com"}
+                rows={5}
+                style={{ ...inputStyle, resize: "vertical" as const, fontFamily: "inherit", lineHeight: "1.5" }}
                 data-testid="input-signature"
               />
+              <p className="text-[10px] mt-1" style={{ color: MUTED }}>
+                Appended to every outreach email (AI-generated and manual). Use line breaks for formatting.
+              </p>
             </div>
+
+            {(fromName || fromEmail || signature) && (
+              <div className="mt-5" data-testid="sender-preview-section">
+                <label style={labelStyle} className="flex items-center gap-1.5 mb-2">
+                  <Eye className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+                  Live Preview
+                </label>
+                <div
+                  className="rounded-lg overflow-hidden"
+                  style={{ border: `1px solid ${BORDER}`, background: "#FFFFFF" }}
+                >
+                  <div className="px-4 py-3" style={{ background: "#F1F5F9", borderBottom: `1px solid ${BORDER}` }}>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                        style={{ background: "rgba(16,185,129,0.1)", color: EMERALD }}
+                      >
+                        {fromName ? fromName.charAt(0).toUpperCase() : "?"}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: TEXT }} data-testid="preview-from-name">
+                          {fromName || "No name set"}
+                        </p>
+                        <p className="text-[10px]" style={{ color: MUTED }} data-testid="preview-from-email">
+                          {"<"}{fromEmail || "no-email@example.com"}{">"}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[11px] mt-2 font-medium" style={{ color: TEXT }}>
+                      Subject: Follow-up on your cooling equipment needs
+                    </p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs" style={{ color: MUTED, fontStyle: "italic" }}>
+                      [Email body content will appear here...]
+                    </p>
+                    {signature && (
+                      <div
+                        className="mt-4 pt-3"
+                        style={{ borderTop: `1px solid ${BORDER}` }}
+                        data-testid="preview-signature"
+                      >
+                        {signature.split("\n").map((line, i) => (
+                          <p
+                            key={i}
+                            className="text-[12px] leading-relaxed"
+                            style={{ color: "#64748B" }}
+                          >
+                            {line || "\u00A0"}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10px] mt-2 flex items-center gap-1" style={{ color: MUTED }}>
+                  <CheckCircle2 className="w-3 h-3" style={{ color: EMERALD }} />
+                  Applied to all outreach emails (Touch 1, 3, and 5) and test sends
+                </p>
+              </div>
+            )}
           </div>
 
           <div
