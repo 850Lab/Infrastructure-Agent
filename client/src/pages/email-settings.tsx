@@ -15,6 +15,8 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
+  MessageSquareReply,
+  RefreshCw,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -32,6 +34,11 @@ interface EmailSettings {
   smtpUser: string;
   smtpPass: string;
   smtpSecure: boolean;
+  imapHost: string | null;
+  imapPort: number | null;
+  imapSecure: boolean | null;
+  replyCheckEnabled: boolean;
+  lastReplyCheck: string | null;
   fromName: string;
   fromEmail: string;
   signature: string | null;
@@ -60,6 +67,10 @@ export default function EmailSettingsPage() {
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpPass, setSmtpPass] = useState("");
   const [smtpSecure, setSmtpSecure] = useState(false);
+  const [imapHost, setImapHost] = useState("");
+  const [imapPort, setImapPort] = useState(993);
+  const [imapSecure, setImapSecure] = useState(true);
+  const [replyCheckEnabled, setReplyCheckEnabled] = useState(false);
   const [fromName, setFromName] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [signature, setSignature] = useState("");
@@ -81,6 +92,10 @@ export default function EmailSettingsPage() {
       setSmtpUser(settings.smtpUser || "");
       setSmtpPass(settings.smtpPass || "");
       setSmtpSecure(settings.smtpSecure || false);
+      setImapHost(settings.imapHost || "");
+      setImapPort(settings.imapPort || 993);
+      setImapSecure(settings.imapSecure !== false);
+      setReplyCheckEnabled(settings.replyCheckEnabled || false);
       setFromName(settings.fromName || "");
       setFromEmail(settings.fromEmail || "");
       setSignature(settings.signature || "");
@@ -93,6 +108,7 @@ export default function EmailSettingsPage() {
     mutationFn: () =>
       apiRequest("POST", "/api/email/settings", {
         smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure,
+        imapHost: imapHost || null, imapPort, imapSecure, replyCheckEnabled,
         fromName, fromEmail, signature, dailyLimit, enabled,
       }),
     onSuccess: () => {
@@ -112,6 +128,21 @@ export default function EmailSettingsPage() {
     },
     onError: (err: any) => {
       toast({ title: "Test failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const replyCheckMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/email/check-replies"),
+    onSuccess: async (res: any) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/email/settings"] });
+      toast({
+        title: "Reply check complete",
+        description: `Found ${data.repliesFound} new replies across ${data.clientsChecked} clients.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Reply check failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -375,6 +406,100 @@ export default function EmailSettingsPage() {
                 </label>
               </div>
             </div>
+          </div>
+
+          <div
+            className="rounded-xl p-5"
+            style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}
+          >
+            <h2 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: TEXT }}>
+              <MessageSquareReply className="w-4 h-4" style={{ color: EMERALD }} />
+              Reply Detection (IMAP)
+            </h2>
+            <p className="text-xs mb-3" style={{ color: MUTED }}>
+              Monitor your inbox for replies to outreach emails. When a reply is detected, the outreach sequence for that company is automatically paused.
+              IMAP credentials use your same SMTP username and password.
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div>
+                <label style={labelStyle}>IMAP Host</label>
+                <input
+                  type="text"
+                  value={imapHost}
+                  onChange={(e) => { setImapHost(e.target.value); setHasChanges(true); }}
+                  placeholder="imap.gmail.com"
+                  style={inputStyle}
+                  data-testid="input-imap-host"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>IMAP Port</label>
+                <input
+                  type="number"
+                  value={imapPort}
+                  onChange={(e) => { setImapPort(parseInt(e.target.value) || 993); setHasChanges(true); }}
+                  style={inputStyle}
+                  data-testid="input-imap-port"
+                />
+              </div>
+              <div className="flex items-end gap-3 pb-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={imapSecure}
+                    onChange={(e) => { setImapSecure(e.target.checked); setHasChanges(true); }}
+                    data-testid="input-imap-secure"
+                  />
+                  <span className="text-xs font-medium" style={{ color: TEXT }}>
+                    SSL/TLS
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={replyCheckEnabled}
+                  onChange={(e) => { setReplyCheckEnabled(e.target.checked); setHasChanges(true); }}
+                  data-testid="input-reply-check-enabled"
+                />
+                <span className="text-xs font-medium" style={{ color: TEXT }}>
+                  Enable automatic reply checking (every 15 min)
+                </span>
+              </label>
+              <div className="flex items-center gap-2">
+                {settings?.lastReplyCheck && (
+                  <span className="text-[10px]" style={{ color: MUTED }} data-testid="text-last-reply-check">
+                    Last check: {new Date(settings.lastReplyCheck).toLocaleString()}
+                  </span>
+                )}
+                <Button
+                  onClick={() => replyCheckMutation.mutate()}
+                  disabled={replyCheckMutation.isPending || !settings}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  style={{ borderColor: EMERALD, color: EMERALD }}
+                  data-testid="button-check-replies"
+                >
+                  {replyCheckMutation.isPending ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3" />
+                  )}
+                  Check Now
+                </Button>
+              </div>
+            </div>
+
+            {!imapHost && smtpHost && (
+              <p className="text-[10px] mt-2" style={{ color: MUTED }}>
+                If left empty, the IMAP host will be auto-derived from your SMTP host (works for Gmail, Outlook, Yahoo, Zoho).
+              </p>
+            )}
           </div>
 
           <div

@@ -1,8 +1,8 @@
 import { type Express, type Request, type Response } from "express";
 import { authMiddleware } from "./auth";
 import { db } from "./db";
-import { clientEmailSettings } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { clientEmailSettings, emailReplies } from "@shared/schema";
+import { eq, and, desc } from "drizzle-orm";
 import {
   sendOutreachEmail,
   sendTestEmail,
@@ -12,6 +12,7 @@ import {
   getTrackingPixel,
   getEmailSettings,
 } from "./email-service";
+import { runReplyCheck, getRepliesForPipeline } from "./reply-checker";
 
 export function registerEmailRoutes(app: Express) {
   // === PUBLIC TRACKING ROUTES (no auth) ===
@@ -99,6 +100,7 @@ export function registerEmailRoutes(app: Express) {
 
       const {
         smtpHost, smtpPort, smtpUser, smtpPass, smtpSecure,
+        imapHost, imapPort, imapSecure, replyCheckEnabled,
         fromName, fromEmail, signature, dailyLimit, enabled,
       } = req.body;
 
@@ -118,6 +120,10 @@ export function registerEmailRoutes(app: Express) {
           smtpPort: smtpPort || 587,
           smtpUser,
           smtpSecure: smtpSecure || false,
+          imapHost: imapHost || null,
+          imapPort: imapPort || 993,
+          imapSecure: imapSecure !== false,
+          replyCheckEnabled: replyCheckEnabled || false,
           fromName,
           fromEmail,
           signature: signature || null,
@@ -151,6 +157,10 @@ export function registerEmailRoutes(app: Express) {
             smtpUser,
             smtpPass,
             smtpSecure: smtpSecure || false,
+            imapHost: imapHost || null,
+            imapPort: imapPort || 993,
+            imapSecure: imapSecure !== false,
+            replyCheckEnabled: replyCheckEnabled || false,
             fromName,
             fromEmail,
             signature: signature || null,
@@ -265,6 +275,76 @@ export function registerEmailRoutes(app: Express) {
       }
       const events = await getTrackingEvents(emailSendId);
       res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Trigger manual reply check for current client
+  app.post("/api/email/check-replies", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        res.status(400).json({ error: "No client context" });
+        return;
+      }
+
+      const [settings] = await db
+        .select()
+        .from(clientEmailSettings)
+        .where(eq(clientEmailSettings.clientId, clientId));
+
+      if (!settings) {
+        res.status(400).json({ error: "Email settings not configured" });
+        return;
+      }
+
+      const result = await runReplyCheck();
+      res.json({
+        success: true,
+        repliesFound: result.totalReplies,
+        clientsChecked: result.clientsChecked,
+        errors: result.errors,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get replies for a specific pipeline entry
+  app.get("/api/email/replies/:outreachPipelineId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        res.status(400).json({ error: "No client context" });
+        return;
+      }
+      const pipelineId = parseInt(req.params.outreachPipelineId);
+      if (isNaN(pipelineId)) {
+        res.status(400).json({ error: "Invalid pipeline ID" });
+        return;
+      }
+      const replies = await getRepliesForPipeline(pipelineId, clientId);
+      res.json(replies);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get all replies for current client
+  app.get("/api/email/replies", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        res.status(400).json({ error: "No client context" });
+        return;
+      }
+      const replies = await db
+        .select()
+        .from(emailReplies)
+        .where(eq(emailReplies.clientId, clientId))
+        .orderBy(desc(emailReplies.receivedAt));
+      res.json(replies);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

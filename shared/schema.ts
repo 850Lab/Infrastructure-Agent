@@ -176,6 +176,8 @@ export const outreachPipeline = pgTable("outreach_pipeline", {
   pipelineStatus: text("pipeline_status").notNull().default("ACTIVE"),
   nextTouchDate: timestamp("next_touch_date").notNull(),
   touchesCompleted: integer("touches_completed").notNull().default(0),
+  respondedAt: timestamp("responded_at"),
+  respondedVia: text("responded_via"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -192,12 +194,17 @@ export const clientEmailSettings = pgTable("client_email_settings", {
   smtpUser: text("smtp_user").notNull(),
   smtpPass: text("smtp_pass").notNull(),
   smtpSecure: boolean("smtp_secure").notNull().default(false),
+  imapHost: text("imap_host"),
+  imapPort: integer("imap_port").default(993),
+  imapSecure: boolean("imap_secure").default(true),
   fromName: text("from_name").notNull(),
   fromEmail: text("from_email").notNull(),
   signature: text("signature"),
   dailyLimit: integer("daily_limit").notNull().default(50),
   sentToday: integer("sent_today").notNull().default(0),
   lastResetDate: text("last_reset_date"),
+  replyCheckEnabled: boolean("reply_check_enabled").notNull().default(false),
+  lastReplyCheck: timestamp("last_reply_check"),
   enabled: boolean("enabled").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -219,6 +226,7 @@ export const emailSends = pgTable("email_sends", {
   subject: text("subject").notNull(),
   bodyHtml: text("body_html").notNull(),
   trackingId: varchar("tracking_id").notNull().default(sql`gen_random_uuid()`),
+  messageId: text("message_id"),
   status: text("status").notNull().default("sent"),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
   errorMessage: text("error_message"),
@@ -226,6 +234,7 @@ export const emailSends = pgTable("email_sends", {
   firstOpenedAt: timestamp("first_opened_at"),
   clickCount: integer("click_count").notNull().default(0),
   firstClickedAt: timestamp("first_clicked_at"),
+  replyDetectedAt: timestamp("reply_detected_at"),
 });
 
 export const insertEmailSendSchema = createInsertSchema(emailSends).omit({ id: true, sentAt: true, openCount: true, firstOpenedAt: true, clickCount: true, firstClickedAt: true });
@@ -246,3 +255,21 @@ export const emailTrackingEvents = pgTable("email_tracking_events", {
 export const insertEmailTrackingEventSchema = createInsertSchema(emailTrackingEvents).omit({ id: true, createdAt: true });
 export type InsertEmailTrackingEvent = z.infer<typeof insertEmailTrackingEventSchema>;
 export type EmailTrackingEvent = typeof emailTrackingEvents.$inferSelect;
+
+export const emailReplies = pgTable("email_replies", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  emailSendId: integer("email_send_id").notNull(),
+  outreachPipelineId: integer("outreach_pipeline_id").notNull(),
+  fromEmail: text("from_email").notNull(),
+  subject: text("subject"),
+  snippet: text("snippet"),
+  imapMessageId: text("imap_message_id"),
+  inReplyTo: text("in_reply_to"),
+  receivedAt: timestamp("received_at").notNull(),
+  detectedAt: timestamp("detected_at").defaultNow().notNull(),
+});
+
+export const insertEmailReplySchema = createInsertSchema(emailReplies).omit({ id: true, detectedAt: true });
+export type InsertEmailReply = z.infer<typeof insertEmailReplySchema>;
+export type EmailReply = typeof emailReplies.$inferSelect;

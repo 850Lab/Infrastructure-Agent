@@ -1,0 +1,375 @@
+You are working inside my existing Replit outreach machine.
+
+Your job is to AUDIT first, then INSTALL if missing.
+
+I am launching 3 separate outreach campaigns today, all using the same underlying machine:
+
+1. Texas Cool Down Trailers
+2. Texas Automation Systems
+3. 850 Lab Workshops
+
+Each campaign must support:
+- separate lead lists
+- separate campaign identity
+- separate email templates
+- separate touch tracking
+- call follow-up workflow
+- 6 touches per relevant lead
+- notes / outcomes / status updates
+- ability to scale without mixing campaigns
+
+IMPORTANT:
+Do not assume this is missing.
+First inspect the current codebase and determine whether this structure already exists fully, partially, or not at all.
+
+--------------------------------------------------
+PHASE 1 — AUDIT
+--------------------------------------------------
+
+Inspect the current project and report back clearly on:
+
+1. Whether the system already supports multiple campaign types
+2. Whether leads can already be tagged or separated by campaign
+3. Whether separate email templates exist per campaign
+4. Whether touch stages / follow-up stages already exist
+5. Whether the UI already allows campaign-specific management
+6. Whether the database already has the required fields
+7. Whether outbound workflow logic already supports campaign-specific messaging
+8. Whether call follow-up logging and next-touch scheduling already exist
+9. Whether anything is hardcoded for only one business/use case
+10. What must be added, fixed, or refactored before launch
+
+Then classify the system into one of these:
+- FULLY READY
+- PARTIALLY READY
+- NOT READY
+
+Do not make changes yet until this audit is complete.
+
+--------------------------------------------------
+PHASE 2 — INSTALL / PATCH ONLY WHAT IS MISSING
+--------------------------------------------------
+
+If any part is missing, install the missing structure cleanly into the existing app.
+
+Do NOT rebuild the whole app.
+Do NOT break existing flows.
+Do NOT remove working features.
+Patch the current machine into a true 3-campaign outreach system.
+
+--------------------------------------------------
+REQUIRED SYSTEM DESIGN
+--------------------------------------------------
+
+The app must support 3 campaign types:
+
+A) TEXAS COOL DOWN TRAILERS
+Purpose:
+- industrial contractor outreach
+- trailer rental / deployment conversations
+
+B) TEXAS AUTOMATION SYSTEMS
+Purpose:
+- selling “The Machine” as an automation service
+- Pivotal Gamechangers LLC is client #2 using this system internally
+- target industries include staffing agencies, commercial real estate, and insurance brokers
+
+C) 850 LAB WORKSHOPS
+Purpose:
+- book financial education / credit optimization workshops
+- host pays approximately $150
+- service/value is given to attendees
+- backend monetization happens later through non-credit-repair opportunities such as tradelines, funding guidance, business consulting, etc.
+
+--------------------------------------------------
+DATABASE / DATA MODEL REQUIREMENTS
+--------------------------------------------------
+
+Ensure every lead record supports at minimum:
+
+- id
+- campaign_type
+  - allowed values:
+    - texas_cdt
+    - texas_automation_systems
+    - lab_850_workshops
+
+- company_name
+- contact_name
+- first_name
+- last_name
+- title
+- email
+- phone
+- website
+- linkedin_url
+- city
+- state
+- industry
+- source
+- relevance_status
+  - relevant
+  - maybe
+  - not_relevant
+
+- current_touch_number
+  - 0 through 6
+
+- current_touch_stage
+  - not_contacted
+  - touch_1_sent
+  - touch_2_sent
+  - touch_3_sent
+  - touch_4_sent
+  - touch_5_sent
+  - touch_6_sent
+  - replied
+  - call_scheduled
+  - interested
+  - not_interested
+  - closed
+  - nurture
+
+- last_contacted_at
+- next_follow_up_at
+- last_outcome
+- call_followup_required
+- assigned_offer
+- notes
+- personalization_line
+- email_template_version
+- created_at
+- updated_at
+
+If equivalent fields already exist, reuse them.
+Only create new ones if necessary.
+
+--------------------------------------------------
+CAMPAIGN SEGMENTATION REQUIREMENTS
+--------------------------------------------------
+
+The app must clearly separate the 3 campaigns in both logic and UI.
+
+I need to be able to:
+- filter leads by campaign
+- view campaign-specific pipelines
+- send campaign-specific messaging
+- track touches without mixing businesses
+- manage outcomes separately for each campaign
+
+If tables or views already exist, improve them only if needed.
+If not, create the minimum clean structure necessary.
+
+--------------------------------------------------
+EMAIL TEMPLATE REQUIREMENTS
+--------------------------------------------------
+
+Each campaign must have its own base outreach template library.
+
+Tone required:
+- personalized
+- direct
+- genuine
+- decisive
+- not spammy
+- not probing
+- not fake-friendly
+- not generic “quick question” style
+
+Install or update a template system so each campaign has at least:
+
+1. Initial outreach email
+2. Follow-up email 1
+3. Follow-up email 2
+4. Final check-in email
+
+Store them in a way that can be edited later.
+
+Use the following campaign positioning:
+
+--------------------------------------------------
+TEXAS COOL DOWN TRAILERS — BASE POSITIONING
+--------------------------------------------------
+
+We deploy mobile cooling stations for contractors working long shifts inside refineries and chemical plants along the Gulf Coast.
+
+Tone:
+- operational
+- respectful
+- industry-aware
+- direct
+
+Base email direction:
+Introduce who we are, why we’re reaching out, what environment we support, and invite the recipient to continue the conversation if their crews are supporting plant work.
+
+--------------------------------------------------
+TEXAS AUTOMATION SYSTEMS — BASE POSITIONING
+--------------------------------------------------
+
+We build outreach and follow-up systems that help service companies automate prospecting, lead management, and communications so their teams spend less time doing manual follow-up.
+
+Tone:
+- professional
+- calm
+- capabilities-focused
+- implementation-focused, not “software salesy”
+
+Base email direction:
+Introduce the automation capability, explain that the system is being used in real businesses already, and invite them to explore whether it fits their operation.
+
+Mention internally in code/comments/admin config that Pivotal Gamechangers LLC is using this machine as client #2 / case-study account.
+
+--------------------------------------------------
+850 LAB WORKSHOPS — BASE POSITIONING
+--------------------------------------------------
+
+We host financial education / credit optimization workshops that help attendees improve their credit profile and understand how stronger credit can create access to business funding, housing opportunities, and financial leverage.
+
+Tone:
+- community-oriented
+- trustworthy
+- educational
+- clear
+- not “credit repair pitch”
+
+Base email direction:
+Explain that this is a workshop resource organizations can offer members/staff and invite them to discuss whether it fits their programming.
+
+--------------------------------------------------
+6-TOUCH LOGIC REQUIREMENTS
+--------------------------------------------------
+
+The system must support 6 touches per relevant lead.
+
+Touch model:
+- Touch 1: Email
+- Touch 2: Call follow-up
+- Touch 3: Email
+- Touch 4: Call follow-up
+- Touch 5: Email
+- Touch 6: Final call or final check-in
+
+Requirements:
+- each touch must be loggable
+- current touch must update automatically
+- next follow-up date must be calculable/settable
+- replies should stop generic sequence flow and move lead to reply workflow
+- uninterested leads should stop sequence
+- interested leads should move to active opportunity
+- relevant leads should remain visible until all 6 touches are exhausted or dispositioned
+
+--------------------------------------------------
+CALL FOLLOW-UP / NOTES REQUIREMENTS
+--------------------------------------------------
+
+Ensure the app supports:
+- logging call attempt
+- logging call outcome
+- storing notes from conversation
+- storing voicemail result
+- marking “call back later”
+- marking “wrong person”
+- marking “generic inbox only”
+- marking “needs different decision maker”
+- marking “no answer”
+- marking “interested”
+- marking “not interested”
+
+If voice memo / transcript analysis is already present in the app, do not remove it.
+Instead ensure its output can be attached to the correct lead and campaign.
+
+--------------------------------------------------
+RECOVERY / GAP HANDLING
+--------------------------------------------------
+
+The machine must be able to handle imperfect lead data without breaking workflow.
+
+Support statuses such as:
+- no website
+- no direct email
+- no phone
+- generic contact only
+- no decision maker found
+- authority mismatch
+- incomplete business data
+
+The lead should still remain usable and trackable where possible.
+
+--------------------------------------------------
+UI / ADMIN REQUIREMENTS
+--------------------------------------------------
+
+Add or verify an admin/operator view that clearly shows:
+- campaign name
+- lead counts by campaign
+- relevant leads by campaign
+- touch stage counts
+- due today follow-ups
+- replied leads
+- interested leads
+- closed leads
+
+Also provide a per-lead view showing:
+- campaign type
+- full contact details
+- current touch
+- last action
+- next follow-up
+- notes
+- email template used
+- call outcome history
+
+Keep the UI simple and operational.
+No unnecessary redesign unless required for usability.
+
+--------------------------------------------------
+SAFETY / IMPLEMENTATION RULES
+--------------------------------------------------
+
+- Do not break existing working workflows
+- Do not duplicate schema if equivalent structure already exists
+- Do not create bloated architecture
+- Reuse current models/components where practical
+- Keep implementation simple, clean, and launch-ready
+- Preserve all current business logic that already works
+- Comment any new logic clearly
+- If migrations are needed, make them safely
+- If seed/config files are needed for campaign templates, create them
+- If environment variables are needed, document them
+- If email sending is already wired, integrate with it rather than replacing it
+
+--------------------------------------------------
+OUTPUT REQUIRED FROM YOU
+--------------------------------------------------
+
+After audit and any needed installation, give me a launch-readiness report in this exact format:
+
+1. AUDIT SUMMARY
+- what already existed
+- what was missing
+- what was updated
+
+2. CAMPAIGN READINESS
+- Texas Cool Down Trailers: READY / PARTIAL / NOT READY
+- Texas Automation Systems: READY / PARTIAL / NOT READY
+- 850 Lab Workshops: READY / PARTIAL / NOT READY
+
+3. FILES TOUCHED
+- list all files created or modified
+
+4. DATA MODEL
+- fields added or reused
+
+5. UI CHANGES
+- what changed in the interface
+
+6. WORKFLOW CHANGES
+- what changed in sequencing, touch logic, and follow-up flow
+
+7. REMAINING GAPS BEFORE LIVE LAUNCH
+- list anything still needing my decision or credentials
+
+8. RECOMMENDED NEXT TEST
+- tell me the fastest real-world test to run immediately
+
+Begin now by auditing the current codebase first, then install only what is missing.

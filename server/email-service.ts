@@ -176,19 +176,23 @@ export async function sendOutreachEmail(params: {
 
   try {
     const transporter = createTransporter(settings);
-    await transporter.sendMail({
+    const sendResult = await transporter.sendMail({
       from: `"${settings.fromName}" <${settings.fromEmail}>`,
       to: params.recipientName
         ? `"${params.recipientName}" <${params.recipientEmail}>`
         : params.recipientEmail,
       subject,
       html: trackedHtml,
+      headers: {
+        "X-Outreach-Tracking-Id": trackingId,
+      },
     });
 
-    // Update status to sent
+    // Update status to sent and store the SMTP Message-ID for reply threading
+    const smtpMessageId = sendResult.messageId || null;
     await db
       .update(emailSends)
-      .set({ status: "sent" })
+      .set({ status: "sent", messageId: smtpMessageId })
       .where(eq(emailSends.id, sendRecord.id));
 
     // Increment daily counter

@@ -108,6 +108,8 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
       const { startScheduler } = await import("./scheduler");
       startScheduler();
+      const { startReplyChecker } = await import("./reply-checker");
+      startReplyChecker();
     },
   );
 })();

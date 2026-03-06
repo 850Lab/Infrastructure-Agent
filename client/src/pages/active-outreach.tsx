@@ -23,6 +23,7 @@ import {
   MailCheck,
   MailX,
   AlertTriangle,
+  MessageSquareReply,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -50,6 +51,8 @@ interface OutreachItem {
   pipelineStatus: string;
   nextTouchDate: string;
   touchesCompleted: number;
+  respondedAt: string | null;
+  respondedVia: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,6 +80,7 @@ interface EmailSendRecord {
   firstOpenedAt: string | null;
   clickCount: number;
   firstClickedAt: string | null;
+  replyDetectedAt: string | null;
   errorMessage: string | null;
 }
 
@@ -175,6 +179,15 @@ function TrackingBadge({ send }: { send: EmailSendRecord }) {
           data-testid={`badge-clicked-${send.id}`}
         >
           <MousePointer className="w-3 h-3" /> {send.clickCount} clicks
+        </span>
+      )}
+      {send.replyDetectedAt && (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+          style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: `1px solid rgba(16,185,129,0.3)` }}
+          title={`Reply detected: ${new Date(send.replyDetectedAt).toLocaleString()}`}
+          data-testid={`badge-replied-${send.id}`}
+        >
+          <MessageSquareReply className="w-3 h-3" /> Replied
         </span>
       )}
     </div>
@@ -356,6 +369,16 @@ function OutreachCard({
               >
                 {item.pipelineStatus.replace("_", " ")}
               </span>
+              {item.pipelineStatus === "RESPONDED" && item.respondedVia === "reply_detected" && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: `1px solid rgba(16,185,129,0.3)` }}
+                  title={item.respondedAt ? `Reply detected: ${new Date(item.respondedAt).toLocaleString()}` : ""}
+                  data-testid={`badge-auto-replied-${item.id}`}
+                >
+                  <MessageSquareReply className="w-3 h-3" /> Auto-Detected
+                </span>
+              )}
               {isOverdue && item.pipelineStatus === "ACTIVE" && (
                 <span
                   className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
