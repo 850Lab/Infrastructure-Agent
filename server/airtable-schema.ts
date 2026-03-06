@@ -442,6 +442,7 @@ const CALLS_FIELDS: FieldSpec[] = [
   },
   { name: "Processed", type: "checkbox", options: { color: "greenBright", icon: "check" } },
   { name: "Gatekeeper_Name", type: "singleLineText" },
+  { name: "Sales_Learning_Processed", type: "checkbox", options: { color: "greenBright", icon: "check" } },
 ];
 
 export async function ensureSchema(): Promise<SchemaReport> {
@@ -556,6 +557,185 @@ export async function ensureSchema(): Promise<SchemaReport> {
     { name: "Notes", type: "multilineText" },
   ];
 
+  const CALL_OBSERVATIONS_FIELDS: FieldSpec[] = [
+    { name: "Client_ID", type: "singleLineText" },
+    { name: "Call_ID", type: "singleLineText" },
+    { name: "Company_ID", type: "singleLineText" },
+    { name: "Company_Name", type: "singleLineText" },
+    {
+      name: "Detected_Speaker_Mode",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "Flat", color: "grayLight2" },
+        { name: "Partial", color: "blueLight2" },
+        { name: "Diarized", color: "greenLight2" },
+      ]},
+    },
+    { name: "Gatekeeper_Name", type: "singleLineText" },
+    { name: "Opener_Used", type: "multilineText" },
+    { name: "Value_Prop_Used", type: "multilineText" },
+    { name: "Qualifying_Questions_Asked", type: "number", options: { precision: 0 } },
+    { name: "Authority_Redirect_Attempted", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+    { name: "Authority_Redirect_Success", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+    { name: "Deflection_Phrase", type: "singleLineText" },
+    {
+      name: "Objection_Type",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "already_have", color: "blueLight2" },
+        { name: "not_interested", color: "redLight2" },
+        { name: "bad_timing", color: "yellowLight2" },
+        { name: "no_budget", color: "orangeLight2" },
+        { name: "wrong_person", color: "grayLight2" },
+        { name: "none_detected", color: "greenLight2" },
+      ]},
+    },
+    {
+      name: "Prospect_Engagement",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "Dismissive", color: "redLight2" },
+        { name: "Neutral", color: "grayLight2" },
+        { name: "Curious", color: "blueLight2" },
+        { name: "Interested", color: "cyanLight2" },
+        { name: "Qualified", color: "greenLight2" },
+      ]},
+    },
+    {
+      name: "Operator_Performance",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "Strong", color: "greenLight2" },
+        { name: "Mixed", color: "yellowLight2" },
+        { name: "Weak", color: "redLight2" },
+      ]},
+    },
+    { name: "Talk_Ratio_Operator", type: "number", options: { precision: 0 } },
+    { name: "Talk_Ratio_Prospect", type: "number", options: { precision: 0 } },
+    { name: "Outcome", type: "singleLineText" },
+    { name: "Call_Duration", type: "singleLineText" },
+    { name: "Evidence_JSON", type: "multilineText" },
+    {
+      name: "Created_At",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+  ];
+
+  const CALL_LEARNING_FIELDS: FieldSpec[] = [
+    { name: "Client_ID", type: "singleLineText" },
+    { name: "Call_ID", type: "singleLineText" },
+    { name: "Company_ID", type: "singleLineText" },
+    { name: "Pattern_Types", type: "multilineText" },
+    { name: "Failure_Modes", type: "multilineText" },
+    { name: "Strength_Modes", type: "multilineText" },
+    { name: "Severity_Score", type: "number", options: { precision: 0 } },
+    { name: "Learning_Summary", type: "multilineText" },
+    { name: "Coaching_Recommendation", type: "multilineText" },
+    { name: "Patch_Types_Recommended", type: "multilineText" },
+    {
+      name: "Script_Impact_Level",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "Low", color: "grayLight2" },
+        { name: "Medium", color: "yellowLight2" },
+        { name: "High", color: "redLight2" },
+      ]},
+    },
+    {
+      name: "Strategy_Impact_Level",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "Low", color: "grayLight2" },
+        { name: "Medium", color: "yellowLight2" },
+        { name: "High", color: "redLight2" },
+      ]},
+    },
+    {
+      name: "Created_At",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+  ];
+
+  const PATTERN_INSIGHTS_FIELDS: FieldSpec[] = [
+    { name: "Client_ID", type: "singleLineText" },
+    { name: "Insight_Type", type: "singleLineText" },
+    { name: "Segment_Key", type: "singleLineText" },
+    { name: "Pattern_Description", type: "multilineText" },
+    { name: "Sample_Size", type: "number", options: { precision: 0 } },
+    { name: "Confidence_Score", type: "number", options: { precision: 0 } },
+    { name: "Recommended_Action", type: "multilineText" },
+    { name: "Recommended_Targeting_Change", type: "multilineText" },
+    { name: "Recommended_Script_Change", type: "multilineText" },
+    { name: "Recommended_Sequence_Change", type: "multilineText" },
+    { name: "Active", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+    {
+      name: "Created_At",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+    {
+      name: "Updated_At",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+  ];
+
+  const SCRIPT_PATCHES_FIELDS: FieldSpec[] = [
+    { name: "Client_ID", type: "singleLineText" },
+    { name: "Patch_Type", type: "singleLineText" },
+    { name: "Trigger_Pattern", type: "multilineText" },
+    { name: "Patch_Title", type: "singleLineText" },
+    { name: "Patch_Instruction", type: "multilineText" },
+    {
+      name: "Patch_Priority",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "High", color: "redLight2" },
+        { name: "Medium", color: "yellowLight2" },
+        { name: "Low", color: "grayLight2" },
+      ]},
+    },
+    { name: "Applies_To_Bucket", type: "singleLineText" },
+    { name: "Applies_To_Industry", type: "singleLineText" },
+    { name: "Active", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+    {
+      name: "Source",
+      type: "singleSelect",
+      options: { choices: [
+        { name: "Rule Engine", color: "blueLight2" },
+        { name: "Pattern Insight", color: "cyanLight2" },
+        { name: "Manual", color: "grayLight2" },
+      ]},
+    },
+    {
+      name: "Created_At",
+      type: "dateTime",
+      options: {
+        dateFormat: { name: "iso" },
+        timeFormat: { name: "24hour" },
+        timeZone: "America/Chicago",
+      },
+    },
+  ];
+
   const tableSpecs: Array<{ name: string; fields: FieldSpec[]; description?: string }> = [
     { name: "Search_Queries", fields: SEARCH_QUERIES_FIELDS, description: "Search queries for Outscraper lead generation" },
     { name: "Companies", fields: COMPANIES_FIELDS, description: "Companies/leads database" },
@@ -585,6 +765,10 @@ export async function ensureSchema(): Promise<SchemaReport> {
       ],
       description: "Per-user machine configuration from onboarding",
     },
+    { name: "Call_Observations", fields: CALL_OBSERVATIONS_FIELDS, description: "Structured event capture from each analyzed call" },
+    { name: "Call_Learning", fields: CALL_LEARNING_FIELDS, description: "Interpreted analysis and learning signals per call" },
+    { name: "Pattern_Insights", fields: PATTERN_INSIGHTS_FIELDS, description: "Aggregated patterns across multiple calls" },
+    { name: "Script_Patches", fields: SCRIPT_PATCHES_FIELDS, description: "Structured script modification recommendations" },
   ];
 
   for (const spec of tableSpecs) {

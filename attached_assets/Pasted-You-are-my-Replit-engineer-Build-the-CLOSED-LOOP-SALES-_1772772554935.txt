@@ -1,0 +1,248 @@
+You are my Replit engineer. Build the CLOSED-LOOP SALES LEARNING SCRIPTS layer that consumes Script_Patches and Pattern_Insights to evolve scripts and playbooks intelligently.
+
+IMPORTANT CONTEXT
+The new Closed-Loop Sales Learning System already produces:
+- Call_Observations
+- Call_Learning
+- Pattern_Insights
+- Script_Patches
+
+The current system already has:
+- playbooks generation
+- gatekeeper redirect injection
+- offer-aware DM fit
+- bucket-based scripts
+- company-specific playbooks
+
+GOAL
+Upgrade the script system so it can consume structured learning patches and generate improved scripts intentionally.
+
+This must NOT be random GPT drift.
+It must be controlled, structured, and patch-driven.
+
+==================================================
+PART 1 — SCRIPT EVOLUTION FRAMEWORK
+==================================================
+
+Create:
+server/sales-learning/script-evolution.ts
+
+Goal:
+Generate the next version of scripts using:
+- active Script_Patches
+- active Pattern_Insights
+- company context
+- bucket context
+- offer context
+- current playbook version
+
+Create script patch application framework:
+
+Patch categories to support:
+1) opener patches
+2) gatekeeper patches
+3) value prop patches
+4) qualifying question patches
+5) objection handler patches
+6) follow-up email patches
+7) voicemail patches
+8) escalation / role-request patches
+
+Build helpers:
+- getApplicablePatches(company, bucket, industry)
+- rankPatchesByPriority()
+- applyPatchesToPrompt()
+- buildScriptEvolutionContext()
+
+==================================================
+PART 2 — STRUCTURED SCRIPT PATCH TYPES
+==================================================
+
+For each patch type define exactly how it influences script generation:
+
+1) add_gatekeeper_redirect_line
+Adds a direct authority-seeking line after brush-off.
+
+2) strengthen_value_prop
+Makes the operator explain value faster and more concretely.
+
+3) simplify_opener
+Shortens the opener if long-winded behavior is detected.
+
+4) add_qualifying_question
+Injects one required qualifying question early.
+
+5) add_objection_handler
+Adds a rebuttal tied to frequent objection pattern.
+
+6) shorten_response_after_deflection
+Forces a tighter follow-up response after gatekeeper stall.
+
+7) reposition_authority_redirect
+Moves the redirect earlier in the call flow.
+
+8) add_followup_email_angle
+Changes email copy based on objections/outcomes.
+
+9) escalate_to_decision_maker_role_request
+If no named DM exists, asks for role more precisely:
+Safety Manager / Site Superintendent / Project Manager etc.
+
+==================================================
+PART 3 — PLAYBOOK GENERATION UPGRADE
+==================================================
+
+Modify:
+server/playbooks.ts
+
+Current playbook generator should now ingest structured learning data.
+
+Add these inputs to playbook generation:
+- top active Script_Patches for this company/bucket
+- top relevant Pattern_Insights
+- recent Call_Learning summaries
+- repeated gatekeeper phrases for this company if present
+- Offer_DM_Reason if no named DM
+
+Prompt rules:
+- do not just dump raw GPT analysis text
+- convert structured patches into explicit instructions
+- preserve tone and brevity
+- keep scripts operator-friendly and not robotic
+
+Output fields still include:
+- Playbook_Call_Opener
+- Playbook_Gatekeeper_Ask
+- Playbook_Voicemail
+- Playbook_Email_Subject
+- Playbook_Email_Body
+- Playbook_Followup_Text
+
+But now also create:
+- Playbook_Strategy_Notes
+- Playbook_Learning_Version
+- Playbook_Applied_Patches
+- Playbook_Confidence
+
+Bootstrap/create these fields if missing on Companies.
+
+==================================================
+PART 4 — SCRIPT RECOMMENDATION ENGINE
+==================================================
+
+Create:
+server/sales-learning/script-recommendations.ts
+
+Goal:
+Produce operator-facing recommendations, not just hidden prompt injections.
+
+For each company or bucket, generate:
+- Recommended opener
+- Recommended first redirect
+- Recommended qualifying question
+- Recommended objection response
+- Recommended follow-up sequence choice
+
+Expose endpoint:
+GET /api/sales-learning/recommendations?company_id=<id>
+
+Also allow:
+GET /api/sales-learning/recommendations?bucket=Fresh
+GET /api/sales-learning/recommendations?bucket=Hot Follow-up
+
+==================================================
+PART 5 — SCRIPT VERSIONING
+==================================================
+
+Create:
+server/sales-learning/script-versioning.ts
+
+Goal:
+Track how scripts evolve over time.
+
+Create table:
+Script_Versions
+
+Fields:
+- Script_Version_ID
+- Client_ID
+- Company_ID (optional)
+- Bucket
+- Version_Label
+- Applied_Patches
+- Source_Insight_IDs
+- Script_Snapshot_JSON
+- Confidence
+- Created_At
+
+Whenever playbooks are regenerated using learning patches:
+- store a new script version record if content changed materially
+
+This allows pattern comparison later:
+- which versions performed better
+- which patches helped
+
+==================================================
+PART 6 — PARALLEL OPERATION
+==================================================
+
+This script layer must operate in parallel with the current playbook system.
+
+Rules:
+- if no Script_Patches exist, current playbook generation still works
+- if learning data exists, enrich playbook generation with structured patches
+- never block playbooks if learning endpoints fail
+- log learning injection success/failure separately
+
+==================================================
+PART 7 — UI / OPERATOR VISIBILITY
+==================================================
+
+Expose on the client machine UI:
+
+1) On Today / Call Mode:
+show:
+- Playbook_Strategy_Notes
+- Applied patches
+- Confidence
+
+2) On Analytics / Learning page:
+show:
+- top failure modes
+- top patches applied
+- script version performance trends
+
+Create a section:
+“Machine Learning Notes”
+Examples:
+- Gatekeepers at this company deflect with “send it over” repeatedly
+- Shorter opener performs better for this segment
+- Ask for Safety Manager before giving value prop
+
+==================================================
+PART 8 — TESTING
+==================================================
+
+Test scenarios:
+1) no patches exist → playbooks still generate normally
+2) one gatekeeper redirect patch exists → gatekeeper script updates correctly
+3) objection handler patch exists → voicemail/email/call opener remain coherent
+4) multiple patches exist → patch priority works and script does not become bloated
+5) script versions only save when meaningful content changes
+
+Verify:
+- current system not broken
+- learning patches improve specificity
+- scripts remain concise and usable in real calls
+
+==================================================
+PART 9 — DELIVERABLE
+==================================================
+
+Provide:
+1) files created/modified
+2) new schema fields/tables
+3) sample patch-driven playbook before/after
+4) script version example
+5) recommendations example
+6) confirmation that this runs in parallel with the current script system

@@ -15,6 +15,7 @@ import { registerAdminRoutes } from "./admin-routes";
 import { seedTexasCoolDown } from "./seed-client";
 import { registerTodayRoutes } from "./today-routes";
 import { registerOpportunityRoutes } from "./opportunities";
+import { registerSalesLearningRoutes } from "./sales-learning/sales-learning-routes";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -136,6 +137,7 @@ export async function registerRoutes(
   await seedTexasCoolDown().catch((e: any) => log(`Seed error: ${e.message}`, "seed"));
   registerTodayRoutes(app);
   registerOpportunityRoutes(app);
+  registerSalesLearningRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);

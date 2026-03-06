@@ -1,0 +1,409 @@
+You are my Replit engineer. Build a CLOSED-LOOP SALES LEARNING SYSTEM that runs in parallel with the existing script/playbook system.
+
+IMPORTANT CONTEXT
+The current system already has:
+- Calls
+- Companies
+- Opportunities
+- Decision_Makers
+- Playbooks
+- Transcript analysis
+- Gatekeeper containment detection
+- GPT-4o deep analysis
+- Offer-aware DM fit
+- Daily orchestrator
+- Query intelligence
+- Run history
+
+This new system must NOT replace the current script pipeline.
+It must run alongside it and produce structured learning signals that improve:
+- scripts
+- playbooks
+- targeting
+- call recommendations
+- opportunity progression
+
+GOAL
+Turn the current “single-pattern transcript patch loop” into a multi-layer learning system with:
+
+1) Observation Layer
+2) Interpretation Layer
+3) Pattern Layer
+4) Optimization Layer
+
+==================================================
+PART 1 — NEW TABLES / DATA MODELS
+==================================================
+
+Create or bootstrap these new Airtable tables:
+
+1) Call_Observations
+Purpose: structured event capture from each call
+
+Fields:
+- Observation_ID
+- Client_ID
+- Call_ID
+- Company_ID
+- Transcript_ID or Transcript_Ref
+- Operator_ID (if available)
+- Gatekeeper_Name
+- Detected_Speaker_Mode (single select: Flat, Partial, Diarized)
+- Opener_Used
+- Value_Prop_Used
+- Qualifying_Questions_Asked (number)
+- Authority_Redirect_Attempted (checkbox)
+- Authority_Redirect_Success (checkbox)
+- Deflection_Phrase
+- Objection_Type
+- Prospect_Engagement (single select: Dismissive, Neutral, Curious, Interested, Qualified)
+- Operator_Performance (single select: Strong, Mixed, Weak)
+- Talk_Ratio_Operator (number)
+- Talk_Ratio_Prospect (number)
+- Outcome
+- Call_Duration
+- Created_At
+
+2) Call_Learning
+Purpose: interpreted analysis of each call
+
+Fields:
+- Learning_ID
+- Client_ID
+- Call_ID
+- Company_ID
+- Pattern_Types (multi-select)
+- Failure_Modes (multi-select)
+- Strength_Modes (multi-select)
+- Severity_Score (number 0-100)
+- Learning_Summary
+- Coaching_Recommendation
+- Patch_Types_Recommended (multi-select)
+- Script_Impact_Level (single select: Low, Medium, High)
+- Strategy_Impact_Level (single select: Low, Medium, High)
+- Created_At
+
+3) Pattern_Insights
+Purpose: aggregated patterns across many calls
+
+Fields:
+- Insight_ID
+- Client_ID
+- Insight_Type
+- Segment_Key
+- Pattern_Description
+- Sample_Size
+- Confidence_Score
+- Recommended_Action
+- Recommended_Targeting_Change
+- Recommended_Script_Change
+- Recommended_Sequence_Change
+- Active (checkbox)
+- Created_At
+- Updated_At
+
+4) Script_Patches
+Purpose: structured script modifications, not freeform text only
+
+Fields:
+- Patch_ID
+- Client_ID
+- Patch_Type
+- Trigger_Pattern
+- Patch_Title
+- Patch_Instruction
+- Patch_Priority
+- Applies_To_Bucket
+- Applies_To_Industry
+- Active (checkbox)
+- Source (single select: Rule Engine, GPT, Pattern Insight, Manual)
+- Created_At
+
+==================================================
+PART 2 — OBSERVATION LAYER
+==================================================
+
+Create:
+server/sales-learning/observation-engine.ts
+
+Goal:
+Every analyzed call should produce a structured observation record.
+
+Inputs:
+- existing transcript
+- existing call record
+- existing GPT deep analysis
+- existing deterministic gatekeeper analysis
+
+Observation extraction rules:
+Capture these structured elements if present:
+- opener used
+- value prop used
+- qualifying question count
+- authority redirect attempted
+- authority redirect success
+- deflection phrase
+- objection type
+- engagement level
+- outcome
+- call duration
+- gatekeeper name
+- speaker mode
+
+If speaker diarization is not available:
+- set Detected_Speaker_Mode = Flat
+- still extract best-effort observations
+- do not block pipeline
+
+Build helper functions:
+- extractOpener()
+- extractValueProp()
+- countQualifyingQuestions()
+- detectAuthorityRedirect()
+- detectDeflectionPhrase()
+- classifyObjectionType()
+- classifyProspectEngagement()
+- estimateTalkRatio()
+
+Store all observation outputs in Call_Observations.
+
+==================================================
+PART 3 — INTERPRETATION LAYER
+==================================================
+
+Create:
+server/sales-learning/interpretation-engine.ts
+
+Goal:
+Interpret each call beyond phrase detection.
+
+Build a hybrid system:
+1) deterministic classifiers
+2) GPT structured classifier
+
+Classify these categories:
+
+A) Gatekeeper Interaction
+- brush_off
+- information_capture
+- authority_redirect
+- call_transfer
+- hard_block
+
+B) Prospect Engagement
+- dismissive
+- neutral
+- curious
+- interested
+- qualified
+
+C) Operator Performance
+- followed_script
+- off_script
+- talked_too_long
+- missed_question
+- missed_value_prop
+- accepted_deflection
+- strong_redirect
+- concise_and_controlled
+- weak_close_attempt
+
+D) Opportunity Signals
+- crew_size_mentioned
+- timeline_mentioned
+- active_project_mentioned
+- plant_work_confirmed
+- turnaround_signal
+- no_fit_signal
+
+Output:
+Create a Call_Learning record with:
+- Pattern_Types
+- Failure_Modes
+- Strength_Modes
+- Severity_Score
+- Learning_Summary
+- Coaching_Recommendation
+- Patch_Types_Recommended
+- Script_Impact_Level
+- Strategy_Impact_Level
+
+IMPORTANT
+Do NOT output only prose.
+Return structured JSON first, then summary text.
+
+==================================================
+PART 4 — PATTERN LAYER
+==================================================
+
+Create:
+server/sales-learning/pattern-engine.ts
+
+Goal:
+Learn across multiple calls, not just latest call.
+
+Analyze patterns across:
+- company
+- gatekeeper
+- operator
+- industry category
+- script version
+- opener type
+- objection type
+- outcome type
+
+Build these pattern aggregations:
+
+1) Gatekeeper Patterns
+Example:
+"Company X gatekeeper used 'send it over' 3 times"
+
+2) Script Performance Patterns
+Example:
+"Opener A yields 18% DM transfer vs Opener B yields 5%"
+
+3) Objection Patterns
+Example:
+"Most common objection among tank cleaning contractors is 'already have cooling'"
+
+4) Market Patterns
+Example:
+"Companies mentioning turnaround convert at 3x the rate"
+
+5) Operator Patterns
+Example:
+"Operator tends to talk too long after first objection"
+
+Rules:
+- minimum sample size thresholds before creating Pattern_Insights
+- assign Confidence_Score based on sample size + consistency
+- create Recommended_Action fields
+
+Segment keys examples:
+- company:<id>
+- gatekeeper:<name>
+- category:tank_cleaning
+- opener:heat_mitigation_infrastructure
+- objection:already_have_cooling
+
+==================================================
+PART 5 — OPTIMIZATION LAYER
+==================================================
+
+Create:
+server/sales-learning/optimization-engine.ts
+
+Goal:
+Turn insights into usable recommendations.
+
+Use Call_Learning + Pattern_Insights to generate:
+
+1) Script recommendations
+2) Playbook recommendations
+3) Targeting recommendations
+4) Sequence recommendations
+5) Opportunity progression recommendations
+
+Create structured patch types:
+- add_gatekeeper_redirect_line
+- strengthen_value_prop
+- simplify_opener
+- add_qualifying_question
+- add_objection_handler
+- shorten_response_after_deflection
+- reposition_authority_redirect
+- add_followup_email_angle
+- increase_targeting_weight
+- decrease_targeting_weight
+- route_to_email_sequence
+- escalate_to_decision_maker_role_request
+
+Write these into Script_Patches.
+
+IMPORTANT
+Do not directly overwrite scripts here.
+This layer only creates structured recommendations and patches.
+
+==================================================
+PART 6 — PARALLEL OPERATION WITH EXISTING PLAYBOOKS
+==================================================
+
+Create:
+server/sales-learning/run-sales-learning.ts
+
+Command:
+npx tsx server/sales-learning/run-sales-learning.ts --client=<client_id> --limit=50
+
+Pipeline:
+1) fetch recently analyzed calls not yet processed by sales learning
+2) build Call_Observations
+3) build Call_Learning
+4) update Pattern_Insights
+5) create/refresh Script_Patches
+
+This must run in parallel with existing script generation.
+It must NOT block playbook generation if it fails.
+
+Add a flag to run-daily:
+--salesLearning=true
+Default true
+
+If sales learning fails:
+- log error
+- continue rest of pipeline
+- write error to Run_History
+
+==================================================
+PART 7 — API ENDPOINTS
+==================================================
+
+Create endpoints:
+
+GET /api/sales-learning/observations
+GET /api/sales-learning/learning
+GET /api/sales-learning/patterns
+GET /api/sales-learning/patches
+GET /api/sales-learning/summary
+
+Summary endpoint should return:
+- observations count
+- learning records count
+- active insights count
+- active patches count
+- top failure modes
+- top strength modes
+- top recommended actions
+
+==================================================
+PART 8 — TESTING
+==================================================
+
+Test with real historical calls if available.
+
+Test cases:
+1) call where operator accepted brush-off
+2) call where operator redirected strongly
+3) call where project/timeline was mentioned
+4) call where no fit was present
+5) repeated calls to same company/gatekeeper
+
+Verify:
+- observations created
+- learning records created
+- pattern insight appears only after threshold
+- structured patches appear
+- run is idempotent
+
+==================================================
+PART 9 — DELIVERABLE
+==================================================
+
+Provide:
+1) files created
+2) schema changes
+3) command to run
+4) sample observation output
+5) sample learning output
+6) sample pattern insight
+7) sample script patch
+8) confirmation it runs in parallel without disrupting current playbook system

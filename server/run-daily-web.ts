@@ -12,6 +12,7 @@ import { startRun, addStep, completeRun } from "./run-history";
 import { takeSnapshot, computeDiff } from "./run-diff";
 import { snapshotTodayListFields, computeChangeset, type ChangesetEntry } from "./run-changeset";
 import { checkLimit, logUsageMetric } from "./usage-guard";
+import { runSalesLearning } from "./sales-learning/run-sales-learning";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -31,6 +32,7 @@ export interface WebRunOptions {
   market?: string;
   bootstrap?: boolean;
   playbooks?: boolean;
+  salesLearning?: boolean;
   clientId?: string;
 }
 
@@ -227,6 +229,23 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }, clientId);
     } catch (e: any) {
       errors.push(`Call Engine: ${e.message}`);
+    }
+
+    if (opts?.salesLearning !== false) {
+      try {
+        await timedStep(run_id, "sales_learning", async () => {
+          const r = await runSalesLearning(clientId, { limit: 50 });
+          eventBus.publish("TRIGGER_FIRED", {
+            trigger: "sales_learning",
+            company: `${r.calls_processed} calls analyzed, ${r.patches_created} patches`,
+            ts: Date.now(),
+          }, clientId);
+          return r;
+        }, clientId);
+      } catch (e: any) {
+        log(`Sales Learning failed (non-blocking): ${e.message}`, "daily-web");
+        errors.push(`Sales Learning: ${e.message}`);
+      }
     }
 
     try {
