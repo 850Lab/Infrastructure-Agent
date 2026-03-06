@@ -20,6 +20,7 @@ import MachineSettingsPage from "@/pages/machine-settings";
 import CinematicPage from "@/pages/cinematic";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import ErrorBoundary from "@/components/error-boundary";
 
 interface MeResponse {
   email: string;
@@ -121,14 +122,16 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -375,7 +375,7 @@ function parseOutscraperResult(raw: any): OutscraperCompanyResult {
   };
 }
 
-async function searchOutscraperFull(query: string): Promise<any[]> {
+async function searchOutscraperFull(query: string, retryCount: number = 0): Promise<any[]> {
   const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
   if (!OUTSCRAPER_API_KEY) throw new Error("OUTSCRAPER_API_KEY not configured");
 
@@ -385,14 +385,31 @@ async function searchOutscraperFull(query: string): Promise<any[]> {
     async: "false",
   });
 
-  const res = await fetch(`https://api.outscraper.com/maps/search-v3?${params}`, {
-    headers: { "X-API-KEY": OUTSCRAPER_API_KEY },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  let res: Response;
+  try {
+    res = await fetch(`https://api.outscraper.com/maps/search-v3?${params}`, {
+      headers: { "X-API-KEY": OUTSCRAPER_API_KEY },
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") {
+      throw new Error("Outscraper request timed out after 120s");
+    }
+    throw err;
+  }
+  clearTimeout(timeout);
 
   if (res.status === 429) {
-    log("Outscraper rate limited — waiting 10s", "lead-feed");
-    await new Promise(r => setTimeout(r, 10000));
-    return searchOutscraperFull(query);
+    if (retryCount >= 3) {
+      throw new Error("Outscraper rate limited after 3 retries — aborting");
+    }
+    const waitMs = 10000 * Math.pow(2, retryCount);
+    log(`Outscraper rate limited — waiting ${waitMs / 1000}s (retry ${retryCount + 1}/3)`, "lead-feed");
+    await new Promise(r => setTimeout(r, waitMs));
+    return searchOutscraperFull(query, retryCount + 1);
   }
 
   if (!res.ok) {
@@ -483,6 +500,7 @@ export async function runOutscraper(queryLimit: number = 5): Promise<{
               Normalized_Name: normalizedName,
               Dedupe_Key: dedupeKey,
               source: "Outscraper",
+              Source_Query: q.query,
               Lead_Status: "New",
               Priority_Score: score,
             };

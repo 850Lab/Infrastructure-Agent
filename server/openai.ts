@@ -16,16 +16,21 @@ export async function transcribeAudio(
 ): Promise<string> {
   log(`Transcribing audio file: ${filename} (${audioBuffer.length} bytes)`, "openai");
 
-  const file = new File([audioBuffer], filename, { type: getMimeType(filename) });
+  try {
+    const file = new File([audioBuffer], filename, { type: getMimeType(filename) });
 
-  const response = await directClient.audio.transcriptions.create({
-    file,
-    model: "whisper-1",
-  });
+    const response = await directClient.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+    });
 
-  const transcription = response.text || "[No speech detected]";
-  log(`Transcription complete: ${transcription.length} chars`, "openai");
-  return transcription;
+    const transcription = response.text || "[No speech detected]";
+    log(`Transcription complete: ${transcription.length} chars`, "openai");
+    return transcription;
+  } catch (err: any) {
+    log(`Transcription failed: ${err.message}`, "openai");
+    throw new Error(`Audio transcription failed: ${err.message}`);
+  }
 }
 
 function getMimeType(filename: string): string {
@@ -46,12 +51,13 @@ function getMimeType(filename: string): string {
 export async function analyzeContainment(transcription: string): Promise<string> {
   log("Analyzing containment language...", "openai");
 
-  const response = await proxyClient.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert communication analyst specializing in containment language detection. Containment language refers to phrases and patterns used to deflect, minimize, dismiss, or control a conversation rather than genuinely address concerns.
+  try {
+    const response = await proxyClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert communication analyst specializing in containment language detection. Containment language refers to phrases and patterns used to deflect, minimize, dismiss, or control a conversation rather than genuinely address concerns.
 
 Analyze the provided call transcription and produce a structured report with the following sections:
 
@@ -75,17 +81,21 @@ For each identified phrase, provide:
 A 2-3 sentence overall assessment of communication quality.
 
 Be specific and actionable. If no containment language is found, say so clearly.`,
-      },
-      {
-        role: "user",
-        content: `Please analyze this call transcription for containment language:\n\n${transcription}`,
-      },
-    ],
-    max_tokens: 2000,
-  });
+        },
+        {
+          role: "user",
+          content: `Please analyze this call transcription for containment language:\n\n${transcription}`,
+        },
+      ],
+      max_tokens: 2000,
+    });
 
-  const analysis = response.choices[0]?.message?.content || "No analysis generated";
-  log(`Analysis complete: ${analysis.length} chars`, "openai");
-  return analysis;
+    const analysis = response.choices[0]?.message?.content || "No analysis generated";
+    log(`Analysis complete: ${analysis.length} chars`, "openai");
+    return analysis;
+  } catch (err: any) {
+    log(`Containment analysis failed: ${err.message}`, "openai");
+    throw new Error(`Containment analysis failed: ${err.message}`);
+  }
 }
 

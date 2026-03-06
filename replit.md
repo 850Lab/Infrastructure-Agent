@@ -51,6 +51,14 @@ SSE (Server-Sent Events) are used extensively for real-time updates across the d
 **First-Run Cinematic**: 6-10 second startup sequence at `/cinematic` shown once after onboarding build completes. Three nodes (Discovery → DM Mapping → Learning) light up in sequence with glow/pulse SVG animations and connector lines. Transitions to "[machine_name] is online" message with config summary, then auto-redirects to `/briefing`. Skippable via Skip button. `cinematic_seen` flag stored in localStorage prevents repeat showing. Onboarding redirects to `/cinematic` if flag not set, `/briefing` if already seen. Gracefully degrades if SSE/APIs unavailable.
 **Onboarding Wizard**: A multi-step process for first-time users to configure market, opportunity, geography, and DM focus.
 
+### Production Safety
+**Error Boundary**: React ErrorBoundary wraps entire app (`client/src/components/error-boundary.tsx`). Catches render errors, shows "Something went wrong" with reload button instead of white screen.
+**Process Guards**: `server/index.ts` has `unhandledRejection` and `uncaughtException` handlers that log with `[FATAL]` prefix instead of silently crashing.
+**Concurrency Guard**: Pipeline runs protected by `RunAlreadyActiveError` — returns HTTP 409 if run already in progress. Frontend disables buttons via `isPending` to prevent double-clicks.
+**Rate Limit Handling**: Outscraper retries capped at 3 with exponential backoff (10s→20s→40s). Apollo retries 3x with backoff. OpenAI calls wrapped in try-catch.
+**Fetch Timeouts**: Outscraper requests have 120s AbortController timeout.
+**Source Attribution**: New companies created by lead-feed now include `Source_Query` field for exact query attribution.
+
 ## External Dependencies
 - **Airtable**: Used for storing webhook processing logs, run history, user configurations, machine metrics, and as a source for various data points. The REST API is heavily integrated.
 - **OpenAI**: Utilized for:
