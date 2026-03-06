@@ -11,7 +11,7 @@ import { migrateClientData } from "./migrate-client-data";
 import { aggregatePlatformInsights, getPlatformInsightsForIndustry } from "./platform-insights";
 import { getSchedulerStatus, startScheduler, stopScheduler } from "./scheduler";
 import { db } from "./db";
-import { outreachPipeline, emailTemplates } from "@shared/schema";
+import { outreachPipeline, emailTemplates, clientEmailSettings } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 
 const provisionSchema = z.object({
@@ -160,6 +160,67 @@ export async function registerAdminRoutes(app: Express): Promise<void> {
         return res.status(409).json({ error: "RUN_ALREADY_ACTIVE" });
       }
       res.status(500).json({ error: "Failed to start run" });
+    }
+  });
+
+  app.post("/api/admin/clients/:id/users", authMiddleware, requireRole("platform_admin"), async (req: Request, res: Response) => {
+    try {
+      const clientId = req.params.id;
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ error: "Client not found" });
+
+      const schema = z.object({
+        email: z.string().email(),
+        password: z.string().min(6),
+        role: z.enum(["client_admin", "operator", "manager"]).default("operator"),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten().fieldErrors });
+      }
+
+      const { email, password, role } = parsed.data;
+      const existingUser = await storage.getUserByEmail(email.toLowerCase());
+      if (existingUser) {
+        return res.status(409).json({ error: "A user with this email already exists" });
+      }
+
+      const hashedPw = await hashPassword(password);
+      const user = await storage.createUser({
+        username: email.toLowerCase(),
+        email: email.toLowerCase(),
+        password: hashedPw,
+        role,
+        clientId,
+      });
+
+      log(`Added user ${email} (${role}) to client ${client.clientName}`, "admin");
+      res.json({ success: true, user: { id: user.id, email: user.email, role: user.role, clientId: user.clientId } });
+    } catch (err: any) {
+      log(`Add user error: ${err.message}`, "admin");
+      res.status(500).json({ error: "Failed to add user" });
+    }
+  });
+
+  app.get("/api/admin/clients/:id/email-settings", authMiddleware, requireRole("platform_admin"), async (req: Request, res: Response) => {
+    try {
+      const clientId = req.params.id;
+      const [settings] = await db
+        .select({
+          fromName: clientEmailSettings.fromName,
+          fromEmail: clientEmailSettings.fromEmail,
+          smtpHost: clientEmailSettings.smtpHost,
+          smtpUser: clientEmailSettings.smtpUser,
+          providerType: clientEmailSettings.providerType,
+          dailyLimit: clientEmailSettings.dailyLimit,
+          autoSendEnabled: clientEmailSettings.autoSendEnabled,
+        })
+        .from(clientEmailSettings)
+        .where(eq(clientEmailSettings.clientId, clientId));
+
+      res.json({ settings: settings || null });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load email settings" });
     }
   });
 
