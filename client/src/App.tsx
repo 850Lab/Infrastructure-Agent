@@ -18,12 +18,19 @@ import PipelinePage from "@/pages/pipeline";
 import CallModePage from "@/pages/call-mode";
 import MachineSettingsPage from "@/pages/machine-settings";
 import CinematicPage from "@/pages/cinematic";
+import AdminDashboard from "@/pages/admin/dashboard";
+import AdminClients from "@/pages/admin/clients";
+import AdminProvision from "@/pages/admin/provision";
+import AdminRuns from "@/pages/admin/runs";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import ErrorBoundary from "@/components/error-boundary";
 
 interface MeResponse {
   email: string;
+  role: string;
+  client_id: string | null;
+  client: Record<string, any> | null;
   machine_config: Record<string, any> | null;
   needsOnboarding: boolean;
 }
@@ -36,8 +43,30 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { isAuthenticated, role } = useAuth();
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+  if (role !== "platform_admin") {
+    return <Redirect to="/machine/dashboard" />;
+  }
+  return <>{children}</>;
+}
+
+function MachineRoute({ children }: { children: ReactNode }) {
+  const { isAuthenticated, role } = useAuth();
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+  if (role === "platform_admin") {
+    return <Redirect to="/admin/dashboard" />;
+  }
+  return <>{children}</>;
+}
+
 function OnboardingGate({ children }: { children: ReactNode }) {
-  const { isAuthenticated, getToken } = useAuth();
+  const { isAuthenticated, role } = useAuth();
   const [location, navigate] = useLocation();
 
   const { data: me, isLoading } = useQuery<MeResponse>({
@@ -49,12 +78,15 @@ function OnboardingGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated || isLoading || !me) return;
 
-    const onProtectedPage = location !== "/login" && location !== "/onboarding" && location !== "/briefing" && location !== "/cinematic";
+    if (role === "platform_admin") return;
+
+    const skipPaths = ["/login", "/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
+    const onProtectedPage = !skipPaths.includes(location);
 
     if (me.needsOnboarding && onProtectedPage) {
-      navigate("/onboarding");
+      navigate("/machine/onboarding");
     }
-  }, [me, isAuthenticated, isLoading, location, navigate]);
+  }, [me, isAuthenticated, isLoading, location, navigate, role]);
 
   if (isAuthenticated && isLoading) {
     return (
@@ -70,50 +102,52 @@ function OnboardingGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RoleRedirect() {
+  const { isAuthenticated, role } = useAuth();
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (role === "platform_admin") return <Redirect to="/admin/dashboard" />;
+  return <Redirect to="/machine/dashboard" />;
+}
+
 function Router() {
   return (
     <OnboardingGate>
       <Switch>
         <Route path="/login" component={LoginPage} />
-        <Route path="/onboarding">
-          <ProtectedRoute><OnboardingPage /></ProtectedRoute>
-        </Route>
-        <Route path="/briefing">
-          <ProtectedRoute><BriefingPage /></ProtectedRoute>
-        </Route>
-        <Route path="/cinematic">
-          <ProtectedRoute><CinematicPage /></ProtectedRoute>
-        </Route>
-        <Route path="/dashboard">
-          <ProtectedRoute><Dashboard /></ProtectedRoute>
-        </Route>
-        <Route path="/today">
-          <ProtectedRoute><TodayPage /></ProtectedRoute>
-        </Route>
-        <Route path="/followups">
-          <ProtectedRoute><FollowupsPage /></ProtectedRoute>
-        </Route>
-        <Route path="/lead-engine">
-          <ProtectedRoute><LeadEnginePage /></ProtectedRoute>
-        </Route>
-        <Route path="/contacts">
-          <ProtectedRoute><ContactsPage /></ProtectedRoute>
-        </Route>
-        <Route path="/analytics">
-          <ProtectedRoute><AnalyticsPage /></ProtectedRoute>
-        </Route>
-        <Route path="/pipeline">
-          <ProtectedRoute><PipelinePage /></ProtectedRoute>
-        </Route>
-        <Route path="/call-mode">
-          <ProtectedRoute><CallModePage /></ProtectedRoute>
-        </Route>
-        <Route path="/machine-settings">
-          <ProtectedRoute><MachineSettingsPage /></ProtectedRoute>
-        </Route>
-        <Route path="/">
-          <Redirect to="/dashboard" />
-        </Route>
+
+        <Route path="/admin/dashboard"><AdminRoute><AdminDashboard /></AdminRoute></Route>
+        <Route path="/admin/clients"><AdminRoute><AdminClients /></AdminRoute></Route>
+        <Route path="/admin/provision"><AdminRoute><AdminProvision /></AdminRoute></Route>
+        <Route path="/admin/runs"><AdminRoute><AdminRuns /></AdminRoute></Route>
+
+        <Route path="/machine/onboarding"><MachineRoute><OnboardingPage /></MachineRoute></Route>
+        <Route path="/machine/briefing"><MachineRoute><BriefingPage /></MachineRoute></Route>
+        <Route path="/machine/cinematic"><MachineRoute><CinematicPage /></MachineRoute></Route>
+        <Route path="/machine/dashboard"><MachineRoute><Dashboard /></MachineRoute></Route>
+        <Route path="/machine/today"><MachineRoute><TodayPage /></MachineRoute></Route>
+        <Route path="/machine/followups"><MachineRoute><FollowupsPage /></MachineRoute></Route>
+        <Route path="/machine/lead-engine"><MachineRoute><LeadEnginePage /></MachineRoute></Route>
+        <Route path="/machine/contacts"><MachineRoute><ContactsPage /></MachineRoute></Route>
+        <Route path="/machine/analytics"><MachineRoute><AnalyticsPage /></MachineRoute></Route>
+        <Route path="/machine/pipeline"><MachineRoute><PipelinePage /></MachineRoute></Route>
+        <Route path="/machine/call-mode"><MachineRoute><CallModePage /></MachineRoute></Route>
+        <Route path="/machine/settings"><MachineRoute><MachineSettingsPage /></MachineRoute></Route>
+
+        {/* Legacy routes redirect to new paths */}
+        <Route path="/dashboard"><RoleRedirect /></Route>
+        <Route path="/onboarding"><Redirect to="/machine/onboarding" /></Route>
+        <Route path="/briefing"><Redirect to="/machine/briefing" /></Route>
+        <Route path="/cinematic"><Redirect to="/machine/cinematic" /></Route>
+        <Route path="/today"><Redirect to="/machine/today" /></Route>
+        <Route path="/followups"><Redirect to="/machine/followups" /></Route>
+        <Route path="/lead-engine"><Redirect to="/machine/lead-engine" /></Route>
+        <Route path="/contacts"><Redirect to="/machine/contacts" /></Route>
+        <Route path="/analytics"><Redirect to="/machine/analytics" /></Route>
+        <Route path="/pipeline"><Redirect to="/machine/pipeline" /></Route>
+        <Route path="/call-mode"><Redirect to="/machine/call-mode" /></Route>
+        <Route path="/machine-settings"><Redirect to="/machine/settings" /></Route>
+
+        <Route path="/"><RoleRedirect /></Route>
         <Route component={NotFound} />
       </Switch>
     </OnboardingGate>

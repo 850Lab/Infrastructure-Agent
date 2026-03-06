@@ -145,7 +145,7 @@ export default function MachineSettingsPage() {
         <div className="max-w-xl mx-auto p-6 pt-12 text-center">
           <p className="text-sm" style={{ color: MUTED }}>No machine configuration found. Complete onboarding first.</p>
           <Button
-            onClick={() => navigate("/onboarding")}
+            onClick={() => navigate("/machine/onboarding")}
             className="mt-4"
             style={{ background: EMERALD, color: "#FFF" }}
             data-testid="button-go-onboarding"
@@ -184,7 +184,7 @@ export default function MachineSettingsPage() {
       <div className="max-w-2xl mx-auto p-4 md:p-6 pt-8">
         <div className="flex items-center gap-3 mb-8">
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/machine/dashboard")}
             className="p-1.5 rounded-lg"
             style={{ color: MUTED }}
             data-testid="button-back"
@@ -300,7 +300,7 @@ export default function MachineSettingsPage() {
 
         <div className="flex items-center justify-between">
           <Button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/machine/dashboard")}
             variant="outline"
             className="text-sm"
             style={{ borderColor: BORDER, color: MUTED }}

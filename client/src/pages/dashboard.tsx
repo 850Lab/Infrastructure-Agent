@@ -44,12 +44,12 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 const SECTION_BUTTONS = [
-  { label: "Today", route: "/today", steps: ["opportunity_engine", "playbooks"] },
-  { label: "Pipeline", route: "/pipeline", steps: [] },
-  { label: "Follow-ups", route: "/followups", steps: ["call_engine"] },
-  { label: "Lead Engine", route: "/lead-engine", steps: ["lead_feed", "query_intel"] },
-  { label: "Contacts", route: "/contacts", steps: ["dm_coverage", "dm_fit"] },
-  { label: "Analytics", route: "/analytics", steps: ["bootstrap"] },
+  { label: "Today", route: "/machine/today", steps: ["opportunity_engine", "playbooks"] },
+  { label: "Pipeline", route: "/machine/pipeline", steps: [] },
+  { label: "Follow-ups", route: "/machine/followups", steps: ["call_engine"] },
+  { label: "Lead Engine", route: "/machine/lead-engine", steps: ["lead_feed", "query_intel"] },
+  { label: "Contacts", route: "/machine/contacts", steps: ["dm_coverage", "dm_fit"] },
+  { label: "Analytics", route: "/machine/analytics", steps: ["bootstrap"] },
 ];
 
 const EMERALD = "#10B981";
@@ -329,7 +329,7 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate("/machine-settings")}
+              onClick={() => navigate("/machine/settings")}
               className="gap-1.5 text-xs font-mono"
               style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}
               data-testid="button-machine-settings"
@@ -511,7 +511,7 @@ export default function DashboardPage() {
             </Button>
 
             <Button
-              onClick={() => navigate("/briefing")}
+              onClick={() => navigate("/machine/briefing")}
               className="w-full h-10 text-sm font-semibold tracking-wider rounded-xl"
               style={{
                 background: "#F8FAFC",

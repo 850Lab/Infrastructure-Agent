@@ -11,6 +11,8 @@ import { registerDMRoutes } from "./dm-routes";
 import { registerOutscraperRoutes } from "./outscraper-routes";
 import { registerLeadFeedRoutes } from "./lead-feed-routes";
 import { registerDashboardRoutes } from "./dashboard-routes";
+import { registerAdminRoutes } from "./admin-routes";
+import { seedTexasCoolDown } from "./seed-client";
 import { registerTodayRoutes } from "./today-routes";
 import { registerOpportunityRoutes } from "./opportunities";
 import { log } from "./index";
@@ -121,6 +123,8 @@ export async function registerRoutes(
   registerOutscraperRoutes(app);
   registerLeadFeedRoutes(app);
   await registerDashboardRoutes(app);
+  await registerAdminRoutes(app);
+  await seedTexasCoolDown().catch((e: any) => log(`Seed error: ${e.message}`, "seed"));
   registerTodayRoutes(app);
   registerOpportunityRoutes(app);
 

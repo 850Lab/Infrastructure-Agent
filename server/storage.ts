@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, webhookLogs } from "@shared/schema";
+import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, webhookLogs, clients } from "@shared/schema";
 import { db } from "./db";
 import { desc, eq } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -6,7 +6,12 @@ import { users } from "@shared/schema";
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  getClient(id: string): Promise<Client | undefined>;
+  getAllClients(): Promise<Client[]>;
+  createClient(client: InsertClient): Promise<Client>;
+  updateClient(id: string, data: Partial<InsertClient>): Promise<Client | undefined>;
   createWebhookLog(log: InsertWebhookLog): Promise<WebhookLog>;
   updateWebhookLog(id: number, data: Partial<InsertWebhookLog>): Promise<WebhookLog | undefined>;
   getWebhookLogs(limit?: number): Promise<WebhookLog[]>;
@@ -24,9 +29,33 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    const [client] = await db.select().from(clients).where(eq(clients.id, id));
+    return client;
+  }
+
+  async getAllClients(): Promise<Client[]> {
+    return db.select().from(clients).orderBy(desc(clients.createdAt));
+  }
+
+  async createClient(client: InsertClient): Promise<Client> {
+    const [result] = await db.insert(clients).values(client).returning();
+    return result;
+  }
+
+  async updateClient(id: string, data: Partial<InsertClient>): Promise<Client | undefined> {
+    const [result] = await db.update(clients).set(data).where(eq(clients.id, id)).returning();
+    return result;
   }
 
   async createWebhookLog(log: InsertWebhookLog): Promise<WebhookLog> {

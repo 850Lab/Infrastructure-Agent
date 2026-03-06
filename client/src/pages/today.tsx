@@ -565,7 +565,7 @@ export default function TodayPage() {
           </div>
           {companies.length > 0 && (
             <Button
-              onClick={() => navigate("/call-mode")}
+              onClick={() => navigate("/machine/call-mode")}
               className="rounded-lg text-sm font-semibold px-5 h-9 gap-2"
               style={{ background: TEXT, color: "#FFF" }}
               data-testid="button-enter-call-mode"

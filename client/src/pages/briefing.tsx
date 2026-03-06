@@ -113,6 +113,7 @@ export default function BriefingPage() {
 
   useEffect(() => {
     if (!isAuthenticated) navigate("/login");
+
   }, [isAuthenticated, navigate]);
 
   const { data: me } = useQuery<MeResponse>({
@@ -168,7 +169,7 @@ export default function BriefingPage() {
         break;
       case "CALL":
       case "FOLLOWUP":
-        navigate("/today");
+        navigate("/machine/today");
         break;
     }
   }
@@ -210,7 +211,7 @@ export default function BriefingPage() {
           transition={{ duration: 0.4 }}
         >
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/machine/dashboard")}
             className="flex items-center gap-1.5 text-sm font-medium mb-6 hover:opacity-70 transition-opacity"
             style={{ color: MUTED }}
             data-testid="button-back-to-dashboard"
@@ -486,7 +487,7 @@ export default function BriefingPage() {
               transition={{ delay: 0.5 }}
             >
               <Button
-                onClick={() => navigate("/dashboard")}
+                onClick={() => navigate("/machine/dashboard")}
                 className="w-full h-12 text-base font-bold tracking-wider rounded-xl"
                 style={{ background: TEXT, color: "#FFFFFF" }}
                 data-testid="button-go-to-dashboard"

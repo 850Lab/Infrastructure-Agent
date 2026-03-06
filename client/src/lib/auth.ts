@@ -6,6 +6,8 @@ interface AuthState {
   token: string | null;
   expiresAt: number | null;
   isAuthenticated: boolean;
+  role: string | null;
+  clientId: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   getToken: () => string | null;
@@ -15,22 +17,28 @@ const AuthContext = createContext<AuthState | null>(null);
 
 const AUTH_TOKEN_KEY = "auth_token";
 const AUTH_EXPIRES_KEY = "auth_expires_at";
+const AUTH_ROLE_KEY = "auth_role";
+const AUTH_CLIENT_ID_KEY = "auth_client_id";
 const EXPIRY_WARNING_MS = 5 * 60 * 1000;
 
-function getStoredAuth(): { token: string | null; expiresAt: number | null } {
+function getStoredAuth(): { token: string | null; expiresAt: number | null; role: string | null; clientId: string | null } {
   try {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     const expiresAt = localStorage.getItem(AUTH_EXPIRES_KEY);
+    const role = localStorage.getItem(AUTH_ROLE_KEY);
+    const clientId = localStorage.getItem(AUTH_CLIENT_ID_KEY);
     if (token && expiresAt) {
       const exp = parseInt(expiresAt, 10);
       if (Date.now() < exp) {
-        return { token, expiresAt: exp };
+        return { token, expiresAt: exp, role, clientId };
       }
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(AUTH_EXPIRES_KEY);
+      localStorage.removeItem(AUTH_ROLE_KEY);
+      localStorage.removeItem(AUTH_CLIENT_ID_KEY);
     }
   } catch {}
-  return { token: null, expiresAt: null };
+  return { token: null, expiresAt: null, role: null, clientId: null };
 }
 
 export function getStoredToken(): string | null {
@@ -59,6 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const stored = getStoredAuth();
   const [token, setToken] = useState<string | null>(stored.token);
   const [expiresAt, setExpiresAt] = useState<number | null>(stored.expiresAt);
+  const [role, setRole] = useState<string | null>(stored.role);
+  const [clientId, setClientId] = useState<string | null>(stored.clientId);
   const warnedRef = useRef(false);
   const { toast } = useToast();
 
@@ -67,8 +77,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(AUTH_EXPIRES_KEY);
+    localStorage.removeItem(AUTH_ROLE_KEY);
+    localStorage.removeItem(AUTH_CLIENT_ID_KEY);
     setToken(null);
     setExpiresAt(null);
+    setRole(null);
+    setClientId(null);
     warnedRef.current = false;
   }, []);
 
@@ -97,8 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const exp = Date.now() + data.expires_in * 1000;
     localStorage.setItem(AUTH_TOKEN_KEY, data.token);
     localStorage.setItem(AUTH_EXPIRES_KEY, String(exp));
+    if (data.role) localStorage.setItem(AUTH_ROLE_KEY, data.role);
+    if (data.client_id) localStorage.setItem(AUTH_CLIENT_ID_KEY, data.client_id);
     setToken(data.token);
     setExpiresAt(exp);
+    setRole(data.role || null);
+    setClientId(data.client_id || null);
     warnedRef.current = false;
   }, []);
 
@@ -153,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  const value: AuthState = { token, expiresAt, isAuthenticated, login, logout, getToken };
+  const value: AuthState = { token, expiresAt, isAuthenticated, role, clientId, login, logout, getToken };
 
   return createElement(AuthContext.Provider, { value }, children);
 }

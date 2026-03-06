@@ -48,15 +48,15 @@ export default function AppLayout({ children, runStatus = "standby", showBackToC
       <nav className="sticky top-0 z-50 bg-white" style={{ borderBottom: "1px solid #E2E8F0" }}>
         <div className="max-w-[1400px] mx-auto px-4 flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
-            {showBackToChip && location !== "/dashboard" ? (
-              <Link href="/dashboard">
+            {showBackToChip && location !== "/machine/dashboard" ? (
+              <Link href="/machine/dashboard">
                 <Button variant="outline" size="sm" className="font-semibold" style={{ color: "#0F172A", borderColor: "#E2E8F0" }} data-testid="button-back-to-chip">
                   <Activity className="w-4 h-4 mr-1.5" style={{ color: "#10B981" }} />
                   Back to Dashboard
                 </Button>
               </Link>
             ) : (
-              <Link href="/dashboard" className="flex items-center gap-2.5" data-testid="link-home">
+              <Link href="/machine/dashboard" className="flex items-center gap-2.5" data-testid="link-home">
                 <Activity className="w-5 h-5" style={{ color: "#10B981" }} />
                 <div className="flex flex-col">
                   <span className="font-bold text-base tracking-tight leading-none" style={{ color: "#0F172A" }}>Texas Automation Systems</span>

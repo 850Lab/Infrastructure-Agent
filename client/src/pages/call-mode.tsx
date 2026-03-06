@@ -232,7 +232,7 @@ export default function CallModePage() {
         <ClipboardList className="w-12 h-12" style={{ color: MUTED }} />
         <p className="text-lg font-semibold" style={{ color: "#FFF" }}>No companies on today's list</p>
         <p className="text-sm" style={{ color: MUTED }}>Run the pipeline first to populate the call list.</p>
-        <Button onClick={() => navigate("/today")} className="mt-4" style={{ background: EMERALD, color: "#FFF" }} data-testid="button-back-today">
+        <Button onClick={() => navigate("/machine/today")} className="mt-4" style={{ background: EMERALD, color: "#FFF" }} data-testid="button-back-today">
           Back to Mission Control
         </Button>
       </div>
@@ -272,7 +272,7 @@ export default function CallModePage() {
         style={{ borderBottom: `1px solid rgba(255,255,255,0.08)` }}
       >
         <button
-          onClick={() => navigate("/today")}
+          onClick={() => navigate("/machine/today")}
           className="flex items-center gap-2 text-sm font-mono"
           style={{ color: MUTED }}
           data-testid="button-exit-call-mode"

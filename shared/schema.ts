@@ -3,15 +3,39 @@ import { pgTable, text, varchar, timestamp, integer } from "drizzle-orm/pg-core"
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const clients = pgTable("clients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientName: text("client_name").notNull(),
+  machineName: text("machine_name").notNull(),
+  industryConfig: text("industry_config").notNull().default("industrial"),
+  territory: text("territory").notNull(),
+  decisionMakerFocus: text("decision_maker_focus").notNull(),
+  status: text("status").notNull().default("active"),
+  airtableBaseId: text("airtable_base_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastRunAt: timestamp("last_run_at"),
+});
+
+export const insertClientSchema = createInsertSchema(clients).omit({
+  id: true,
+  createdAt: true,
+  lastRunAt: true,
+});
+
+export type InsertClient = z.infer<typeof insertClientSchema>;
+export type Client = typeof clients.$inferSelect;
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email").notNull().unique(),
+  role: text("role").notNull().default("operator"),
+  clientId: varchar("client_id"),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

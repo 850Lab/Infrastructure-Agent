@@ -181,7 +181,7 @@ export default function CinematicPage() {
     timerRef.current.forEach(clearTimeout);
     timerRef.current = [];
     try { localStorage.setItem("cinematic_seen", "true"); } catch {}
-    navigate("/briefing");
+    navigate("/machine/briefing");
   }, [navigate]);
 
   useEffect(() => {

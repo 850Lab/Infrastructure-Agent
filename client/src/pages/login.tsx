@@ -11,14 +11,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, role } = useAuth();
   const [, navigate] = useLocation();
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate("/dashboard");
+      if (role === "platform_admin") {
+        navigate("/admin/dashboard");
+      } else {
+        navigate("/machine/dashboard");
+      }
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, role, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

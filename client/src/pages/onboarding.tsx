@@ -146,7 +146,7 @@ export default function OnboardingPage() {
         setBuildComplete(true);
         let cinematicSeen = false;
         try { cinematicSeen = localStorage.getItem("cinematic_seen") === "true"; } catch {}
-        setTimeout(() => navigate(cinematicSeen ? "/briefing" : "/cinematic"), 2000);
+        setTimeout(() => navigate(cinematicSeen ? "/machine/briefing" : "/machine/cinematic"), 2000);
       }
     }
   }, [buildRunId, recentEvents, navigate]);
@@ -199,7 +199,7 @@ export default function OnboardingPage() {
         setBuildComplete(true);
         let cinematicSeen = false;
         try { cinematicSeen = localStorage.getItem("cinematic_seen") === "true"; } catch {}
-        setTimeout(() => navigate(cinematicSeen ? "/briefing" : "/cinematic"), 2000);
+        setTimeout(() => navigate(cinematicSeen ? "/machine/briefing" : "/machine/cinematic"), 2000);
       }
     } catch (err: any) {
       setSaveError(err.message || "Failed to save configuration. Please try again.");

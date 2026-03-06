@@ -1,0 +1,444 @@
+You are my Replit engineer. Your job is to CLOSE ALL REMAINING GAPS in this platform so it is safe, scalable, and operationally ready for managed multi-client use.
+
+CRITICAL CONTEXT
+We are NOT rebuilding this app.
+We are extending and hardening the existing architecture.
+
+The current system already has:
+- client machine UI
+- onboarding
+- motherboard dashboard
+- today console
+- follow-ups
+- lead engine
+- contacts
+- analytics
+- daily orchestrator
+- playbooks
+- explainability
+- query intelligence
+- DM fit
+- run history
+- setup wizard
+
+We have already started the split into:
+1) Admin Platform mode
+2) Client Machine mode
+
+Texas Cool Down Trailers will be Client #1.
+
+NON-NEGOTIABLES
+- Do NOT rewrite working systems unless required for tenant safety
+- Do NOT duplicate pages or business logic
+- Do NOT break existing data
+- Prefer additive changes and wrappers over rewrites
+- Every fix must be production-minded, not just demo-minded
+- If a gap has multiple possible solutions, choose the leanest version that supports a handful of manually provisioned clients safely
+
+GOAL
+Address ALL remaining gaps required to move from:
+“single-client machine template”
+to
+“managed multi-client platform”
+
+==================================================
+PART 1 — GAP CHECKLIST TO CLOSE
+==================================================
+
+You must address these categories explicitly:
+
+GAP A — Auth completeness
+Need:
+- real user records
+- password hashing
+- login by user record, not env-only
+- session handling
+- logout
+- forgot password placeholder or admin-reset-only workflow
+- role-based redirects
+- ability for platform admin to create users manually
+- no infinite redirect loops
+
+GAP B — Tenant isolation
+Need:
+- every client-scoped table uses Client_ID
+- every backend read/write is client-scoped
+- SSE events are client-scoped
+- run history is client-scoped
+- no cross-client leakage possible
+- every request resolves tenant context before work begins
+
+GAP C — Secrets and provider configuration
+Need:
+- define where provider keys live
+- support platform-managed keys for now
+- store per-client provider settings safely if needed later
+- never expose secrets to frontend
+- clear failure messages when provider keys are missing or invalid
+
+GAP D — Provisioning mechanics
+Need:
+- admin can create a new client
+- admin can create a client user
+- admin can assign machine config
+- admin can run bootstrap/setup for that client
+- admin can mark client machine as ready
+- onboarding for the client still happens for real
+- this flow must be explicit and repeatable
+
+GAP E — Billing / usage guardrails
+Need:
+- usage caps per client or per run
+- configurable max limits for expensive operations
+- prevent runaway enrichment/query generation
+- basic usage visibility for operator
+- clear warnings when limits are approached
+
+GAP F — Support / retry / recovery
+Need:
+- partial run failures visible
+- retry safe
+- failed steps resumable or re-runnable
+- support-friendly diagnostics
+- a way for platform admin to inspect one client’s machine health quickly
+
+GAP G — Data ownership / portability
+Need:
+- export path for client data
+- clear separation of client data
+- cancellation/offboarding-safe data export
+- no lock-in assumptions inside code
+
+GAP H — Admin control plane
+Need:
+- platform dashboard showing all clients
+- health per client
+- last run
+- run success/failure
+- DM coverage %
+- fresh pool %
+- confidence score
+- quick links into client machine support views
+- manual provisioning actions
+
+GAP I — Environment / release safety
+Need:
+- production-safe config checks
+- dev/staging/prod clarity where possible
+- rollback-safe changes
+- no hardcoded local assumptions
+- no secrets in logs
+
+GAP J — Client onboarding tied to provisioning
+Need:
+- provisioning creates the machine shell
+- onboarding still runs for the client user
+- onboarding writes to client-scoped config
+- machine config is editable later by allowed roles only
+
+GAP K — Permissions model
+Need:
+- PlatformAdmin
+- ClientAdmin
+- Operator
+Define clearly what each can:
+- view
+- edit
+- run
+- provision
+- manage users
+- change machine settings
+
+GAP L — Commercial packaging support
+Need:
+- product language in UI
+- machine identity per client
+- no generic “admin tool” feel
+- enough structure that this can actually be sold as a managed machine
+
+==================================================
+PART 2 — IMPLEMENTATION STRATEGY
+==================================================
+
+Do this in the LEAST disruptive order.
+
+PHASE 1 — FOUNDATION HARDENING
+1) Create/verify tables/models:
+- Clients
+- Users
+- optional Provider_Config or Client_Config if needed
+- optional Usage_Log
+- optional Support_Notes or Run_Alerts if needed
+
+2) Add/verify Client_ID on:
+- Companies
+- Calls
+- Decision_Makers
+- Search_Queries
+- Opportunities
+- Run_History
+- any other client-owned records
+
+3) Build server/client-context.ts
+Responsibilities:
+- resolve current authenticated user
+- resolve client
+- provide client-scoped config to all backend services
+- hard fail if client context is missing on machine routes/APIs
+
+4) Patch all backend engines so they require and respect client_id:
+- lead-feed
+- opportunity-engine
+- dm-coverage
+- dm-fit
+- playbooks
+- call-engine
+- query-intel
+- briefing
+- run-history
+- run-daily
+- any API endpoint that reads/writes client data
+
+PHASE 2 — AUTH + ROLES
+1) Replace env-only login with user table-backed auth while preserving admin access
+2) Hash passwords securely
+3) Roles:
+- PlatformAdmin: can access /admin, provision clients, view all health, impersonation-support if implemented safely
+- ClientAdmin: can access own /machine, edit machine settings, run pipeline, manage own operators
+- Operator: can use machine, log calls, view assigned machine pages, but not provision or alter core settings
+
+4) Redirect rules:
+- PlatformAdmin -> /admin/dashboard
+- ClientAdmin/Operator -> /machine/onboarding if incomplete, else /machine/briefing
+
+PHASE 3 — ADMIN CONTROL PLANE
+Create minimal but real admin pages:
+- /admin/dashboard
+- /admin/clients
+- /admin/provision
+- /admin/runs
+- /admin/support (lightweight if useful)
+
+Admin dashboard cards:
+- total clients
+- active clients
+- failed runs today
+- total fresh leads across clients
+- total DMs found across clients
+- average confidence by client
+
+Clients table view:
+- Client_Name
+- Machine_Name
+- Industry_Config
+- Status
+- Last_Run_At
+- Last_Run_Status
+- Fresh_Pool_Count
+- DM_Coverage_Rate
+- Confidence_Score
+- actions: Open / Provision / Run / Support
+
+PHASE 4 — PROVISIONING FLOW
+Build a repeatable provisioning flow in /admin/provision
+
+Inputs:
+- Client_Name
+- Machine_Name
+- Industry_Config
+- Territory
+- Decision_Maker_Focus
+- Admin user email/password
+- provider mode:
+  - platform-managed keys (default now)
+  - BYOK placeholder for later
+
+Provisioning must do:
+1) create client
+2) create client user
+3) create client config
+4) run client bootstrap/setup
+5) seed starter queries if requested
+6) mark machine as Provisioned
+7) leave onboarding incomplete so client still experiences the onboarding flow
+
+PHASE 5 — SUPPORT / RETRY / RECOVERY
+1) Add run health model:
+- current run status per client
+- last successful run
+- last failed step
+- error summary
+- retry recommended action
+
+2) Add endpoints/actions:
+- rerun last failed step safely if possible
+- rerun full pipeline for one client
+- view latest diff
+- export client data
+
+3) In admin runs/support UI show:
+- run_id
+- client
+- duration
+- failed step
+- diff summary
+- retry action
+
+PHASE 6 — USAGE GUARDRAILS
+Implement per-client safe limits in config:
+- max_top_per_run
+- max_dm_enrich_per_run
+- max_query_generate_per_run
+- max_playbooks_per_run
+- max_lead_feed_queries_per_run
+
+Use platform defaults.
+Show warnings in admin if a client frequently hits caps.
+
+PHASE 7 — DATA OWNERSHIP / EXPORT
+Add endpoint(s):
+- export companies CSV
+- export calls CSV
+- export opportunities CSV
+- export queries CSV
+- export full client package JSON summary
+
+Add admin/client action:
+- Export Client Data
+
+PHASE 8 — ONBOARDING + MACHINE IDENTITY
+Ensure onboarding is client-scoped.
+Machine plaque must show:
+- Machine Name
+- Client Name
+- Territory
+- Focus
+- Industry Config
+
+Ensure onboarding answers save to the client machine config and not some global state.
+
+PHASE 9 — SAFETY + CLEANUP
+1) Remove any remaining hardcoded single-client assumptions
+2) Remove any remaining env-only auth assumptions except optional platform bootstrap admin
+3) Ensure no API returns another client’s data
+4) Ensure no logs expose secrets
+5) Add clear error states on frontend for:
+- client context missing
+- run already active
+- provider unavailable
+- no data yet / machine warming up
+
+==================================================
+PART 3 — TEXAS COOL DOWN TRAILERS AS CLIENT #1
+==================================================
+
+After foundation is in place:
+
+1) Provision Client #1:
+Client_Name: Texas Cool Down Trailers
+Machine_Name: Gulf Coast Heat Mitigation Engine
+Industry_Config: industrial
+Territory: Gulf Coast
+Decision_Maker_Focus: Safety + Site Operations
+
+2) Create me as:
+- ClientAdmin for Client #1
+Use my current admin email
+
+3) Migrate already-collected TCDT data into Client #1 by assigning Client_ID to existing records.
+Do NOT recreate data.
+Do NOT duplicate records.
+This is a scoping migration only.
+
+4) Then I must be able to:
+- log in as Client #1
+- go through the real onboarding flow
+- land in briefing
+- use the machine as the client
+while still being able to access the platform admin side separately
+
+==================================================
+PART 4 — TESTING REQUIREMENTS
+==================================================
+
+You must test and fix issues as you go.
+
+TEST A — PlatformAdmin flow
+- login as platform admin
+- open admin dashboard
+- see client registry
+- provision a test client safely
+- no crashes
+
+TEST B — ClientAdmin flow
+- login as Client #1
+- onboarding works
+- machine routes only show Client #1 data
+- run-daily works for Client #1 only
+- motherboard events are client-scoped
+
+TEST C — Operator flow
+- limited permissions respected
+- can use today/call mode/log calls
+- cannot access admin provisioning
+
+TEST D — Data isolation
+- create at least one second dummy client in dev if needed
+- verify no crossover in:
+  - dashboard data
+  - runs
+  - SSE
+  - tables
+  - APIs
+
+TEST E — Migration integrity
+- confirm all legacy Texas Cool Down Trailers records got Client_ID
+- confirm no orphan records remain
+- confirm existing machine functionality still works after tenantization
+
+TEST F — Export
+- export Client #1 data successfully
+
+TEST G — Guardrails
+- verify usage limits stop runaway behavior
+- verify friendly messages when limits hit
+
+==================================================
+PART 5 — DELIVERABLES
+==================================================
+
+When done, provide:
+
+1) GAP CLOSURE REPORT
+For each gap A-L:
+- what was missing
+- what was implemented
+- files changed
+- any remaining limitations
+
+2) TENANTIZATION REPORT
+- client tables created
+- user/auth changes
+- migration summary
+- Texas Cool Down Trailers Client_ID
+- records assigned per table
+
+3) TEST REPORT
+- what passed
+- what bugs were found
+- what fixes were made
+
+4) GO-LIVE READINESS STATUS
+Classify:
+- Ready for managed Client #1 live use
+- Ready for a handful of manually provisioned clients
+- Not yet ready for self-serve SaaS
+
+5) IMPORTANT
+Do not overbuild speculative features.
+Build what is needed to safely support:
+- platform admin
+- Client #1
+- a few future manually provisioned clients
+
+The result should be a lean, production-minded managed multi-machine platform.

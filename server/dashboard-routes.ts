@@ -1,5 +1,4 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { randomUUID } from "crypto";
 import { z } from "zod";
 import { eventBus } from "./events";
 import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
@@ -11,60 +10,13 @@ import type { MachineConfig } from "./user-config";
 import { computeDailyBriefing } from "./briefing";
 import { computeOutcomes, computeConfidence } from "./outcomes";
 import { log } from "./logger";
+import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin } from "./auth";
+import { storage } from "./storage";
+
+export { authMiddleware } from "./auth";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
-
-interface TokenEntry {
-  token: string;
-  expires_at: number;
-  email: string;
-}
-
-const tokens: Map<string, TokenEntry> = new Map();
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-
-function createToken(email: string): { token: string; expires_in: number } {
-  const token = randomUUID();
-  tokens.set(token, { token, expires_at: Date.now() + TOKEN_TTL_MS, email });
-  return { token, expires_in: TOKEN_TTL_MS / 1000 };
-}
-
-function getEmailFromToken(token: string): string | null {
-  const entry = tokens.get(token);
-  if (!entry) return null;
-  if (Date.now() > entry.expires_at) return null;
-  return entry.email;
-}
-
-function extractToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    return authHeader.slice(7);
-  }
-  return null;
-}
-
-function validateToken(token: string): boolean {
-  const entry = tokens.get(token);
-  if (!entry) return false;
-  if (Date.now() > entry.expires_at) {
-    tokens.delete(token);
-    return false;
-  }
-  return true;
-}
-
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
-    if (validateToken(token)) {
-      return next();
-    }
-  }
-  res.status(401).json({ error: "Unauthorized" });
-}
 
 async function airtableCount(formula: string): Promise<number | null> {
   try {
@@ -101,22 +53,32 @@ async function airtableCount(formula: string): Promise<number | null> {
 
 export async function registerDashboardRoutes(app: Express): Promise<void> {
   await loadHistory().catch((e: any) => log(`Failed to load run history: ${e.message}`, "run-history"));
-  app.post("/api/auth/login", (req: Request, res: Response) => {
-    const { email, password } = req.body || {};
-    const adminEmail = process.env.ADMIN_EMAIL;
-    const adminPassword = process.env.ADMIN_PASSWORD;
+  await seedPlatformAdmin().catch((e: any) => log(`Failed to seed admin: ${e.message}`, "auth"));
 
-    if (!adminEmail || !adminPassword) {
-      return res.status(500).json({ error: "Auth not configured" });
-    }
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const { email, password } = req.body || {};
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password required" });
+      }
 
-    if (email?.toLowerCase() === adminEmail?.toLowerCase() && password === adminPassword) {
-      const tokenData = createToken(email.toLowerCase());
-      log(`Login successful for ${email}`, "auth");
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const valid = await verifyPassword(password, user.password);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const tokenData = createToken(user.email, user.role, user.clientId);
+      log(`Login successful for ${email} (role: ${user.role})`, "auth");
       return res.json(tokenData);
+    } catch (err: any) {
+      log(`Login error: ${err.message}`, "auth");
+      res.status(500).json({ error: "Login failed" });
     }
-
-    res.status(401).json({ error: "Invalid credentials" });
   });
 
   app.get("/api/events", (req: Request, res: Response) => {
@@ -288,10 +250,25 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
   app.get("/api/me", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const token = extractToken(req);
-      const email = token ? getEmailFromToken(token) : null;
-      if (!email) {
+      const user = (req as any).user;
+      if (!user) {
         return res.status(401).json({ error: "Invalid token" });
+      }
+      const { email, role, clientId } = user;
+
+      let clientContext = null;
+      if (clientId) {
+        const client = await storage.getClient(clientId);
+        if (client) {
+          clientContext = {
+            client_id: client.id,
+            client_name: client.clientName,
+            machine_name: client.machineName,
+            industry_config: client.industryConfig,
+            territory: client.territory,
+            decision_maker_focus: client.decisionMakerFocus,
+          };
+        }
       }
 
       const config = await getUserConfig(email);
@@ -305,8 +282,11 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       } : null;
       res.json({
         email,
+        role,
+        client_id: clientId,
+        client: clientContext,
         machine_config: safeConfig,
-        needsOnboarding: !config,
+        needsOnboarding: role !== "platform_admin" && !config,
       });
     } catch (err: any) {
       log(`/api/me error: ${err.message}`, "auth");
