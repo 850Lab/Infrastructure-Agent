@@ -580,4 +580,34 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       res.status(500).json({ error: "Failed to compute query intel summary" });
     }
   });
+
+  app.get("/api/analytics/authority-miss-rate", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+
+      const missFormula = `AND({Authority_Miss_Count}>0,{Times_Called}>0)`;
+      const totalFormula = `{Times_Called}>0`;
+
+      const [missCount, totalCount] = await Promise.all([
+        airtableCount(missFormula, clientId),
+        airtableCount(totalFormula, clientId),
+      ]);
+
+      if (missCount === null || totalCount === null || totalCount === 0) {
+        return res.json({ missCount: 0, totalContacted: 0, missRate: 0, hasData: false });
+      }
+
+      const missRate = Math.round((missCount / totalCount) * 100);
+
+      res.json({
+        missCount,
+        totalContacted: totalCount,
+        missRate,
+        hasData: true,
+      });
+    } catch (err: any) {
+      log(`Authority miss rate error: ${err.message}`, "analytics");
+      res.status(500).json({ error: "Failed to compute authority miss rate" });
+    }
+  });
 }

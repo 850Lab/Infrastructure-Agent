@@ -229,6 +229,17 @@ export default function DashboardPage() {
     refetchInterval: 300000,
   });
 
+  const { data: authorityMissData } = useQuery<{
+    missCount: number;
+    totalContacted: number;
+    missRate: number;
+    hasData: boolean;
+  }>({
+    queryKey: ["/api/analytics/authority-miss-rate"],
+    enabled: !!token,
+    refetchInterval: 300000,
+  });
+
   const { data: latestDiff } = useQuery<{
     run_id: string | null;
     started_at?: number;
@@ -894,7 +905,8 @@ export default function DashboardPage() {
 
         {((dmAuthorityData?.title_rankings && dmAuthorityData.title_rankings.length > 0) ||
           (queryIntelData?.topQueries && queryIntelData.topQueries.length > 0) ||
-          queryIntelData?.winPatterns) && (
+          queryIntelData?.winPatterns ||
+          authorityMissData?.hasData) && (
           <div className="mt-6">
             <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
               Intelligence
@@ -988,6 +1000,57 @@ export default function DashboardPage() {
                       Mode: <span style={{ color: queryIntelData.generationMode === "WinPattern" ? "#10B981" : "#64748B" }}>{queryIntelData.generationMode}</span>
                     </p>
                   </div>
+                </div>
+              )}
+
+              {authorityMissData?.hasData && (
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  }}
+                  data-testid="card-authority-miss"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
+                      Authority Miss Rate
+                    </p>
+                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
+                      {authorityMissData.totalContacted} contacted
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-3">
+                    <span
+                      className="text-3xl font-bold font-mono"
+                      style={{ color: authorityMissData.missRate > 20 ? "#EF4444" : authorityMissData.missRate > 10 ? "#F59E0B" : "#10B981" }}
+                      data-testid="text-authority-miss-rate"
+                    >
+                      {authorityMissData.missRate}%
+                    </span>
+                    <span className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>
+                      {authorityMissData.missCount} wrong person{authorityMissData.missCount !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="w-full rounded-full mt-2" style={{ height: "4px", background: "#F1F5F9" }}>
+                    <div
+                      className="rounded-full"
+                      style={{
+                        height: "4px",
+                        width: `${Math.min(100, authorityMissData.missRate)}%`,
+                        background: authorityMissData.missRate > 20 ? "#EF4444" : authorityMissData.missRate > 10 ? "#F59E0B" : "#10B981",
+                        transition: "width 0.5s ease",
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs font-mono mt-2" style={{ color: "#94A3B8" }}>
+                    {authorityMissData.missRate > 20
+                      ? "High miss rate — DM targeting needs improvement"
+                      : authorityMissData.missRate > 10
+                      ? "Moderate — machine is learning correct targets"
+                      : "Low — DM targeting is accurate"}
+                  </p>
                 </div>
               )}
 

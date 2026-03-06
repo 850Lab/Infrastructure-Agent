@@ -1,5 +1,7 @@
 import { handleCallOutcome } from "./opportunities";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
+import { enrichCompany } from "./dm-enrichment";
+import { log as logMsg } from "./logger";
 
 interface CallRecord {
   id: string;
@@ -36,6 +38,7 @@ const OUTCOME_TO_LEAD_STATUS: Record<string, string | null> = {
   "No Answer": null,
   "Callback": null,
   "Lost": "Lost",
+  "NoAuthority": null,
 };
 
 const OUTCOME_FOLLOWUP_DAYS: Record<string, number | null> = {
@@ -47,6 +50,7 @@ const OUTCOME_FOLLOWUP_DAYS: Record<string, number | null> = {
   "Won": null,
   "Not Interested": 90,
   "Lost": null,
+  "NoAuthority": 3,
 };
 
 const OUTCOME_ENGAGEMENT_DELTA: Record<string, number> = {
@@ -55,6 +59,7 @@ const OUTCOME_ENGAGEMENT_DELTA: Record<string, number> = {
   "Won": 40,
   "Not Interested": -10,
   "Gatekeeper": 2,
+  "NoAuthority": -5,
 };
 
 function logEngine(message: string) {
@@ -120,6 +125,8 @@ async function findCompanyByName(companyName: string, clientId?: string, atConfi
   gatekeeperNotes: string;
   offerDMTitle: string;
   primaryDMTitle: string;
+  authorityMissCount: number;
+  domain: string;
 } | null> {
   if (!companyName) return null;
 
@@ -139,6 +146,8 @@ async function findCompanyByName(companyName: string, clientId?: string, atConfi
       gatekeeperNotes: String(rec.fields.Gatekeeper_Notes || "").trim(),
       offerDMTitle: String(rec.fields.Offer_DM_Title || "").trim(),
       primaryDMTitle: String(rec.fields.Primary_DM_Title || "").trim(),
+      authorityMissCount: parseInt(rec.fields.Authority_Miss_Count || "0", 10) || 0,
+      domain: String(rec.fields.Website || rec.fields.website || "").trim(),
     };
   } catch {
     return null;
@@ -221,11 +230,17 @@ export async function processCall(call: CallRecord, clientId?: string, atConfig?
         "No Answer": null,
         "Callback": null,
         "Lost": "rejected",
+        "NoAuthority": "no_authority",
       };
 
       const dmOutcome = OUTCOME_TO_DM_OUTCOME[call.outcome] ?? null;
 
-      if (call.outcome === "Gatekeeper" && (company.offerDMTitle || company.primaryDMTitle)) {
+      if (call.outcome === "NoAuthority") {
+        compUpdate.Offer_DM_Outcome = "no_authority";
+        const currentMissCount = company.authorityMissCount || 0;
+        compUpdate.Authority_Miss_Count = currentMissCount + 1;
+        logEngine(`DM outcome: no_authority — miss count now ${currentMissCount + 1} @ ${call.company}`);
+      } else if (call.outcome === "Gatekeeper" && (company.offerDMTitle || company.primaryDMTitle)) {
         compUpdate.Offer_DM_Outcome = "wrong_person";
         logEngine(`DM outcome: wrong_person (gatekeeper reached, DM was set) @ ${call.company}`);
       } else if (dmOutcome) {
@@ -244,6 +259,18 @@ export async function processCall(call: CallRecord, clientId?: string, atConfig?
           body: JSON.stringify({ fields: compUpdate }),
         }, atConfig);
         companyUpdated = true;
+      }
+
+      if (call.outcome === "NoAuthority") {
+        (async () => {
+          try {
+            logEngine(`Triggering DM re-enrichment for ${call.company} after NoAuthority`);
+            await enrichCompany(company.id);
+            logEngine(`DM re-enrichment complete for ${call.company}`);
+          } catch (e: any) {
+            logEngine(`DM re-enrichment failed for ${call.company}: ${e.message}`);
+          }
+        })();
       }
     } else {
       logEngine(`Company not found: "${call.company}"`);

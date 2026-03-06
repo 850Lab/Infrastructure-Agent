@@ -1,7 +1,7 @@
 # Texas Automation Systems — Lead Engine Command Center
 
 ## Overview
-This project is a multi-tenant B2B lead generation and call management system designed to automate and streamline lead processes, manage call operations, and provide real-time insights via a "Command Center" dashboard. It offers real-time data visualization, AI-powered lead enrichment, dynamic playbook generation, and comprehensive analytics, catering initially to Gulf Coast industrial contractors with plans for broader industry expansion.
+This project is a multi-tenant B2B lead generation and call management system designed to automate and streamline lead processes, manage call operations, and provide real-time insights via a "Command Center" dashboard. It offers real-time data visualization, AI-powered lead enrichment, dynamic playbook generation, and comprehensive analytics. The system aims to serve Gulf Coast industrial contractors initially, with future plans for broader industry expansion by automating and optimizing lead management and sales outreach.
 
 ## User Preferences
 I prefer iterative development with clear communication at each stage.
@@ -12,76 +12,23 @@ I want the agent to prioritize high-impact features and focus on delivering tang
 I prefer to use the web dashboard for daily operations and monitoring, with CLI tools primarily for setup and troubleshooting.
 
 ## System Architecture
-The system utilizes a micro-frontend-like structure with distinct frontend and backend separation.
-
-### Multi-Tenant Architecture
-The platform supports multiple clients with role-based access control (`platform_admin`, `client_admin`, `operator`). Client data is isolated using scoped queries and an event bus. Usage limits are enforced, and all data operations are client-scoped to ensure data segregation.
+The system employs a micro-frontend-like structure with distinct frontend and backend separation, supporting a multi-tenant architecture with role-based access control and client data isolation.
 
 ### UI/UX Decisions
-The frontend is built with React, Shadcn UI, and Framer Motion, featuring a modern design. The primary color scheme uses a white background with dark text and emerald green accents. The dashboard includes a three-column layout with a dynamic 8-node SVG "Neural Network" visualization (Pulse Reactor) and utilizes Server-Sent Events (SSE) for real-time data updates.
+The frontend is a React application built with Shadcn UI and Framer Motion, featuring a modern design with a white background, dark text, and emerald green accents. The dashboard includes a three-column layout, a dynamic 8-node SVG "Neural Network" visualization (Pulse Reactor), and uses Server-Sent Events (SSE) for real-time data updates.
 
 ### Technical Implementations
-The **backend** is developed with Express and TypeScript, while the **frontend** is an 11-page React application optimized for performance with virtualization and React Query caching. **PostgreSQL** stores webhook logs, user accounts, and client registry. **Authentication** is database-backed with token-based security and cross-tab synchronization. **Real-time communication** is handled by Server-Sent Events (SSE) with an in-memory EventBus, robust re-connection logic, and event de-duplication. A daily **orchestrator** manages lead generation steps, preventing concurrent runs. **Data persistence** uses Airtable as the primary source with JSON file fallbacks. **KPI tracking** computes and caches lifetime counters and daily/weekly performance metrics. A **Call Recording + Transcription Pipeline** processes uploaded audio, transcribes it using Whisper, and performs containment analysis via deterministic rules and GPT-4o, with real-time feedback on the UI. A **Playbook Feedback Loop** leverages analyzed call data to regenerate and refine outreach playbooks, specifically addressing identified problems. A **Briefing Engine** generates daily summaries and recommended actions. The system supports **industry-specific configurations** via environment variables.
+The **backend** is developed with Express and TypeScript, while the **frontend** is an 11-page React application optimized for performance with virtualization and React Query caching. **PostgreSQL** stores webhook logs, user accounts, and client registry. **Authentication** is database-backed with token-based security. **Real-time communication** is handled by Server-Sent Events (SSE) with an in-memory EventBus. A daily **orchestrator** manages lead generation steps. **Data persistence** primarily uses Airtable with JSON file fallbacks. **KPI tracking** computes and caches performance metrics. A **Call Recording + Transcription Pipeline** processes audio, transcribes it using Whisper, and performs containment analysis via deterministic rules and GPT-4o. A **Playbook Feedback Loop** leverages analyzed call data to refine outreach playbooks. A **Briefing Engine** generates daily summaries and recommended actions.
 
-### Closed-Loop Sales Learning System
-A 4-layer evidence-based learning system runs in parallel with the existing playbook pipeline. NO GPT-fabricated insights — all signals must be traceable to transcript evidence.
+The system incorporates a **Closed-Loop Sales Learning System** with four layers: an **Observation Engine** for structured call insights, an **Interpretation Engine** for classifying interactions and computing severity scores, a **Pattern Engine** for aggregating insights across calls, and an **Optimization Engine** for generating structured `Script_Patches`. This system feeds into a **Script Evolution Layer** which creates operator-facing recommendations and manages playbook versioning.
 
-**Architecture** (`server/sales-learning/`):
-- **Observation Engine** (`observation-engine.ts`): Extracts structured observations from each analyzed call using deterministic helpers: `extractOpener()`, `extractValueProp()`, `countQualifyingQuestions()`, `detectAuthorityRedirect()`, `detectDeflectionPhrase()`, `classifyObjectionType()`, `classifyProspectEngagement()`, `estimateTalkRatio()`. Speaker mode always "Flat" (no diarization). Writes to `Call_Observations` table.
-- **Interpretation Engine** (`interpretation-engine.ts`): Classifies gatekeeper interactions (brush_off/information_capture/authority_redirect/call_transfer/hard_block), failure modes (accepted_deflection/talked_too_long/missed_question/missed_value_prop/weak_close_attempt), strength modes, opportunity signals. Computes `Severity_Score` from weighted failure counts. Generates templated coaching recommendations. Writes to `Call_Learning` table.
-- **Pattern Engine** (`pattern-engine.ts`): Aggregates across multiple calls by company, gatekeeper, objection type, outcome. Minimum sample size thresholds (3 company, 5 category). Confidence scores based on sample size + consistency. Upserts to `Pattern_Insights` table.
-- **Optimization Engine** (`optimization-engine.ts`): Generates structured `Script_Patches` from patterns and learning records. 12 patch types: add_gatekeeper_redirect_line, strengthen_value_prop, simplify_opener, add_qualifying_question, add_objection_handler, shorten_response_after_deflection, reposition_authority_redirect, add_followup_email_angle, increase/decrease_targeting_weight, route_to_email_sequence, escalate_to_decision_maker_role_request. Source always "Rule Engine" or "Pattern Insight" (never GPT). Deduplicates by trigger_pattern + patch_type.
-- **Pipeline Runner** (`run-sales-learning.ts`): Fetches unprocessed calls (Transcription present, Sales_Learning_Processed=false), runs all 4 layers, marks calls processed. Integrated into daily run as `sales_learning` step after `call_engine`. Non-blocking — failures logged but don't stop pipeline. Flag: `salesLearning` (default true).
+A **DM Decision Authority Learning Loop** learns which decision maker titles lead to successful deals, evolving DM targeting and query generation based on real outreach data. This includes **Win Tiers** for classifying deal progression, **DM Outcome Tracking**, a **DM Authority Learning Engine** for title effectiveness, and **Adaptive DM Fit** for adjusting DM scoring. **No Authority Detection** automatically identifies "wrong person" calls using rule-based and AI analysis.
 
-**Script Evolution Layer** (`server/sales-learning/`):
-- **Script Evolution** (`script-evolution.ts`): Consumes active Script_Patches and Pattern_Insights, filters by company/bucket/industry, ranks by priority, builds structured prompt injection text organized by 9 patch categories. Returns `ScriptEvolutionContext` with `promptInjection`, `appliedPatches`, `confidence`, `strategyNotes`, `learningVersion`.
-- **Script Recommendations** (`script-recommendations.ts`): Produces operator-facing recommendations per company/bucket. 5 recommendation slots: opener, first_redirect, qualifying_question, objection_response, followup_sequence. Picks best by priority × confidence. No GPT.
-- **Script Versioning** (`script-versioning.ts`): Tracks playbook evolution via `Script_Versions` table. `saveScriptVersion()` stores a new record only if content changed materially (MD5 hash comparison). Auto-generates version labels (v1.0, v1.1...). `getVersionHistory()` for retrieval.
-- **Playbook Integration**: `buildScriptEvolutionContext()` called per-bucket during `generatePlaybooksForTodayList()`. Learning context injected into GPT prompt as structured instructions. New fields written to Companies: `Playbook_Strategy_Notes`, `Playbook_Learning_Version`, `Playbook_Applied_Patches`, `Playbook_Confidence`. Non-blocking — if learning fetch fails, base playbook generates normally. Script versions saved after generation when patches applied.
-- **Call Mode UI**: Intel tab shows "Learning Active" card with version, confidence badge, patch count. Scripts tab shows "Machine Learning Notes" section with strategy notes, applied patches list with priority indicators, and learning version.
-
-**Airtable Tables**: Call_Observations, Call_Learning, Pattern_Insights, Script_Patches, Script_Versions (all with Client_ID for multi-tenant scoping). Schema bootstrapped via `server/airtable-schema.ts`.
-
-**API Endpoints** (`sales-learning-routes.ts`):
-- GET /api/sales-learning/observations — paginated observations
-- GET /api/sales-learning/learning — paginated learning records
-- GET /api/sales-learning/patterns — active pattern insights
-- GET /api/sales-learning/patches — active script patches
-- GET /api/sales-learning/summary — aggregated counts, top failure/strength modes, top actions
-- GET /api/sales-learning/recommendations — per-company or per-bucket script recommendations
-- GET /api/sales-learning/versions — script version history
-
-### DM Decision Authority Learning Loop
-A closed-loop system that learns which decision maker titles actually lead to cooldown trailer deals and evolves DM targeting + query generation based on real outreach data.
-
-**Architecture**:
-- **Win Tiers** (`server/query-intel.ts`): `WinTier` type (`'closed' | 'pipeline' | 'qualified' | null`). `getWinTier()` classifies companies by real deal progression. Attribution scoring: closed=+50, pipeline=+30, qualified=+15, not_interested=-15.
-- **DM Outcome Tracking** (`server/airtable-schema.ts`, `server/call-engine.ts`): `Offer_DM_Outcome` and `Offer_DM_Title_At_Contact` fields auto-populated on every call. Tracks reached_dm, wrong_person, no_authority, converted, rejected.
-- **DM Authority Learning Engine** (`server/dm-authority-learning.ts`): `computeTitleEffectiveness()` aggregates per-title conversion rates with title bucketing (Safety Manager, Turnaround Manager, etc.). `getDMAuthorityAdjustments()` returns score adjustments (cap ±25) applied to DM fit scoring. `computeDMAuthorityReport()` returns structured dashboard data. Min 5 contacts for meaningful score, min 3 for adjustment.
-- **Adaptive DM Fit** (`server/dm-fit.ts`): `scoreDMFit()` accepts authority adjustments from learning engine. `runDMFit()` fetches adjustments once per run, passes to all scoring calls. Non-blocking fallback to hardcoded scores.
-- **Win Pattern Queries** (`server/query-intel.ts`): `extractWinPatterns()` analyzes winners for shared traits (categories, cities, keywords). `generateIntelligentQueries()` uses win patterns in GPT prompt, tags queries as `Last_Generated_By: "WinPattern"`.
-
-**API Endpoints**:
-- GET /api/dm-authority/report — title effectiveness rankings and authority scores
-- GET /api/query-intel/summary — top queries, win pattern summary, generation mode
-
-**Dashboard**: "Intelligence" section shows DM Authority (top 5 titles by conversion), Top Queries (performance-ranked), Win Patterns (categories, cities, keywords). Hidden when no data exists.
-
-### Feature Specifications
-Key features include a **Command Center Dashboard** with real-time visualizations, a **Lead Engine** for lead generation and enrichment, **DM Enrichment** using external services, and a **Playbook Generator** for dynamic outreach scripts. A **Run Diff** feature tracks changes between daily runs, while a **Revert Last Run** capability allows rolling back specific categories of changes. The **Call Outcome Engine** processes call logs, updates lead statuses, and manages follow-ups, automatically creating opportunities. An **Opportunities Pipeline** tracks deals through various stages with auto-generated actions. **Call Mode** provides a dedicated interface for rapid call sessions. **Machine Feedback** uses narrative micro-interactions for system labels and toast notifications. A **Rank Explainability Layer** offers transparency into lead ranking. **Machine Identity & Settings** allow configuration via the dashboard. The system also includes a **First-Run Cinematic** and an **Onboarding Wizard** for new users, alongside an **Admin Platform** for client and platform management.
-
-### Targeting Accuracy
-The **Targeting Accuracy** score (`/api/confidence`) measures **data completeness** across today's company pull. Score = average of 5 field coverage rates × 100. The 5 fields: DM Name (`Offer_DM_Name` or `Primary_DM_Name`), DM Email, DM Phone, Website, Social_Media. A score of 100 means every company pulled has all 5 fields populated. The dashboard shows individual component bars for each field. The `Social_Media` field on Companies is populated during lead-feed enrichment (LinkedIn URL extraction) and DM enrichment (Apollo LinkedIn URL).
-
-### Auth & Client Context
-The `authMiddleware` in `server/auth.ts` resolves `clientId` for platform_admin users via three fallback layers: (1) explicit `?clientId=` query param, (2) `clientId` in request body, (3) auto-resolve from first active client in the database. This ensures all API endpoints work for platform admins without needing explicit client context on every request.
-
-### Production Safety
-The application is wrapped in a React **Error Boundary**. The server includes **Process Guards** for unhandled rejections and exceptions. **Concurrency Guards** prevent duplicate pipeline runs. The system incorporates **Rate Limit Handling** and **Fetch Timeouts** for external API calls, and new companies include **Source Attribution** for traceability.
+Key features include a **Command Center Dashboard**, **Lead Engine**, **DM Enrichment**, **Playbook Generator**, **Run Diff**, **Revert Last Run**, **Call Outcome Engine**, **Opportunities Pipeline**, **Call Mode**, **Machine Feedback**, **Rank Explainability Layer**, **Machine Identity & Settings**, **First-Run Cinematic**, **Onboarding Wizard**, and an **Admin Platform**. **Targeting Accuracy** is measured as a score based on data completeness for critical fields. The system includes **Auth & Client Context** management for multi-tenant operations and **Production Safety** measures such as React Error Boundaries, server Process Guards, Concurrency Guards, Rate Limit Handling, and Fetch Timeouts.
 
 ## External Dependencies
--   **Airtable**: Primary data store for run history, user configurations, machine metrics, and various data points.
--   **OpenAI**: Used for Whisper (audio transcription), GPT (GPT-4o) for containment analysis, website crawling fallback, DM fit scoring, and playbook generation.
+-   **Airtable**: Primary data store.
+-   **OpenAI**: Used for Whisper (audio transcription), GPT (GPT-4o) for containment analysis, website crawling, DM fit scoring, and playbook generation.
 -   **Make.com**: Integrated for scenario auditing and blueprint management.
 -   **Apollo.io**: Used for decision-maker enrichment and data acquisition.
 -   **Outscraper**: Utilized for Google Maps searches and website lookup services.

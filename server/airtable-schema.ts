@@ -417,6 +417,7 @@ const COMPANIES_FIELDS: FieldSpec[] = [
     },
   },
   { name: "Offer_DM_Title_At_Contact", type: "singleLineText" },
+  { name: "Authority_Miss_Count", type: "number", options: { precision: 0 } },
 ];
 
 const CALLS_FIELDS: FieldSpec[] = [
@@ -443,6 +444,7 @@ const CALLS_FIELDS: FieldSpec[] = [
         { name: "Callback", color: "yellowLight2" },
         { name: "Won", color: "greenLight2" },
         { name: "Lost", color: "redLight2" },
+        { name: "NoAuthority", color: "orangeLight2" },
       ],
     },
   },
@@ -462,6 +464,8 @@ const CALLS_FIELDS: FieldSpec[] = [
   { name: "Processed", type: "checkbox", options: { color: "greenBright", icon: "check" } },
   { name: "Gatekeeper_Name", type: "singleLineText" },
   { name: "Sales_Learning_Processed", type: "checkbox", options: { color: "greenBright", icon: "check" } },
+  { name: "No_Authority", type: "checkbox", options: { color: "orangeBright", icon: "check" } },
+  { name: "Authority_Reason", type: "multilineText" },
 ];
 
 export async function ensureSchema(): Promise<SchemaReport> {

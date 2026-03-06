@@ -7,6 +7,7 @@ import { log } from "./logger";
 import { processCall } from "./call-engine";
 import { scopedFormula } from "./airtable-scoped";
 import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic } from "./openai";
+import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
@@ -385,6 +386,17 @@ export function registerTodayRoutes(app: Express) {
             writebackFields.Analysis_Confidence = deterministicResult.confidence;
           }
 
+          const transcriptAuthority = detectNoAuthority(transcription);
+          const analysisAuthority = detectNoAuthorityFromAnalysis(analysis);
+          const authorityDetected = transcriptAuthority.detected || analysisAuthority.detected;
+          const authorityResult = transcriptAuthority.detected ? transcriptAuthority : analysisAuthority;
+
+          if (authorityDetected) {
+            writebackFields.No_Authority = true;
+            writebackFields.Authority_Reason = authorityResult.reason;
+            log(`Authority detection: NO AUTHORITY for call ${callId} — ${authorityResult.reason}`, "today");
+          }
+
           const writebackUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${encodeURIComponent("Calls")}/${callId}`;
           await fetch(writebackUrl, {
             method: "PATCH",
@@ -404,6 +416,9 @@ export function registerTodayRoutes(app: Express) {
             problemDetected: deterministicResult.problem_detected || null,
             proposedPatchType: deterministicResult.proposed_patch_type || null,
             confidence: deterministicResult.confidence || null,
+            noAuthority: authorityDetected,
+            authorityReason: authorityResult.reason || null,
+            suggestedRole: authorityResult.suggestedRole || null,
             ts: Date.now(),
           }, clientId);
         } catch (e: any) {

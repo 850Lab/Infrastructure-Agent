@@ -60,6 +60,7 @@ const OUTCOMES = [
   { value: "Qualified", label: "Qualified", color: EMERALD_DARK, icon: Zap, desc: "Qualified opportunity" },
   { value: "Callback", label: "Callback", color: WARN, icon: Calendar, desc: "Schedule callback" },
   { value: "Not Interested", label: "Not Interested", color: ERROR_RED, icon: X, desc: "Not a fit" },
+  { value: "NoAuthority", label: "Wrong Person", color: "#F59E0B", icon: AlertTriangle, desc: "Not the decision maker" },
 ] as const;
 
 const SIGNAL_MAP: Record<string, { title: string; description: string }> = {
@@ -69,6 +70,7 @@ const SIGNAL_MAP: Record<string, { title: string; description: string }> = {
   "Qualified": { title: "Opportunity created", description: "High-value target moved to pipeline." },
   "Callback": { title: "Callback locked", description: "Machine will remind you at the right time." },
   "Not Interested": { title: "Signal absorbed", description: "Targeting recalibrated. Moving on." },
+  "NoAuthority": { title: "Wrong person flagged", description: "Machine will find the right decision maker." },
 };
 
 export default function CallModePage() {
@@ -296,6 +298,7 @@ export default function CallModePage() {
       if (e.key === "4") handleOutcome("Qualified");
       if (e.key === "5") handleOutcome("Callback");
       if (e.key === "6") handleOutcome("Not Interested");
+      if (e.key === "7") handleOutcome("NoAuthority");
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);

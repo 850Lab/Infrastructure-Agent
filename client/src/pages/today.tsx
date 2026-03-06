@@ -42,6 +42,7 @@ const OUTCOMES = [
   { value: "Qualified", label: "Qual", color: "#059669" },
   { value: "Callback", label: "CB", color: "#F59E0B" },
   { value: "Not Interested", label: "NI", color: "#EF4444" },
+  { value: "NoAuthority", label: "Wrong Person", color: "#F59E0B" },
 ] as const;
 
 const OUTCOME_FEEDBACK: Record<string, { title: string; description: string }> = {
@@ -51,6 +52,7 @@ const OUTCOME_FEEDBACK: Record<string, { title: string; description: string }> =
   "Qualified": { title: "Opportunity created", description: "High-value target moved to pipeline." },
   "Callback": { title: "Callback locked", description: "Machine will remind you at the right time." },
   "Not Interested": { title: "Signal absorbed", description: "Targeting recalibrated. Moving on." },
+  "NoAuthority": { title: "Wrong person flagged", description: "Machine will find the right decision maker." },
 };
 
 const STEP_CHIPS = [
@@ -304,8 +306,10 @@ function CompanyRowInner({
                 </span>
               )}
               {company.last_outcome && (
-                <span className="text-xs font-mono" style={{ color: MUTED }}>
-                  Last: {company.last_outcome}
+                <span className="text-xs font-mono" style={{
+                  color: company.last_outcome === "NoAuthority" ? "#F59E0B" : MUTED
+                }} data-testid={`outcome-badge-${company.id}`}>
+                  Last: {company.last_outcome === "NoAuthority" ? "Wrong Person" : company.last_outcome}
                 </span>
               )}
               {company.lead_status && (
