@@ -110,6 +110,7 @@ async function loadFromAirtable(): Promise<Run[]> {
       summary: safeJsonParse(r.fields.summary_json, {}),
       errors: safeJsonParse(r.fields.errors_json, []),
       duration_ms: r.fields.duration_ms || undefined,
+      clientId: r.fields.client_id || undefined,
       _airtable_id: r.id,
     }));
   } catch (e: any) {

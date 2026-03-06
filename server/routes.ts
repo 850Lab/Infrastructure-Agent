@@ -135,6 +135,8 @@ export async function registerRoutes(
   registerLeadFeedRoutes(app);
   await registerDashboardRoutes(app);
   await registerAdminRoutes(app);
+  const { probeClientIdField } = await import("./airtable-scoped");
+  await probeClientIdField();
   await seedAllCampaigns().catch((e: any) => log(`Seed error: ${e.message}`, "seed"));
   registerTodayRoutes(app);
   registerOpportunityRoutes(app);

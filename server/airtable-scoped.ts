@@ -3,6 +3,24 @@ import { log } from "./logger";
 
 let clientIdFieldKnownMissing = false;
 
+export async function probeClientIdField(): Promise<void> {
+  const apiKey = process.env.AIRTABLE_API_KEY || "";
+  const baseId = process.env.AIRTABLE_BASE_ID || "";
+  if (!apiKey || !baseId) return;
+  try {
+    const formula = encodeURIComponent("{Client_ID}!=''");
+    const url = `https://api.airtable.com/v0/${baseId}/Companies?pageSize=1&filterByFormula=${formula}&fields%5B%5D=company_name`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      if (body.includes("UNKNOWN_FIELD_NAME") || body.includes("INVALID_FILTER_BY_FORMULA")) {
+        markClientIdMissing();
+      }
+    }
+  } catch {
+  }
+}
+
 export function scopedFormula(clientId: string, existingFormula?: string): string {
   if (clientIdFieldKnownMissing) {
     return existingFormula || "";

@@ -45,6 +45,12 @@ Specific engines and loops include:
 -   **Machine Alerts**: Proactive anomaly detection system checking for `title_performance_change`, `title_decline`, `authority_mismatch_spike`, and `query_performance_shift`, storing alerts in PostgreSQL and displaying them on the dashboard.
 -   **Multi-Campaign Support**: 3 active campaigns — Texas Cool Down Trailers (industrial cooling), Texas Automation Systems (industrial automation), 850 Lab Workshops (community workshops). Each campaign has its own client record, operator user, 4 campaign-specific email templates, and isolated outreach pipeline data. Seeded on server startup via `server/seed-client.ts` (`seedAllCampaigns()`). Extended lead fields on `outreach_pipeline`: firstName, lastName, title, phone, website, linkedinUrl, city, state, industry, source, relevanceStatus, lastOutcome, callFollowupRequired, assignedOffer, notes, personalizationLine, emailTemplateVersion. Admin Campaign Overview (`GET /api/admin/campaign-overview`) returns per-campaign stats (lead counts, touch stage breakdown, due-today, replied/completed/not-interested counts, template counts) displayed on the admin dashboard.
 
+## Airtable Field Naming Conventions
+-   **Outscraper-imported fields**: lowercase with underscores (`company_name`, `phone`, `website`, `city`, `state`)
+-   **Pipeline-created fields**: PascalCase (`Today_Call_List`, `Bucket`, `Final_Priority`, `Lead_Status`, `Primary_DM_Name`, `Playbook_*`, `Rank_*`)
+-   **Client_ID field**: Does NOT exist in Airtable; `airtable-scoped.ts` probes at startup and skips scoping when absent
+-   **Run_History table**: Does NOT have a `client_id` field; clientId is tracked in-memory and JSON only
+
 ## External Dependencies
 -   **Airtable**: Primary data store.
 -   **OpenAI**: Used for Whisper (audio transcription), GPT (GPT-4o) for containment analysis, website crawling, DM fit scoring, and playbook generation.

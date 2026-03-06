@@ -23,6 +23,23 @@ const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
 
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 
+async function airtableCountFetch(url: string, headers: Record<string, string>, retries = 3): Promise<Response | null> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const resp = await fetch(url, { headers });
+    if (resp.ok) return resp;
+    if (resp.status === 429 && attempt < retries - 1) {
+      const wait = Math.pow(2, attempt + 1) * 1000;
+      log(`Airtable rate limited (429), retrying in ${wait}ms...`, "dashboard");
+      await new Promise(r => setTimeout(r, wait));
+      continue;
+    }
+    const body = await resp.text().catch(() => "");
+    log(`Airtable count failed: ${resp.status} | ${body.slice(0, 200)}`, "dashboard");
+    return null;
+  }
+  return null;
+}
+
 async function airtableCount(formula: string, clientId?: string): Promise<number | null> {
   try {
     let key: string, base: string;
@@ -34,7 +51,10 @@ async function airtableCount(formula: string, clientId?: string): Promise<number
       key = AIRTABLE_API_KEY();
       base = AIRTABLE_BASE_ID();
     }
-    if (!key || !base) return null;
+    if (!key || !base) {
+      log(`Airtable count skipped: missing key or base`, "dashboard");
+      return null;
+    }
 
     const scopedFilter = clientId ? scopedFormula(clientId, formula) : formula;
 
@@ -45,22 +65,23 @@ async function airtableCount(formula: string, clientId?: string): Promise<number
       const params = new URLSearchParams({
         filterByFormula: scopedFilter,
         pageSize: "100",
-        "fields[]": "Company",
+        "fields[]": "company_name",
       });
       if (offset) params.set("offset", offset);
 
-      const resp = await fetch(
+      const resp = await airtableCountFetch(
         `https://api.airtable.com/v0/${base}/Companies?${params}`,
-        { headers: { Authorization: `Bearer ${key}` } }
+        { Authorization: `Bearer ${key}` }
       );
-      if (!resp.ok) return null;
+      if (!resp) return null;
       const data = await resp.json();
       count += (data.records || []).length;
       offset = data.offset;
     } while (offset);
 
     return count;
-  } catch {
+  } catch (err: any) {
+    log(`Airtable count error: ${err.message}`, "dashboard");
     return null;
   }
 }
@@ -456,7 +477,10 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         airtableCount("OR({Times_Called}=0,{Lead_Status}='New')", clientId),
       ]);
 
-      const history = getHistory(clientId);
+      let history = getHistory(clientId);
+      if (history.length === 0 && clientId) {
+        history = getHistory(clientId, true);
+      }
       const lastRun = history.length > 0 ? history[0] : null;
 
       res.json({

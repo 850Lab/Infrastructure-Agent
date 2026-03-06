@@ -81,7 +81,11 @@ async function airtableFetch(
 
       const url = `https://api.airtable.com/v0/${base}/${encodeURIComponent(table)}?${params}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
-      if (!res.ok) return records;
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        log(`Airtable fetch error (${table}): ${res.status} ${res.statusText} | ${body.slice(0, 200)}`, "today");
+        return records;
+      }
 
       const data = await res.json();
       records.push(...(data.records || []));
@@ -157,14 +161,13 @@ export interface TodayCompany {
 
 function companyFields(): string[] {
   return [
-    "Company_Name", "Phone", "Bucket", "Final_Priority", "Lead_Status",
-    "Times_Called", "Last_Outcome", "Offer_DM_Name", "Offer_DM_Title",
-    "Offer_DM_Phone", "Offer_DM_Email", "Rank_Reason", "Rank_Evidence",
+    "company_name", "phone", "Bucket", "Final_Priority", "Lead_Status",
+    "Times_Called", "Offer_DM_FitScore", "Offer_DM_Reason",
+    "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone",
+    "Rank_Reason", "Rank_Evidence",
     "Playbook_Call_Opener", "Playbook_Gatekeeper_Ask", "Playbook_Voicemail",
     "Playbook_Followup_Text", "Playbook_Email_Subject", "Playbook_Email_Body",
-    "Followup_Due", "Website", "City", "Gatekeeper_Name",
-    "Playbook_Strategy_Notes", "Playbook_Applied_Patches",
-    "Playbook_Confidence", "Playbook_Learning_Version",
+    "website", "city",
   ];
 }
 
@@ -172,17 +175,17 @@ function mapCompany(rec: AirtableRecord): TodayCompany {
   const f = rec.fields;
   return {
     id: rec.id,
-    company_name: String(f.Company_Name || ""),
-    phone: String(f.Phone || ""),
+    company_name: String(f.company_name || f.Company_Name || ""),
+    phone: String(f.phone || f.Phone || ""),
     bucket: String(f.Bucket || ""),
     final_priority: parseInt(f.Final_Priority || "0", 10) || 0,
     lead_status: String(f.Lead_Status || ""),
     times_called: parseInt(f.Times_Called || "0", 10) || 0,
     last_outcome: String(f.Last_Outcome || ""),
-    offer_dm_name: String(f.Offer_DM_Name || ""),
+    offer_dm_name: String(f.Primary_DM_Name || f.Offer_DM_Name || ""),
     offer_dm_title: String(f.Offer_DM_Title || ""),
-    offer_dm_phone: String(f.Offer_DM_Phone || ""),
-    offer_dm_email: String(f.Offer_DM_Email || ""),
+    offer_dm_phone: String(f.Primary_DM_Phone || f.Offer_DM_Phone || ""),
+    offer_dm_email: String(f.Primary_DM_Email || f.Offer_DM_Email || ""),
     rank_reason: String(f.Rank_Reason || ""),
     rank_evidence: String(f.Rank_Evidence || ""),
     playbook_opener: String(f.Playbook_Call_Opener || ""),
@@ -192,8 +195,8 @@ function mapCompany(rec: AirtableRecord): TodayCompany {
     playbook_email_subject: String(f.Playbook_Email_Subject || ""),
     playbook_email_body: String(f.Playbook_Email_Body || ""),
     followup_due: String(f.Followup_Due || ""),
-    website: String(f.Website || ""),
-    city: String(f.City || ""),
+    website: String(f.website || f.Website || ""),
+    city: String(f.city || f.City || ""),
     gatekeeper_name: String(f.Gatekeeper_Name || ""),
     playbook_strategy_notes: String(f.Playbook_Strategy_Notes || ""),
     playbook_applied_patches: String(f.Playbook_Applied_Patches || ""),
