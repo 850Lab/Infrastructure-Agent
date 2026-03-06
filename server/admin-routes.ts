@@ -159,6 +159,53 @@ export async function registerAdminRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.patch("/api/admin/users/:id", authMiddleware, requireRole("platform_admin"), async (req: Request, res: Response) => {
+    try {
+      const { email, role } = req.body || {};
+      const updates: Record<string, any> = {};
+      if (typeof email === "string" && email.trim()) {
+        if (!email.includes("@") || !email.includes(".")) {
+          return res.status(400).json({ error: "Invalid email format" });
+        }
+        updates.email = email.toLowerCase().trim();
+        updates.username = email.toLowerCase().trim();
+      }
+      if (typeof role === "string" && ["operator", "manager", "platform_admin"].includes(role)) {
+        updates.role = role;
+      }
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+      const updated = await storage.updateUser(req.params.id, updates);
+      if (!updated) return res.status(404).json({ error: "User not found" });
+      res.json({ success: true, user: { id: updated.id, email: updated.email, role: updated.role, clientId: updated.clientId } });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  app.patch("/api/admin/clients/:id", authMiddleware, requireRole("platform_admin"), async (req: Request, res: Response) => {
+    try {
+      const client = await storage.getClient(req.params.id);
+      if (!client) return res.status(404).json({ error: "Client not found" });
+      const body = req.body || {};
+      const updates: Record<string, any> = {};
+      if (typeof body.clientName === "string") updates.clientName = body.clientName;
+      if (typeof body.machineName === "string") updates.machineName = body.machineName;
+      if (typeof body.territory === "string") updates.territory = body.territory;
+      if (typeof body.status === "string" && ["active", "paused", "inactive"].includes(body.status)) updates.status = body.status;
+      if (typeof body.industryConfig === "string") updates.industryConfig = body.industryConfig;
+      if (typeof body.decisionMakerFocus === "string") updates.decisionMakerFocus = body.decisionMakerFocus;
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+      const updated = await storage.updateClient(req.params.id, updates);
+      res.json({ success: true, client: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update client" });
+    }
+  });
+
   app.post("/api/admin/users/:id/reset-password", authMiddleware, requireRole("platform_admin"), async (req: Request, res: Response) => {
     try {
       const { newPassword } = req.body || {};
