@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Target,
   MapPin,
@@ -27,6 +28,14 @@ const STAGE_META: Record<string, { label: string; color: string; icon: any; orde
 };
 
 const ACTIVE_STAGES = ["Qualified", "SiteWalk", "QuoteSent", "DeploymentScheduled"];
+
+const STAGE_FEEDBACK: Record<string, string> = {
+  SiteWalk: "Site walk scheduled. Machine tracking momentum.",
+  QuoteSent: "Quote deployed. Awaiting buyer signal.",
+  DeploymentScheduled: "Deployment locked. Final stretch.",
+  Won: "Deal closed. Revenue captured.",
+  Lost: "Opportunity archived. Machine recalibrating.",
+};
 
 export interface Opportunity {
   id: string;
@@ -67,6 +76,7 @@ function invalidateOppQueries() {
 export default function DealCard({ opportunity, compact = false }: DealCardProps) {
   const opp = opportunity;
   const meta = STAGE_META[opp.stage] || STAGE_META.Qualified;
+  const { toast } = useToast();
   const [showStages, setShowStages] = useState(false);
   const [optimisticStage, setOptimisticStage] = useState<string | null>(null);
 
@@ -120,8 +130,12 @@ export default function DealCard({ opportunity, compact = false }: DealCardProps
           queryClient.setQueryData(key, data);
         }
       }
+      toast({ title: "Update failed", description: "Stage change didn't stick. Try again.", variant: "destructive", duration: 4000 });
     },
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
+      const fb = STAGE_FEEDBACK[vars.stage];
+      const stageMeta = STAGE_META[vars.stage];
+      if (fb) toast({ title: stageMeta?.label || vars.stage, description: fb, duration: 3000 });
       invalidateOppQueries();
     },
     onSettled: () => {

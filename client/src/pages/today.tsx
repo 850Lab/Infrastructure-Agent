@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { List } from "react-window";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import DealCard from "@/components/deal-card";
@@ -42,6 +43,15 @@ const OUTCOMES = [
   { value: "Callback", label: "CB", color: "#F59E0B" },
   { value: "Not Interested", label: "NI", color: "#EF4444" },
 ] as const;
+
+const OUTCOME_FEEDBACK: Record<string, { title: string; description: string }> = {
+  "Decision Maker": { title: "Signal captured", description: "DM reached. Targeting will improve." },
+  "Gatekeeper": { title: "Intel gathered", description: "Gatekeeper mapped. Machine is learning." },
+  "No Answer": { title: "Noted", description: "Follow-up queued. Machine will try again." },
+  "Qualified": { title: "Opportunity created", description: "High-value target moved to pipeline." },
+  "Callback": { title: "Callback locked", description: "Machine will remind you at the right time." },
+  "Not Interested": { title: "Signal absorbed", description: "Targeting recalibrated. Moving on." },
+};
 
 const STEP_CHIPS = [
   { id: "run", label: "Run Pipeline", icon: Play },
@@ -356,6 +366,7 @@ export default function TodayPage() {
   const { getToken } = useAuth();
   const token = getToken();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
   const [loggedCalls, setLoggedCalls] = useState<Map<string, string>>(new Map());
   const [activeStep, setActiveStep] = useState<string>("call");
@@ -399,6 +410,9 @@ export default function TodayPage() {
 
   const runPipelineMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/action/run-pipeline"),
+    onMutate: () => {
+      toast({ title: "Engine activated", description: "Machine is scanning the territory. Stand by.", duration: 3000 });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/today-list"] });
       queryClient.invalidateQueries({ queryKey: ["/api/briefing"] });
@@ -413,7 +427,9 @@ export default function TodayPage() {
       await queryClient.cancelQueries({ queryKey: ["/api/today-list"] });
       setLoggedCalls(prev => new Map(prev).set(vars.company_name, vars.outcome));
     },
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
+      const fb = OUTCOME_FEEDBACK[vars.outcome];
+      if (fb) toast({ title: fb.title, description: fb.description, duration: 2500 });
       queryClient.invalidateQueries({ queryKey: ["/api/today-list"] });
       queryClient.invalidateQueries({ queryKey: ["/api/confidence"] });
       queryClient.invalidateQueries({ queryKey: ["/api/outcomes"] });
@@ -425,6 +441,7 @@ export default function TodayPage() {
         next.delete(vars.company_name);
         return next;
       });
+      toast({ title: "Signal lost", description: "Failed to log call. Try again.", variant: "destructive", duration: 4000 });
     },
   });
 

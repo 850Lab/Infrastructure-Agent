@@ -7,6 +7,17 @@ import { useLatestRun } from "@/lib/use-latest-run";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 
+const STEP_DISPLAY: Record<string, string> = {
+  bootstrap: "System Boot",
+  opportunity_engine: "Market Scanner",
+  dm_coverage: "Decision Maker Mapping",
+  dm_fit: "Buyer Selection",
+  playbooks: "Script Generation",
+  call_engine: "Signal Processing",
+  query_intel: "Learning Engine",
+  lead_feed: "Lead Expansion",
+};
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   const seconds = Math.floor(ms / 1000);
@@ -134,15 +145,15 @@ export default function AnalyticsPage() {
                 <TableBody>
                   {latestRun.steps.map((s: any, i: number) => {
                     let keyStats = "";
-                    if (s.step === "opportunity_engine") keyStats = `${s.stats?.top_requested ?? 0} companies`;
-                    else if (s.step === "dm_coverage") keyStats = `${s.stats?.dmResolution?.companiesWithDM ?? 0} DMs found`;
+                    if (s.step === "opportunity_engine") keyStats = `${s.stats?.top_requested ?? 0} targets acquired`;
+                    else if (s.step === "dm_coverage") keyStats = `${s.stats?.dmResolution?.companiesWithDM ?? 0} decision makers mapped`;
                     else if (s.step === "dm_fit") keyStats = `Avg fit: ${s.stats?.avgFitScore ?? 0}`;
-                    else if (s.step === "playbooks") keyStats = `${s.stats?.generated ?? 0} generated`;
-                    else if (s.step === "call_engine") keyStats = `${s.stats?.calls_processed ?? 0} calls`;
-                    else if (s.step === "query_intel") keyStats = `${s.stats?.queriesGenerated ?? 0} queries`;
+                    else if (s.step === "playbooks") keyStats = `${s.stats?.generated ?? 0} scripts generated`;
+                    else if (s.step === "call_engine") keyStats = `${s.stats?.calls_processed ?? 0} signals processed`;
+                    else if (s.step === "query_intel") keyStats = `${s.stats?.queriesGenerated ?? 0} new searches queued`;
                     return (
                       <TableRow key={i} data-testid={`row-step-${i}`}>
-                        <TableCell className="font-medium" style={{ color: "#0F172A" }}>{s.step}</TableCell>
+                        <TableCell className="font-medium" style={{ color: "#0F172A" }}>{STEP_DISPLAY[s.step] || s.step}</TableCell>
                         <TableCell>
                           <Badge variant={s.status === "ok" ? "default" : "destructive"} style={
                             s.status === "ok" ? { background: "#10B981", color: "#fff" } : {}

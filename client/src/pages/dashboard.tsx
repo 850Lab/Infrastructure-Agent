@@ -5,10 +5,21 @@ import { useAuth } from "@/lib/auth";
 import { useSSE } from "@/lib/use-sse";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
 import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings } from "lucide-react";
+
+const STEP_DONE_FEEDBACK: Record<string, { title: string; description: string }> = {
+  opportunity_engine: { title: "Targets acquired", description: "Call list built and prioritized." },
+  dm_coverage: { title: "Decision makers mapped", description: "Key contacts linked to today\u2019s targets." },
+  dm_fit: { title: "Buyers locked in", description: "Best-fit decision makers confirmed." },
+  playbooks: { title: "Scripts refreshed", description: "Custom scripts ready for today\u2019s targets." },
+  call_engine: { title: "Signals processed", description: "Call outcomes absorbed. Machine is learning." },
+  query_intel: { title: "Machine evolved", description: "New searches queued from field data." },
+  lead_feed: { title: "Pipeline expanded", description: "Fresh companies added to the funnel." },
+};
 
 const STEP_ORDER = [
   "bootstrap",
@@ -23,12 +34,12 @@ const STEP_ORDER = [
 
 const STEP_LABELS: Record<string, string> = {
   bootstrap: "System Boot",
-  opportunity_engine: "Opportunity Scan",
-  dm_coverage: "Contact Mapping",
+  opportunity_engine: "Market Scanner",
+  dm_coverage: "Decision Maker Mapping",
   dm_fit: "Buyer Selection",
   playbooks: "Script Generation",
-  call_engine: "Call Processing",
-  query_intel: "Intel Engine",
+  call_engine: "Signal Processing",
+  query_intel: "Learning Engine",
   lead_feed: "Lead Expansion",
 };
 
@@ -108,6 +119,7 @@ export default function DashboardPage() {
   const token = getToken();
   const { recentEvents, activeNodes, runStatus, connected, connectionStatus } = useSSE(token);
   const [, navigate] = useLocation();
+  const { toast } = useToast();
   const [runLoading, setRunLoading] = useState(false);
   const [doneSteps, setDoneSteps] = useState<Set<string>>(new Set());
   const [shockwave, setShockwave] = useState(0);
@@ -216,7 +228,11 @@ export default function DashboardPage() {
     }
     if (last.type === "STEP_DONE") {
       const step = last.payload.step;
-      if (step) setDoneSteps((prev) => new Set([...prev, step]));
+      if (step) {
+        setDoneSteps((prev) => new Set([...prev, step]));
+        const fb = STEP_DONE_FEEDBACK[step];
+        if (fb) toast({ title: fb.title, description: fb.description, duration: 3000 });
+      }
     }
     if (last.type === "TRIGGER_FIRED") {
       setBurst((b) => b + 1);

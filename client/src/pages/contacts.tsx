@@ -71,7 +71,7 @@ export default function ContactsPage() {
     <AppLayout showBackToChip>
       <div className="p-6 space-y-6">
         <div className="flex items-center gap-3 mb-1">
-          <span className="text-xs font-mono tracking-wider uppercase" style={{ color: "#94A3B8" }}>DM Coverage / DM Fit</span>
+          <span className="text-xs font-mono tracking-wider uppercase" style={{ color: "#94A3B8" }}>Decision Maker Mapping / Buyer Selection</span>
         </div>
         <h1 className="text-2xl font-bold" style={{ color: "#0F172A" }} data-testid="text-page-title">Contacts</h1>
         {fitScore > 0 && (

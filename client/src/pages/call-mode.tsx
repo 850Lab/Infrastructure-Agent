@@ -58,13 +58,13 @@ const OUTCOMES = [
   { value: "Not Interested", label: "Not Interested", color: ERROR_RED, icon: X, desc: "Not a fit" },
 ] as const;
 
-const SIGNAL_MAP: Record<string, string> = {
-  "Decision Maker": "+15 engagement, DM reached",
-  "Gatekeeper": "+5 engagement, gatekeeper mapped",
-  "No Answer": "follow-up in 2 days",
-  "Qualified": "+20 engagement, opportunity created",
-  "Callback": "+10 engagement, callback scheduled",
-  "Not Interested": "-10 engagement, cooled for 90 days",
+const SIGNAL_MAP: Record<string, { title: string; description: string }> = {
+  "Decision Maker": { title: "Signal captured", description: "DM reached. Targeting will improve." },
+  "Gatekeeper": { title: "Intel gathered", description: "Gatekeeper mapped. Machine is learning." },
+  "No Answer": { title: "Noted", description: "Follow-up queued. Machine will try again." },
+  "Qualified": { title: "Opportunity created", description: "High-value target moved to pipeline." },
+  "Callback": { title: "Callback locked", description: "Machine will remind you at the right time." },
+  "Not Interested": { title: "Signal absorbed", description: "Targeting recalibrated. Moving on." },
 };
 
 export default function CallModePage() {
@@ -111,9 +111,10 @@ export default function CallModePage() {
         setCompletedIds(prev => new Set(prev).add(company.id));
       }
 
+      const fb = SIGNAL_MAP[vars.outcome];
       toast({
-        title: `Machine learned: ${SIGNAL_MAP[vars.outcome] || vars.outcome}`,
-        description: `${vars.company_name} — ${vars.outcome}`,
+        title: fb?.title || `Signal: ${vars.outcome}`,
+        description: fb?.description || `${vars.company_name} logged.`,
         duration: 2500,
       });
 

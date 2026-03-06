@@ -22,12 +22,12 @@ interface NeuralEdge {
 
 const NODES: NeuralNode[] = [
   { id: "market",     label: "Market\nDiscovery",     step: "bootstrap",          route: "/lead-engine", x: 250, y: 42 },
-  { id: "leadfeed",   label: "Lead\nFeed",            step: "lead_feed",          route: "/lead-engine", x: 415, y: 105 },
-  { id: "opportunity",label: "Opportunity\nEngine",   step: "opportunity_engine", route: "/today",       x: 455, y: 240 },
-  { id: "dm_map",     label: "DM\nMapping",           step: "dm_coverage",        route: "/contacts",    x: 385, y: 365 },
-  { id: "offer_fit",  label: "Offer Fit\nEngine",     step: "dm_fit",             route: "/contacts",    x: 250, y: 408 },
-  { id: "playbook",   label: "Playbook\nGenerator",   step: "playbooks",          route: "/today",       x: 115, y: 365 },
-  { id: "call_intel", label: "Call\nIntelligence",    step: "call_engine",        route: "/followups",   x: 45,  y: 240 },
+  { id: "leadfeed",   label: "Lead\nExpansion",       step: "lead_feed",          route: "/lead-engine", x: 415, y: 105 },
+  { id: "opportunity",label: "Market\nScanner",       step: "opportunity_engine", route: "/today",       x: 455, y: 240 },
+  { id: "dm_map",     label: "Decision Maker\nMapping", step: "dm_coverage",      route: "/contacts",    x: 385, y: 365 },
+  { id: "offer_fit",  label: "Buyer\nSelection",      step: "dm_fit",             route: "/contacts",    x: 250, y: 408 },
+  { id: "playbook",   label: "Script\nGenerator",     step: "playbooks",          route: "/today",       x: 115, y: 365 },
+  { id: "call_intel", label: "Signal\nProcessing",    step: "call_engine",        route: "/followups",   x: 45,  y: 240 },
   { id: "learning",   label: "Learning\nEngine",      step: "query_intel",        route: "/analytics",   x: 85,  y: 105 },
 ];
 
