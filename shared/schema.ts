@@ -179,6 +179,7 @@ export const outreachPipeline = pgTable("outreach_pipeline", {
   touchesCompleted: integer("touches_completed").notNull().default(0),
   respondedAt: timestamp("responded_at"),
   respondedVia: text("responded_via"),
+  contentSource: text("content_source").default("ai_generated"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -281,3 +282,19 @@ export const emailReplies = pgTable("email_replies", {
 export const insertEmailReplySchema = createInsertSchema(emailReplies).omit({ id: true, detectedAt: true });
 export type InsertEmailReply = z.infer<typeof insertEmailReplySchema>;
 export type EmailReply = typeof emailReplies.$inferSelect;
+
+export const emailTemplates = pgTable("email_templates", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  name: text("name").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  touchNumber: integer("touch_number"),
+  source: text("source").notNull().default("saved_template"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;

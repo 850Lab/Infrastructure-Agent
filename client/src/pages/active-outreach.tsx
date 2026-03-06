@@ -24,6 +24,12 @@ import {
   MailX,
   AlertTriangle,
   MessageSquareReply,
+  Pencil,
+  Save,
+  FileText,
+  Sparkles,
+  X,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -54,6 +60,19 @@ interface OutreachItem {
   touchesCompleted: number;
   respondedAt: string | null;
   respondedVia: string | null;
+  contentSource: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface EmailTemplate {
+  id: number;
+  clientId: string;
+  name: string;
+  subject: string;
+  body: string;
+  touchNumber: number | null;
+  source: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -154,6 +173,289 @@ function TouchTimeline({ touchesCompleted, nextTouchDate, pipelineStatus, create
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function parseEmailContent(raw: string | null): { subject: string; body: string } {
+  if (!raw) return { subject: "", body: "" };
+  const match = raw.match(/^Subject:\s*(.+?)(?:\r?\n){2}([\s\S]*)$/i);
+  if (match) return { subject: match[1].trim(), body: match[2].trim() };
+  return { subject: "Follow-up", body: raw.trim() };
+}
+
+function ContentSourceBadge({ source }: { source: string | null }) {
+  if (!source || source === "ai_generated") {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+        style={{ background: "rgba(139,92,246,0.08)", color: "#8B5CF6", border: "1px solid rgba(139,92,246,0.2)" }}
+        data-testid="badge-content-ai">
+        <Sparkles className="w-3 h-3" /> AI Generated
+      </span>
+    );
+  }
+  if (source === "manually_edited") {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+        style={{ background: "rgba(59,130,246,0.08)", color: BLUE, border: "1px solid rgba(59,130,246,0.2)" }}
+        data-testid="badge-content-edited">
+        <Pencil className="w-3 h-3" /> Edited
+      </span>
+    );
+  }
+  if (source === "from_template") {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+        style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: "1px solid rgba(16,185,129,0.2)" }}
+        data-testid="badge-content-template">
+        <FileText className="w-3 h-3" /> From Template
+      </span>
+    );
+  }
+  return null;
+}
+
+function EmailEditor({
+  item,
+  touchNumber,
+  content,
+  onClose,
+}: {
+  item: OutreachItem;
+  touchNumber: number;
+  content: string | null;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const parsed = parseEmailContent(content);
+  const [subject, setSubject] = useState(parsed.subject);
+  const [body, setBody] = useState(parsed.body);
+  const [templateName, setTemplateName] = useState("");
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showLoadTemplate, setShowLoadTemplate] = useState(false);
+
+  const { data: templates } = useQuery<EmailTemplate[]>({
+    queryKey: ["/api/email/templates"],
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", `/api/outreach/${item.id}/content`, {
+        touchNumber,
+        subject,
+        body,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outreach"] });
+      toast({ title: "Content saved", description: `Touch ${touchNumber} content updated.` });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/email/templates", {
+        name: templateName,
+        subject,
+        body,
+        touchNumber,
+        source: "saved_template",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/templates"] });
+      setShowSaveTemplate(false);
+      setTemplateName("");
+      toast({ title: "Template saved", description: `"${templateName}" saved for reuse.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const applyTemplateMutation = useMutation({
+    mutationFn: async (templateId: number) => {
+      await apiRequest("POST", `/api/outreach/${item.id}/apply-template`, {
+        templateId,
+        touchNumber,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outreach"] });
+      toast({ title: "Template applied", description: `Template loaded into Touch ${touchNumber}.` });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Apply failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/email/templates/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/templates"] });
+      toast({ title: "Template deleted" });
+    },
+  });
+
+  const relevantTemplates = templates?.filter(
+    (t) => !t.touchNumber || t.touchNumber === touchNumber
+  ) || [];
+
+  return (
+    <div className="rounded-lg p-4 mt-2 space-y-3" style={{ background: "#FFFFFF", border: `1.5px solid ${BLUE}` }} data-testid={`editor-touch-${touchNumber}-${item.id}`}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold flex items-center gap-1.5" style={{ color: TEXT }}>
+          <Pencil className="w-3.5 h-3.5" style={{ color: BLUE }} /> Edit Touch {touchNumber} Email
+        </span>
+        <button onClick={onClose} className="p-1 rounded hover:bg-gray-100" data-testid={`button-close-editor-${touchNumber}-${item.id}`}>
+          <X className="w-4 h-4" style={{ color: MUTED }} />
+        </button>
+      </div>
+
+      <div>
+        <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: MUTED }}>Subject</label>
+        <input
+          type="text"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          className="w-full text-xs px-3 py-2 rounded-md"
+          style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFFFFF", outline: "none" }}
+          data-testid={`input-subject-${touchNumber}-${item.id}`}
+        />
+      </div>
+
+      <div>
+        <label className="text-[10px] font-semibold uppercase tracking-wider block mb-1" style={{ color: MUTED }}>Body</label>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={8}
+          className="w-full text-xs px-3 py-2 rounded-md resize-y font-sans leading-relaxed"
+          style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFFFFF", outline: "none" }}
+          data-testid={`input-body-${touchNumber}-${item.id}`}
+        />
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          size="sm"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending || !subject || !body}
+          className="gap-1 text-xs h-7"
+          style={{ background: EMERALD, color: "#FFFFFF" }}
+          data-testid={`button-save-content-${touchNumber}-${item.id}`}
+        >
+          {saveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+          Save Changes
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowSaveTemplate(!showSaveTemplate)}
+          className="gap-1 text-xs h-7"
+          style={{ borderColor: "rgba(139,92,246,0.3)", color: "#8B5CF6" }}
+          data-testid={`button-toggle-save-template-${touchNumber}-${item.id}`}
+        >
+          <FileText className="w-3 h-3" /> Save as Template
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowLoadTemplate(!showLoadTemplate)}
+          className="gap-1 text-xs h-7"
+          style={{ borderColor: "rgba(16,185,129,0.3)", color: EMERALD }}
+          data-testid={`button-toggle-load-template-${touchNumber}-${item.id}`}
+        >
+          <FileText className="w-3 h-3" /> Load Template {relevantTemplates.length > 0 && `(${relevantTemplates.length})`}
+        </Button>
+      </div>
+
+      {showSaveTemplate && (
+        <div className="flex items-center gap-2 p-2 rounded-md" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }} data-testid={`save-template-panel-${touchNumber}-${item.id}`}>
+          <input
+            type="text"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            placeholder="Template name..."
+            className="flex-1 text-xs px-2 py-1.5 rounded-md"
+            style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFFFFF", outline: "none" }}
+            autoFocus
+            data-testid={`input-template-name-${touchNumber}-${item.id}`}
+          />
+          <Button
+            size="sm"
+            disabled={saveTemplateMutation.isPending || !templateName}
+            onClick={() => saveTemplateMutation.mutate()}
+            className="gap-1 text-xs h-7"
+            style={{ background: "#8B5CF6", color: "#FFFFFF" }}
+            data-testid={`button-confirm-save-template-${touchNumber}-${item.id}`}
+          >
+            {saveTemplateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            Save
+          </Button>
+        </div>
+      )}
+
+      {showLoadTemplate && (
+        <div className="p-2 rounded-md space-y-1.5" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }} data-testid={`load-template-panel-${touchNumber}-${item.id}`}>
+          {relevantTemplates.length === 0 ? (
+            <p className="text-xs text-center py-2" style={{ color: MUTED }}>No saved templates yet.</p>
+          ) : (
+            relevantTemplates.map((t) => (
+              <div key={t.id} className="flex items-center justify-between p-2 rounded-md hover:bg-white" style={{ border: `1px solid ${BORDER}` }} data-testid={`template-option-${t.id}`}>
+                <div className="flex-1 min-w-0 mr-2">
+                  <div className="text-xs font-semibold truncate" style={{ color: TEXT }}>{t.name}</div>
+                  <div className="text-[10px] truncate" style={{ color: MUTED }}>Subject: {t.subject}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSubject(t.subject);
+                      setBody(t.body);
+                      setShowLoadTemplate(false);
+                      toast({ title: "Template loaded", description: `"${t.name}" loaded into editor. Save Changes to apply.` });
+                    }}
+                    className="gap-1 text-xs h-6"
+                    style={{ borderColor: "rgba(16,185,129,0.3)", color: EMERALD }}
+                    data-testid={`button-use-template-${t.id}`}
+                  >
+                    Use
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyTemplateMutation.mutate(t.id)}
+                    disabled={applyTemplateMutation.isPending}
+                    className="gap-1 text-xs h-6"
+                    style={{ borderColor: "rgba(59,130,246,0.3)", color: BLUE }}
+                    data-testid={`button-apply-template-${t.id}`}
+                  >
+                    Apply
+                  </Button>
+                  <button
+                    onClick={() => deleteTemplateMutation.mutate(t.id)}
+                    className="p-1 rounded hover:bg-red-50"
+                    data-testid={`button-delete-template-${t.id}`}
+                  >
+                    <Trash2 className="w-3 h-3" style={{ color: ERROR }} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -351,6 +653,7 @@ function OutreachCard({
   emailSettings: any;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editingTouch, setEditingTouch] = useState<number | null>(null);
   const statusStyle = STATUS_COLORS[item.pipelineStatus] || STATUS_COLORS.ACTIVE;
   const nextTouch = item.touchesCompleted + 1;
   const nextTouchInfo = TOUCH_LABELS[item.touchesCompleted] || null;
@@ -493,14 +796,35 @@ function OutreachCard({
                         );
                       })()}
                     </div>
-                    {touch.isEmail && content && emailSettings && (
-                      <SendEmailButton
-                        item={item}
-                        touchNumber={touch.num}
-                        existingSend={existingSend}
-                      />
+                    {touch.isEmail && content && (
+                      <div className="flex items-center gap-1.5">
+                        {!done && item.pipelineStatus === "ACTIVE" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingTouch(editingTouch === touch.num ? null : touch.num)}
+                            className="gap-1 text-xs h-7"
+                            style={{ borderColor: "rgba(59,130,246,0.3)", color: BLUE }}
+                            data-testid={`button-edit-touch-${touch.num}-${item.id}`}
+                          >
+                            <Pencil className="w-3 h-3" /> Edit
+                          </Button>
+                        )}
+                        {emailSettings && (
+                          <SendEmailButton
+                            item={item}
+                            touchNumber={touch.num}
+                            existingSend={existingSend}
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
+                  {touch.isEmail && content && (
+                    <div className="mb-1">
+                      <ContentSourceBadge source={item.contentSource} />
+                    </div>
+                  )}
                   {existingSend && (
                     <div className="flex items-center gap-2 mb-1.5 text-[10px]" style={{ color: MUTED }}>
                       Sent to {existingSend.contactEmail} on {new Date(existingSend.sentAt).toLocaleString()}
@@ -511,7 +835,14 @@ function OutreachCard({
                       )}
                     </div>
                   )}
-                  {content && (
+                  {editingTouch === touch.num && touch.isEmail ? (
+                    <EmailEditor
+                      item={item}
+                      touchNumber={touch.num}
+                      content={content}
+                      onClose={() => setEditingTouch(null)}
+                    />
+                  ) : content && (
                     <pre
                       className="text-xs whitespace-pre-wrap font-sans leading-relaxed"
                       style={{ color: TEXT, opacity: done ? 0.7 : 1 }}

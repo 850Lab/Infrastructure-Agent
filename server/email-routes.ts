@@ -1,7 +1,7 @@
 import { type Express, type Request, type Response } from "express";
 import { authMiddleware } from "./auth";
 import { db } from "./db";
-import { clientEmailSettings, emailReplies, emailSends } from "@shared/schema";
+import { clientEmailSettings, emailReplies, emailSends, emailTemplates, outreachPipeline } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import {
   sendOutreachEmail,
@@ -497,6 +497,138 @@ export function registerEmailRoutes(app: Express) {
       }
       const deferred = await getDeferredSends(clientId);
       res.json(deferred);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Email Templates CRUD ---
+
+  app.get("/api/email/templates", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) { res.status(400).json({ error: "No client context" }); return; }
+      const templates = await db
+        .select()
+        .from(emailTemplates)
+        .where(eq(emailTemplates.clientId, clientId))
+        .orderBy(desc(emailTemplates.updatedAt));
+      res.json(templates);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/templates", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) { res.status(400).json({ error: "No client context" }); return; }
+      const { name, subject, body, touchNumber, source } = req.body;
+      if (!name || !subject || !body) {
+        res.status(400).json({ error: "name, subject, and body are required" });
+        return;
+      }
+      const [template] = await db
+        .insert(emailTemplates)
+        .values({
+          clientId,
+          name,
+          subject,
+          body,
+          touchNumber: touchNumber || null,
+          source: source || "saved_template",
+        })
+        .returning();
+      res.json(template);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/email/templates/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) { res.status(400).json({ error: "No client context" }); return; }
+      const id = parseInt(req.params.id);
+      await db.delete(emailTemplates).where(and(eq(emailTemplates.id, id), eq(emailTemplates.clientId, clientId)));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Pipeline Content Editing ---
+
+  app.patch("/api/outreach/:id/content", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) { res.status(400).json({ error: "No client context" }); return; }
+      const id = parseInt(req.params.id);
+      const { touchNumber, subject, body } = req.body;
+      if (!touchNumber || !subject || !body) {
+        res.status(400).json({ error: "touchNumber, subject, and body are required" });
+        return;
+      }
+
+      const touchField = touchNumber === 1 ? "touch1Email" : touchNumber === 3 ? "touch3Email" : touchNumber === 5 ? "touch5Email" : null;
+      if (!touchField) {
+        res.status(400).json({ error: "Invalid touch number (must be 1, 3, or 5)" });
+        return;
+      }
+
+      const content = `Subject: ${subject}\n\n${body}`;
+      const updateData: any = {
+        [touchField]: content,
+        contentSource: "manually_edited",
+        updatedAt: new Date(),
+      };
+      await db.update(outreachPipeline)
+        .set(updateData)
+        .where(and(eq(outreachPipeline.id, id), eq(outreachPipeline.clientId, clientId)));
+
+      const [updated] = await db.select().from(outreachPipeline).where(eq(outreachPipeline.id, id));
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outreach/:id/apply-template", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) { res.status(400).json({ error: "No client context" }); return; }
+      const id = parseInt(req.params.id);
+      const { templateId, touchNumber } = req.body;
+      if (!templateId || !touchNumber) {
+        res.status(400).json({ error: "templateId and touchNumber are required" });
+        return;
+      }
+
+      const [template] = await db.select().from(emailTemplates)
+        .where(and(eq(emailTemplates.id, templateId), eq(emailTemplates.clientId, clientId)));
+      if (!template) {
+        res.status(404).json({ error: "Template not found" });
+        return;
+      }
+
+      const touchField = touchNumber === 1 ? "touch1Email" : touchNumber === 3 ? "touch3Email" : touchNumber === 5 ? "touch5Email" : null;
+      if (!touchField) {
+        res.status(400).json({ error: "Invalid touch number" });
+        return;
+      }
+
+      const content = `Subject: ${template.subject}\n\n${template.body}`;
+      const updateData: any = {
+        [touchField]: content,
+        contentSource: "from_template",
+        updatedAt: new Date(),
+      };
+      await db.update(outreachPipeline)
+        .set(updateData)
+        .where(and(eq(outreachPipeline.id, id), eq(outreachPipeline.clientId, clientId)));
+
+      const [updated] = await db.select().from(outreachPipeline).where(eq(outreachPipeline.id, id));
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
