@@ -118,10 +118,18 @@ interface MachineConfigData {
 export default function DashboardPage() {
   const { getToken } = useAuth();
   const token = getToken();
-  const { recentEvents, activeNodes, runStatus, connected, connectionStatus } = useSSE(token);
+  const { recentEvents, activeNodes, runStatus: sseRunStatus, connected, connectionStatus } = useSSE(token);
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [alertsToastShown, setAlertsToastShown] = useState(false);
+
+  const { data: polledRunStatus } = useQuery<{ is_running: boolean; current_run_id: string | null; current_step: string | null }>({
+    queryKey: ["/api/run-status"],
+    refetchInterval: sseRunStatus === "running" ? 5000 : 15000,
+    enabled: !!token,
+  });
+
+  const runStatus = polledRunStatus?.is_running ? "running" : sseRunStatus;
 
   const { data: alertsData } = useQuery<{ alerts: { id: number; alertType: string; message: string; severity: string }[] }>({
     queryKey: ["/api/alerts", "unresolved"],
@@ -347,12 +355,22 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
-      if (res.status === 409) return;
+      if (res.status === 409) {
+        toast({ title: "Run already active", description: "A pipeline run is already in progress. Please wait for it to finish.", duration: 5000 });
+        return;
+      }
+      if (res.status === 400) {
+        const data = await res.json().catch(() => ({}));
+        toast({ title: "Cannot start run", description: data.error || "Client context required", variant: "destructive", duration: 5000 });
+        return;
+      }
       if (!res.ok) throw new Error("Failed to start run");
-    } catch {} finally {
+    } catch (err: any) {
+      toast({ title: "Run failed", description: err.message || "Failed to start run", variant: "destructive" });
+    } finally {
       setRunLoading(false);
     }
-  }, [runStatus, runLoading, token]);
+  }, [runStatus, runLoading, token, toast]);
 
   const revertMutation = useMutation({
     mutationFn: ({ runId, categories }: { runId: string; categories: string[] }) =>
