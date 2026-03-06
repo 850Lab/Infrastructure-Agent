@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings, AlertTriangle } from "lucide-react";
 
 const STEP_DONE_FEEDBACK: Record<string, { title: string; description: string }> = {
   opportunity_engine: { title: "Targets acquired", description: "Call list built and prioritized." },
@@ -120,6 +120,29 @@ export default function DashboardPage() {
   const { recentEvents, activeNodes, runStatus, connected, connectionStatus } = useSSE(token);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const [alertsToastShown, setAlertsToastShown] = useState(false);
+
+  const { data: alertsData } = useQuery<{ alerts: { id: number; alertType: string; message: string; severity: string }[] }>({
+    queryKey: ["/api/alerts", "unresolved"],
+    queryFn: () => fetch("/api/alerts?unresolved=true", {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json()),
+    enabled: !!token,
+    refetchInterval: 120000,
+  });
+
+  const unresolvedAlertCount = alertsData?.alerts?.length || 0;
+
+  useEffect(() => {
+    if (unresolvedAlertCount > 0 && !alertsToastShown) {
+      setAlertsToastShown(true);
+      toast({
+        title: `${unresolvedAlertCount} machine alert${unresolvedAlertCount > 1 ? "s" : ""} detected`,
+        description: "Check your Daily Briefing for details.",
+      });
+    }
+  }, [unresolvedAlertCount, alertsToastShown, toast]);
+
   const [runLoading, setRunLoading] = useState(false);
   const [doneSteps, setDoneSteps] = useState<Set<string>>(new Set());
   const [shockwave, setShockwave] = useState(0);
@@ -611,16 +634,29 @@ export default function DashboardPage() {
 
             <Button
               onClick={() => navigate("/machine/briefing")}
-              className="w-full h-10 text-sm font-semibold tracking-wider rounded-xl"
+              className="w-full h-10 text-sm font-semibold tracking-wider rounded-xl relative"
               style={{
                 background: "#F8FAFC",
                 color: "#0F172A",
-                border: "1px solid #E2E8F0",
+                border: unresolvedAlertCount > 0 ? "1px solid rgba(245,158,11,0.4)" : "1px solid #E2E8F0",
               }}
               data-testid="button-daily-briefing"
             >
-              <FileText className="w-4 h-4 mr-2" />
+              {unresolvedAlertCount > 0 ? (
+                <AlertTriangle className="w-4 h-4 mr-2" style={{ color: "#F59E0B" }} />
+              ) : (
+                <FileText className="w-4 h-4 mr-2" />
+              )}
               Daily Briefing
+              {unresolvedAlertCount > 0 && (
+                <span
+                  className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold"
+                  style={{ background: "#F59E0B", color: "#FFFFFF" }}
+                  data-testid="badge-alert-count"
+                >
+                  {unresolvedAlertCount}
+                </span>
+              )}
             </Button>
 
             {latestDiff?.diff && (

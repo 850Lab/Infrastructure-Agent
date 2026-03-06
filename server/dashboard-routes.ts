@@ -582,6 +582,31 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/alerts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const unresolvedOnly = req.query.unresolved === "true";
+      const alerts = await storage.getMachineAlerts(clientId, unresolvedOnly);
+      res.json({ alerts });
+    } catch (err: any) {
+      log(`Alerts fetch error: ${err.message}`, "machine-alerts");
+      res.status(500).json({ error: "Failed to load alerts" });
+    }
+  });
+
+  app.post("/api/alerts/:id/resolve", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const id = parseInt(req.params.id, 10);
+      const alert = await storage.resolveMachineAlert(id, clientId);
+      if (!alert) return res.status(404).json({ error: "Alert not found" });
+      res.json({ alert });
+    } catch (err: any) {
+      log(`Alert resolve error: ${err.message}`, "machine-alerts");
+      res.status(500).json({ error: "Failed to resolve alert" });
+    }
+  });
+
   app.get("/api/query-intel/summary", authMiddleware, async (req: Request, res: Response) => {
     try {
       const clientId = (req as any).user?.clientId;

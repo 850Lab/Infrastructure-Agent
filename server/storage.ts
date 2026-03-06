@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends } from "@shared/schema";
+import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, type MachineAlert, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends, machineAlerts } from "@shared/schema";
 import { db } from "./db";
 import { desc, eq, and, gte } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -27,6 +27,9 @@ export interface IStorage {
   clearPlatformInsights(): Promise<void>;
   insertAuthorityTrend(clientId: string, title: string, snapshotDate: Date, conversionRate: number, sampleSize: number): Promise<AuthorityTrend>;
   getAuthorityTrends(clientId: string | null | undefined): Promise<AuthorityTrend[]>;
+  createMachineAlert(clientId: string, alertType: string, message: string, severity: string): Promise<MachineAlert>;
+  getMachineAlerts(clientId: string | null | undefined, unresolvedOnly?: boolean): Promise<MachineAlert[]>;
+  resolveMachineAlert(id: number, clientId?: string | null): Promise<MachineAlert | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -163,6 +166,32 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(authorityTrends)
       .where(eq(authorityTrends.clientId, clientId))
       .orderBy(authorityTrends.snapshotDate);
+  }
+
+  async createMachineAlert(clientId: string, alertType: string, message: string, severity: string): Promise<MachineAlert> {
+    const [created] = await db.insert(machineAlerts)
+      .values({ clientId, alertType, message, severity, resolved: 0 })
+      .returning();
+    return created;
+  }
+
+  async getMachineAlerts(clientId: string | null | undefined, unresolvedOnly = false): Promise<MachineAlert[]> {
+    if (!clientId) return [];
+    const conditions = [eq(machineAlerts.clientId, clientId)];
+    if (unresolvedOnly) conditions.push(eq(machineAlerts.resolved, 0));
+    return db.select().from(machineAlerts)
+      .where(and(...conditions))
+      .orderBy(desc(machineAlerts.createdAt));
+  }
+
+  async resolveMachineAlert(id: number, clientId?: string | null): Promise<MachineAlert | undefined> {
+    const conditions = [eq(machineAlerts.id, id)];
+    if (clientId) conditions.push(eq(machineAlerts.clientId, clientId));
+    const [updated] = await db.update(machineAlerts)
+      .set({ resolved: 1 })
+      .where(and(...conditions))
+      .returning();
+    return updated;
   }
 }
 

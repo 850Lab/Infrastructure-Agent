@@ -127,3 +127,17 @@ export const authorityTrends = pgTable("authority_trends", {
 export const insertAuthorityTrendSchema = createInsertSchema(authorityTrends).omit({ id: true });
 export type InsertAuthorityTrend = z.infer<typeof insertAuthorityTrendSchema>;
 export type AuthorityTrend = typeof authorityTrends.$inferSelect;
+
+export const machineAlerts = pgTable("machine_alerts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  alertType: text("alert_type").notNull(),
+  message: text("message").notNull(),
+  severity: text("severity").notNull().default("info"),
+  resolved: integer("resolved").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertMachineAlertSchema = createInsertSchema(machineAlerts).omit({ id: true, createdAt: true });
+export type InsertMachineAlert = z.infer<typeof insertMachineAlertSchema>;
+export type MachineAlert = typeof machineAlerts.$inferSelect;

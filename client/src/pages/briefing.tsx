@@ -18,6 +18,12 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  ShieldAlert,
+  BarChart3,
+  X,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -44,6 +50,44 @@ interface DailyBriefing {
   estimated_work_minutes: number;
   pipeline_ran_today: boolean;
   computed_at: number;
+}
+
+interface MachineAlertData {
+  id: number;
+  clientId: string;
+  alertType: string;
+  message: string;
+  severity: string;
+  resolved: number;
+  createdAt: string;
+}
+
+function alertIcon(type: string) {
+  switch (type) {
+    case "title_performance_change": return TrendingUp;
+    case "title_decline": return TrendingDown;
+    case "authority_mismatch_spike": return ShieldAlert;
+    case "query_performance_shift": return BarChart3;
+    default: return AlertTriangle;
+  }
+}
+
+function alertSeverityColor(severity: string) {
+  switch (severity) {
+    case "critical": return "#EF4444";
+    case "warning": return "#F59E0B";
+    default: return "#3B82F6";
+  }
+}
+
+function alertTypeLabel(type: string) {
+  switch (type) {
+    case "title_performance_change": return "Performance Surge";
+    case "title_decline": return "Performance Decline";
+    case "authority_mismatch_spike": return "Authority Mismatch";
+    case "query_performance_shift": return "Query Shift";
+    default: return "Alert";
+  }
 }
 
 interface MeResponse {
@@ -126,6 +170,24 @@ export default function BriefingPage() {
     enabled: !!token,
     refetchInterval: 60000,
   });
+
+  const { data: alertsData } = useQuery<{ alerts: MachineAlertData[] }>({
+    queryKey: ["/api/alerts", "unresolved"],
+    queryFn: () => fetch("/api/alerts?unresolved=true", {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json()),
+    enabled: !!token,
+    refetchInterval: 60000,
+  });
+
+  const resolveAlertMutation = useMutation({
+    mutationFn: (alertId: number) => apiRequest("POST", `/api/alerts/${alertId}/resolve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts", "unresolved"] });
+    },
+  });
+
+  const unresolvedAlerts = alertsData?.alerts || [];
 
   const { data: confidenceData } = useQuery<{
     confidence_score: number;
@@ -334,6 +396,96 @@ export default function BriefingPage() {
                   <p className="text-xs" style={{ color: MUTED }} data-testid="text-briefing-confidence-explanation">
                     {confidenceData.explanation}
                   </p>
+                </div>
+              </motion.div>
+            )}
+
+            {unresolvedAlerts.length > 0 && (
+              <motion.div
+                className="mb-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18, duration: 0.4 }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <AlertTriangle className="w-4 h-4" style={{ color: "#F59E0B" }} />
+                  <h2
+                    className="text-sm font-mono tracking-widest uppercase"
+                    style={{ color: MUTED }}
+                    data-testid="text-alerts-title"
+                  >
+                    Machine Alerts
+                  </h2>
+                  <span
+                    className="text-xs font-mono px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}
+                    data-testid="text-alerts-count"
+                  >
+                    {unresolvedAlerts.length}
+                  </span>
+                </div>
+                <div className="space-y-2" data-testid="alerts-list">
+                  <AnimatePresence>
+                    {unresolvedAlerts.map((alert) => {
+                      const Icon = alertIcon(alert.alertType);
+                      const color = alertSeverityColor(alert.severity);
+                      return (
+                        <motion.div
+                          key={alert.id}
+                          className="rounded-xl p-3 flex items-start gap-3"
+                          style={{
+                            background: "#FFFFFF",
+                            border: `1px solid ${alert.severity === "critical" ? "rgba(239,68,68,0.3)" : BORDER}`,
+                            boxShadow: alert.severity === "critical" ? "0 0 0 1px rgba(239,68,68,0.1)" : "0 1px 3px rgba(0,0,0,0.04)",
+                          }}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 8 }}
+                          data-testid={`alert-item-${alert.id}`}
+                        >
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                            style={{ background: `${color}15` }}
+                          >
+                            <Icon className="w-3.5 h-3.5" style={{ color }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span
+                                className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
+                                style={{ background: `${color}15`, color }}
+                                data-testid={`alert-type-${alert.id}`}
+                              >
+                                {alertTypeLabel(alert.alertType)}
+                              </span>
+                              <span
+                                className="text-[10px] font-mono uppercase tracking-wider"
+                                style={{ color: MUTED }}
+                              >
+                                {alert.severity}
+                              </span>
+                            </div>
+                            <p
+                              className="text-xs"
+                              style={{ color: TEXT }}
+                              data-testid={`alert-message-${alert.id}`}
+                            >
+                              {alert.message}
+                            </p>
+                          </div>
+                          <button
+                            className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center hover:opacity-70 transition-opacity"
+                            style={{ background: SUBTLE }}
+                            onClick={() => resolveAlertMutation.mutate(alert.id)}
+                            disabled={resolveAlertMutation.isPending}
+                            data-testid={`button-resolve-alert-${alert.id}`}
+                          >
+                            <X className="w-3 h-3" style={{ color: MUTED }} />
+                          </button>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             )}
