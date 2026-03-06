@@ -1,17 +1,26 @@
 [
   {
-    "run_id": "run_1772823927414_6nxofi",
-    "started_at": 1772823927415,
+    "run_id": "run_1772824051044_jloswa",
+    "started_at": 1772824051045,
     "steps": [
       {
         "step": "recovery_engine",
-        "started_at": 1772823928660,
+        "started_at": 1772824052242,
         "status": "running"
       }
     ],
     "errors": [],
     "status": "running",
     "clientId": "94a6c2d1-0e39-46b8-b78f-dfc5cb61aef5",
+    "_airtable_id": "recj7ePY7phidgWYh"
+  },
+  {
+    "run_id": "run_1772823927414_6nxofi",
+    "started_at": 1772823927415,
+    "status": "running",
+    "steps": [],
+    "summary": {},
+    "errors": [],
     "_airtable_id": "recTfdtXgXWcqm6g3"
   },
   {
