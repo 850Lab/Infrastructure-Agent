@@ -13,6 +13,7 @@ import { takeSnapshot, computeDiff } from "./run-diff";
 import { snapshotTodayListFields, computeChangeset, type ChangesetEntry } from "./run-changeset";
 import { checkLimit, logUsageMetric } from "./usage-guard";
 import { runSalesLearning } from "./sales-learning/run-sales-learning";
+import { snapshotAuthorityTrends } from "./dm-authority-learning";
 
 let isRunning = false;
 let currentRunId: string | null = null;
@@ -264,6 +265,15 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }, clientId);
     } catch (e: any) {
       errors.push(`Query Intel: ${e.message}`);
+    }
+
+    if (clientId) {
+      try {
+        const trendCount = await snapshotAuthorityTrends(clientId);
+        log(`Authority trend snapshot: ${trendCount} titles recorded`, "daily-web");
+      } catch (e: any) {
+        log(`Authority trend snapshot failed (non-blocking): ${e.message}`, "daily-web");
+      }
     }
 
     let diff = null;

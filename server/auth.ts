@@ -75,7 +75,8 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
       }
       if (entry.role === "platform_admin" && !effectiveClientId) {
         storage.getAllClients().then(clients => {
-          const active = clients.find(c => c.status === "active") || clients[0];
+          const sorted = [...clients].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          const active = sorted.find(c => c.status === "active") || sorted[0];
           (req as any).user = {
             email: entry.email,
             role: entry.role,

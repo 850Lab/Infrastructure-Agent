@@ -2,10 +2,11 @@ import AppLayout from "@/components/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Clock, CheckCircle, Loader2, Target, Trophy, XCircle, Search, Users, Phone, TrendingUp } from "lucide-react";
+import { Activity, Clock, CheckCircle, Loader2, Target, Trophy, XCircle, Search, Users, Phone, TrendingUp, BarChart3 } from "lucide-react";
 import { useLatestRun } from "@/lib/use-latest-run";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { useMemo } from "react";
 
 const STEP_DISPLAY: Record<string, string> = {
   bootstrap: "System Boot",
@@ -62,6 +63,20 @@ const MODE_CONFIG: Record<string, { label: string; color: string; desc: string }
   WinPattern: { label: "Win Pattern", color: "#10B981", desc: "Win-data driven queries" },
 };
 
+interface AuthorityTrendPoint {
+  id: number;
+  clientId: string;
+  title: string;
+  snapshotDate: string;
+  conversionRate: number;
+  sampleSize: number;
+}
+
+const TREND_COLORS = [
+  "#10B981", "#3B82F6", "#8B5CF6", "#F59E0B", "#EF4444",
+  "#06B6D4", "#EC4899", "#F97316", "#14B8A6", "#6366F1",
+];
+
 export default function AnalyticsPage() {
   const { getToken } = useAuth();
   const token = getToken();
@@ -76,6 +91,65 @@ export default function AnalyticsPage() {
     queryKey: ["/api/query-performance"],
     enabled: !!token,
   });
+
+  const { data: trendsData } = useQuery<{ trends: AuthorityTrendPoint[] }>({
+    queryKey: ["/api/authority-trends"],
+    enabled: !!token,
+  });
+
+  const trendChart = useMemo(() => {
+    const trends = trendsData?.trends || [];
+    if (trends.length === 0) return null;
+
+    const titles = [...new Set(trends.map(t => t.title))];
+    const dates = [...new Set(trends.map(t => t.snapshotDate))].sort();
+
+    if (dates.length < 1) return null;
+
+    const seriesMap = new Map<string, { date: string; rate: number }[]>();
+    for (const title of titles) {
+      const points = dates.map(d => {
+        const match = trends.find(t => t.title === title && t.snapshotDate === d);
+        return { date: d, rate: match?.conversionRate ?? -1 };
+      }).filter(p => p.rate >= 0);
+      if (points.length > 0) seriesMap.set(title, points);
+    }
+
+    const maxRate = Math.max(...trends.map(t => t.conversionRate), 10);
+    const yMax = Math.ceil(maxRate / 10) * 10 || 100;
+
+    const latestDate = dates[dates.length - 1];
+    const latestScores = titles
+      .map(title => {
+        const pt = trends.find(t => t.title === title && t.snapshotDate === latestDate);
+        return pt ? { title, rate: pt.conversionRate } : null;
+      })
+      .filter(Boolean) as { title: string; rate: number }[];
+    latestScores.sort((a, b) => b.rate - a.rate);
+    const topTitle = latestScores[0]?.title;
+
+    let insight = "";
+    if (dates.length >= 2 && latestScores.length > 0) {
+      const prevDate = dates[dates.length - 2];
+      const prevScores = titles
+        .map(title => {
+          const pt = trends.find(t => t.title === title && t.snapshotDate === prevDate);
+          return pt ? { title, rate: pt.conversionRate } : null;
+        })
+        .filter(Boolean) as { title: string; rate: number }[];
+      prevScores.sort((a, b) => b.rate - a.rate);
+      const prevTop = prevScores[0]?.title;
+      if (prevTop && prevTop !== topTitle) {
+        insight = `${prevTop} led previously, ${topTitle} leads now.`;
+      } else if (topTitle) {
+        insight = `${topTitle} continues to lead in effectiveness.`;
+      }
+    } else if (topTitle) {
+      insight = `${topTitle} currently has the highest effectiveness score.`;
+    }
+
+    return { titles, dates, seriesMap, yMax, topTitle, insight };
+  }, [trendsData]);
 
   const totalSteps = latestRun?.steps?.length ?? 0;
   const completedSteps = latestRun?.steps?.filter((s: any) => s.status === "ok").length ?? 0;
@@ -265,6 +339,82 @@ export default function AnalyticsPage() {
                   </div>
                 );
               })()}
+            </CardContent>
+          </Card>
+        )}
+
+        {trendChart && (
+          <Card style={{ border: "1px solid #E2E8F0" }} data-testid="card-authority-trends">
+            <CardHeader>
+              <CardTitle className="text-lg font-bold flex items-center gap-2" style={{ color: "#0F172A" }}>
+                <BarChart3 className="w-5 h-5" style={{ color: "#10B981" }} />
+                Decision Maker Effectiveness Over Time
+              </CardTitle>
+              <p className="text-sm" style={{ color: "#94A3B8" }}>How targeting evolves across daily runs</p>
+            </CardHeader>
+            <CardContent>
+              {trendChart.insight && (
+                <div className="rounded-lg px-3 py-2 mb-4" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)" }} data-testid="text-trend-insight">
+                  <p className="text-sm" style={{ color: "#0F172A" }}>{trendChart.insight}</p>
+                </div>
+              )}
+
+              <div className="relative" style={{ height: 240 }}>
+                <svg width="100%" height="100%" viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">
+                  {[0, 25, 50, 75, 100].map(pct => {
+                    const y = 200 - (pct / trendChart.yMax) * 180;
+                    if (y < 10 || y > 200) return null;
+                    return (
+                      <g key={pct}>
+                        <line x1="50" y1={y} x2="580" y2={y} stroke="#E2E8F0" strokeWidth="1" />
+                        <text x="45" y={y + 4} textAnchor="end" fill="#94A3B8" fontSize="10">{pct}%</text>
+                      </g>
+                    );
+                  })}
+
+                  {trendChart.dates.map((d, i) => {
+                    const x = trendChart.dates.length === 1
+                      ? 315
+                      : 60 + (i / (trendChart.dates.length - 1)) * 520;
+                    const label = new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                    return (
+                      <text key={d} x={x} y={215} textAnchor="middle" fill="#94A3B8" fontSize="10">{label}</text>
+                    );
+                  })}
+
+                  {[...trendChart.seriesMap.entries()].map(([title, points], si) => {
+                    const color = TREND_COLORS[si % TREND_COLORS.length];
+                    const pathPoints = points.map(p => {
+                      const di = trendChart.dates.indexOf(p.date);
+                      const x = trendChart.dates.length === 1
+                        ? 315
+                        : 60 + (di / (trendChart.dates.length - 1)) * 520;
+                      const y = 200 - (p.rate / trendChart.yMax) * 180;
+                      return { x, y };
+                    });
+
+                    const pathD = pathPoints.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+                    return (
+                      <g key={title}>
+                        <path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        {pathPoints.map((p, i) => (
+                          <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={color} stroke="#fff" strokeWidth="1.5" />
+                        ))}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              <div className="flex flex-wrap gap-3 mt-3 pt-3" style={{ borderTop: "1px solid #E2E8F0" }}>
+                {[...trendChart.seriesMap.keys()].map((title, i) => (
+                  <div key={title} className="flex items-center gap-1.5" data-testid={`legend-${title.toLowerCase().replace(/[\s\/]+/g, "-")}`}>
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: TREND_COLORS[i % TREND_COLORS.length] }} />
+                    <span className="text-xs" style={{ color: "#64748B" }}>{title}</span>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         )}

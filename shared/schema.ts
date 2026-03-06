@@ -114,3 +114,16 @@ export const platformInsights = pgTable("platform_insights", {
 export const insertPlatformInsightSchema = createInsertSchema(platformInsights).omit({ id: true });
 export type InsertPlatformInsight = z.infer<typeof insertPlatformInsightSchema>;
 export type PlatformInsight = typeof platformInsights.$inferSelect;
+
+export const authorityTrends = pgTable("authority_trends", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  title: text("title").notNull(),
+  snapshotDate: timestamp("snapshot_date").notNull(),
+  conversionRate: integer("conversion_rate").notNull().default(0),
+  sampleSize: integer("sample_size").notNull().default(0),
+});
+
+export const insertAuthorityTrendSchema = createInsertSchema(authorityTrends).omit({ id: true });
+export type InsertAuthorityTrend = z.infer<typeof insertAuthorityTrendSchema>;
+export type AuthorityTrend = typeof authorityTrends.$inferSelect;

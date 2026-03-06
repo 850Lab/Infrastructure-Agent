@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, webhookLogs, clients, clientConfig, usageLogs, platformInsights } from "@shared/schema";
+import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends } from "@shared/schema";
 import { db } from "./db";
 import { desc, eq, and, gte } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -25,6 +25,8 @@ export interface IStorage {
   getPlatformInsights(industry?: string): Promise<PlatformInsight[]>;
   upsertPlatformInsight(industry: string, title: string, conversionRate: number, sampleSize: number, reachedDmRate: number): Promise<PlatformInsight>;
   clearPlatformInsights(): Promise<void>;
+  insertAuthorityTrend(clientId: string, title: string, snapshotDate: Date, conversionRate: number, sampleSize: number): Promise<AuthorityTrend>;
+  getAuthorityTrends(clientId: string | null | undefined): Promise<AuthorityTrend[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -147,6 +149,20 @@ export class DatabaseStorage implements IStorage {
 
   async clearPlatformInsights(): Promise<void> {
     await db.delete(platformInsights);
+  }
+
+  async insertAuthorityTrend(clientId: string, title: string, snapshotDate: Date, conversionRate: number, sampleSize: number): Promise<AuthorityTrend> {
+    const [created] = await db.insert(authorityTrends)
+      .values({ clientId, title, snapshotDate, conversionRate, sampleSize })
+      .returning();
+    return created;
+  }
+
+  async getAuthorityTrends(clientId: string | null | undefined): Promise<AuthorityTrend[]> {
+    if (!clientId) return [];
+    return db.select().from(authorityTrends)
+      .where(eq(authorityTrends.clientId, clientId))
+      .orderBy(authorityTrends.snapshotDate);
   }
 }
 

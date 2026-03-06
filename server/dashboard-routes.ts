@@ -571,6 +571,17 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/authority-trends", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const trends = await storage.getAuthorityTrends(clientId);
+      res.json({ trends });
+    } catch (err: any) {
+      log(`Authority trends error: ${err.message}`, "dm-authority");
+      res.status(500).json({ error: "Failed to load authority trends" });
+    }
+  });
+
   app.get("/api/query-intel/summary", authMiddleware, async (req: Request, res: Response) => {
     try {
       const clientId = (req as any).user?.clientId;

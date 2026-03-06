@@ -271,3 +271,31 @@ export async function getDMAuthorityAdjustments(clientId?: string): Promise<DMAu
 export async function computeDMAuthorityReport(clientId?: string): Promise<DMAuthorityReport> {
   return computeTitleEffectiveness(clientId);
 }
+
+export async function snapshotAuthorityTrends(clientId: string): Promise<number> {
+  const { storage } = await import("./storage");
+  const report = await computeTitleEffectiveness(clientId);
+  const now = new Date();
+  const snapshotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let inserted = 0;
+
+  const existing = await storage.getAuthorityTrends(clientId);
+  const todayStr = snapshotDate.toISOString().slice(0, 10);
+  const alreadySnapped = existing.some(t =>
+    new Date(t.snapshotDate).toISOString().slice(0, 10) === todayStr
+  );
+  if (alreadySnapped) {
+    logAuth(`Authority trend snapshot already exists for ${todayStr} — skipping`);
+    return 0;
+  }
+
+  for (const ranking of report.title_rankings) {
+    const conversionRate = Math.min(100, Math.max(0, ranking.authority_score));
+    const sampleSize = Math.round(ranking.total_contacts);
+    await storage.insertAuthorityTrend(clientId, ranking.title, snapshotDate, conversionRate, sampleSize);
+    inserted++;
+  }
+
+  logAuth(`Authority trend snapshot: ${inserted} title records for client ${clientId}`);
+  return inserted;
+}
