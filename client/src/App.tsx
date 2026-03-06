@@ -18,6 +18,7 @@ import PipelinePage from "@/pages/pipeline";
 import CallModePage from "@/pages/call-mode";
 import MachineSettingsPage from "@/pages/machine-settings";
 import CinematicPage from "@/pages/cinematic";
+import ActiveOutreachPage from "@/pages/active-outreach";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -132,6 +133,7 @@ function Router() {
         <Route path="/machine/pipeline"><MachineRoute><PipelinePage /></MachineRoute></Route>
         <Route path="/machine/call-mode"><MachineRoute><CallModePage /></MachineRoute></Route>
         <Route path="/machine/settings"><MachineRoute><MachineSettingsPage /></MachineRoute></Route>
+        <Route path="/machine/outreach"><MachineRoute><ActiveOutreachPage /></MachineRoute></Route>
 
         {/* Legacy routes redirect to new paths */}
         <Route path="/dashboard"><RoleRedirect /></Route>

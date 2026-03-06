@@ -156,6 +156,21 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
     }
 
     try {
+      await timedStep(run_id, "outreach_engine", async () => {
+        const { runOutreachEngine } = await import("./outreach-engine");
+        const r = await runOutreachEngine(clientId);
+        eventBus.publish("TRIGGER_FIRED", {
+          trigger: "outreach_engine",
+          company: `${r.populate.added} new sequences, ${r.advance.advanced} advanced`,
+          ts: Date.now(),
+        }, clientId);
+        return r;
+      }, clientId);
+    } catch (e: any) {
+      errors.push(`Outreach Engine: ${e.message}`);
+    }
+
+    try {
       if (clientId) {
         const guard = await checkLimit(clientId, "top_companies", 0);
         if (!guard.allowed) {

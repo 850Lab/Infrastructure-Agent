@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, type MachineAlert, type RecoveryQueueItem, type InsertRecoveryQueueItem, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends, machineAlerts, recoveryQueue } from "@shared/schema";
+import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, type AuthorityTrend, type MachineAlert, type RecoveryQueueItem, type InsertRecoveryQueueItem, type OutreachPipeline, type InsertOutreachPipeline, webhookLogs, clients, clientConfig, usageLogs, platformInsights, authorityTrends, machineAlerts, recoveryQueue, outreachPipeline } from "@shared/schema";
 import { db } from "./db";
 import { desc, eq, and, gte, lte } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -36,6 +36,11 @@ export interface IStorage {
   getRecoveryQueueItem(companyId: string, clientId: string): Promise<RecoveryQueueItem | undefined>;
   updateRecoveryQueueItem(id: number, data: Partial<{ attempts: number; nextAttempt: Date; lastResult: string; dmStatus: string; active: boolean; updatedAt: Date }>): Promise<RecoveryQueueItem | undefined>;
   removeFromRecoveryQueue(companyId: string, clientId: string): Promise<void>;
+  createOutreachPipeline(item: InsertOutreachPipeline): Promise<OutreachPipeline>;
+  getOutreachPipelines(clientId: string, status?: string): Promise<OutreachPipeline[]>;
+  getOutreachPipelineByCompany(companyId: string, clientId: string): Promise<OutreachPipeline | undefined>;
+  updateOutreachPipeline(id: number, data: Partial<InsertOutreachPipeline & { updatedAt: Date }>): Promise<OutreachPipeline | undefined>;
+  getOutreachPipelinesDue(clientId: string, limit?: number): Promise<OutreachPipeline[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -249,6 +254,51 @@ export class DatabaseStorage implements IStorage {
         eq(recoveryQueue.companyId, companyId),
         eq(recoveryQueue.clientId, clientId)
       ));
+  }
+
+  async createOutreachPipeline(item: InsertOutreachPipeline): Promise<OutreachPipeline> {
+    const [created] = await db.insert(outreachPipeline).values(item).returning();
+    return created;
+  }
+
+  async getOutreachPipelines(clientId: string, status?: string): Promise<OutreachPipeline[]> {
+    if (status) {
+      return db.select().from(outreachPipeline)
+        .where(and(eq(outreachPipeline.clientId, clientId), eq(outreachPipeline.pipelineStatus, status)))
+        .orderBy(outreachPipeline.nextTouchDate);
+    }
+    return db.select().from(outreachPipeline)
+      .where(eq(outreachPipeline.clientId, clientId))
+      .orderBy(desc(outreachPipeline.updatedAt));
+  }
+
+  async getOutreachPipelineByCompany(companyId: string, clientId: string): Promise<OutreachPipeline | undefined> {
+    const [item] = await db.select().from(outreachPipeline)
+      .where(and(
+        eq(outreachPipeline.companyId, companyId),
+        eq(outreachPipeline.clientId, clientId),
+        eq(outreachPipeline.pipelineStatus, "ACTIVE")
+      ));
+    return item;
+  }
+
+  async updateOutreachPipeline(id: number, data: Partial<InsertOutreachPipeline & { updatedAt: Date }>): Promise<OutreachPipeline | undefined> {
+    const [updated] = await db.update(outreachPipeline)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(outreachPipeline.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getOutreachPipelinesDue(clientId: string, limit: number = 50): Promise<OutreachPipeline[]> {
+    return db.select().from(outreachPipeline)
+      .where(and(
+        eq(outreachPipeline.clientId, clientId),
+        eq(outreachPipeline.pipelineStatus, "ACTIVE"),
+        lte(outreachPipeline.nextTouchDate, new Date())
+      ))
+      .orderBy(outreachPipeline.nextTouchDate)
+      .limit(limit);
   }
 }
 

@@ -632,6 +632,84 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/outreach/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const { runOutreachEngine } = await import("./outreach-engine");
+      const result = await runOutreachEngine(clientId);
+      res.json(result);
+    } catch (err: any) {
+      log(`Outreach engine run error: ${err.message}`, "outreach-engine");
+      res.status(500).json({ error: "Failed to run outreach engine" });
+    }
+  });
+
+  app.get("/api/outreach/pipeline", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const status = req.query.status as string | undefined;
+      const items = await storage.getOutreachPipelines(clientId, status);
+      const stats = {
+        total: items.length,
+        active: 0,
+        completed: 0,
+        responded: 0,
+        notInterested: 0,
+      };
+      for (const item of items) {
+        if (item.pipelineStatus === "ACTIVE") stats.active++;
+        else if (item.pipelineStatus === "COMPLETED") stats.completed++;
+        else if (item.pipelineStatus === "RESPONDED") stats.responded++;
+        else if (item.pipelineStatus === "NOT_INTERESTED") stats.notInterested++;
+      }
+      res.json({ stats, items });
+    } catch (err: any) {
+      log(`Outreach pipeline fetch error: ${err.message}`, "outreach-engine");
+      res.status(500).json({ error: "Failed to load outreach pipeline" });
+    }
+  });
+
+  app.patch("/api/outreach/pipeline/:id/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) {
+        return res.status(400).json({ error: "Client context required" });
+      }
+      const { status } = req.body;
+      const validStatuses = ["ACTIVE", "COMPLETED", "RESPONDED", "NOT_INTERESTED"];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ error: `Status must be one of: ${validStatuses.join(", ")}` });
+      }
+      const { updateOutreachStatus } = await import("./outreach-engine");
+      const result = await updateOutreachStatus(parseInt(req.params.id), status, clientId);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
+      res.json(result);
+    } catch (err: any) {
+      log(`Outreach status update error: ${err.message}`, "outreach-engine");
+      res.status(500).json({ error: "Failed to update outreach status" });
+    }
+  });
+
   app.post("/api/dm-status/run", authMiddleware, async (req: Request, res: Response) => {
     try {
       let clientId = (req as any).user?.clientId;

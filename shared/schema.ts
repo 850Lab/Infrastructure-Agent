@@ -160,3 +160,26 @@ export const recoveryQueue = pgTable("recovery_queue", {
 export const insertRecoveryQueueSchema = createInsertSchema(recoveryQueue).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRecoveryQueueItem = z.infer<typeof insertRecoveryQueueSchema>;
 export type RecoveryQueueItem = typeof recoveryQueue.$inferSelect;
+
+export const outreachPipeline = pgTable("outreach_pipeline", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name").notNull(),
+  contactName: text("contact_name"),
+  touch1Email: text("touch_1_email"),
+  touch2Call: text("touch_2_call"),
+  touch3Email: text("touch_3_email"),
+  touch4Call: text("touch_4_call"),
+  touch5Email: text("touch_5_email"),
+  touch6Call: text("touch_6_call"),
+  pipelineStatus: text("pipeline_status").notNull().default("ACTIVE"),
+  nextTouchDate: timestamp("next_touch_date").notNull(),
+  touchesCompleted: integer("touches_completed").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertOutreachPipelineSchema = createInsertSchema(outreachPipeline).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOutreachPipeline = z.infer<typeof insertOutreachPipelineSchema>;
+export type OutreachPipeline = typeof outreachPipeline.$inferSelect;
