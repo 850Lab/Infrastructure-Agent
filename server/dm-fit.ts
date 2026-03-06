@@ -2,6 +2,7 @@ import { fetchAllDecisionMakers, type DMCandidate } from "./dm-resolver";
 import { log } from "./logger";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 import { getDMAuthorityAdjustments, type DMAuthorityAdjustment } from "./dm-authority-learning";
+import { getPlatformDMBoost } from "./platform-insights";
 const FIT_THRESHOLD = 45;
 
 interface FitCompany {
@@ -68,7 +69,7 @@ async function airtableRequest(path: string, options: RequestInit = {}, config?:
   return res.json();
 }
 
-export function scoreDMFit(title: string, email: string, phone: string, department: string, enrichedAt: string | null, authorityAdjustments?: DMAuthorityAdjustment[]): FitResult {
+export function scoreDMFit(title: string, email: string, phone: string, department: string, enrichedAt: string | null, authorityAdjustments?: DMAuthorityAdjustment[], platformBoost?: number): FitResult {
   let fitScore = 0;
   const reasons: string[] = [];
   const titleLower = (title || "").toLowerCase();
@@ -132,6 +133,11 @@ export function scoreDMFit(title: string, email: string, phone: string, departme
     }
   }
 
+  if (platformBoost && platformBoost !== 0) {
+    fitScore += platformBoost;
+    reasons.push(`Cross-client insight (${platformBoost > 0 ? "+" : ""}${platformBoost})`);
+  }
+
   fitScore = Math.max(0, Math.min(fitScore, 100));
 
   let fitTier: FitResult["fitTier"];
@@ -143,12 +149,13 @@ export function scoreDMFit(title: string, email: string, phone: string, departme
   return { fitScore, reason: reasons.join("; "), fitTier };
 }
 
-function selectOfferDM(
+async function selectOfferDM(
   companyName: string,
   allDMs: DMCandidate[],
   primaryDM: { name: string; title: string; email: string; phone: string } | null,
   notes: string,
-  authorityAdjustments?: DMAuthorityAdjustment[]
+  authorityAdjustments?: DMAuthorityAdjustment[],
+  industry?: string
 ): OfferDMCandidate | null {
   const companyDMs = allDMs.filter(
     dm => dm.companyNameText.toLowerCase() === companyName.toLowerCase()
@@ -157,7 +164,9 @@ function selectOfferDM(
   const candidates: Array<OfferDMCandidate & { _fit: FitResult }> = [];
 
   for (const dm of companyDMs) {
-    const fit = scoreDMFit(dm.title, dm.email, dm.phone, dm.department, dm.enrichedAt, authorityAdjustments);
+    let boost = 0;
+    try { boost = industry ? await getPlatformDMBoost(dm.title, industry) : 0; } catch (_) {}
+    const fit = scoreDMFit(dm.title, dm.email, dm.phone, dm.department, dm.enrichedAt, authorityAdjustments, boost);
     candidates.push({
       name: dm.fullName,
       title: dm.title,
@@ -175,7 +184,9 @@ function selectOfferDM(
       c => c.name.toLowerCase() === primaryDM.name.toLowerCase()
     );
     if (!alreadyInList) {
-      const fit = scoreDMFit(primaryDM.title, primaryDM.email, primaryDM.phone, "", null, authorityAdjustments);
+      let boost = 0;
+      try { boost = industry ? await getPlatformDMBoost(primaryDM.title, industry) : 0; } catch (_) {}
+      const fit = scoreDMFit(primaryDM.title, primaryDM.email, primaryDM.phone, "", null, authorityAdjustments, boost);
       candidates.push({
         name: primaryDM.name,
         title: primaryDM.title,
@@ -264,6 +275,12 @@ export async function runDMFit(clientId?: string): Promise<DMFitSummary> {
 
   const atConfig = clientId ? await getClientAirtableConfig(clientId) : undefined;
 
+  let industry: string | undefined;
+  if (clientId) {
+    const client = await import("./storage").then(m => m.storage.getClient(clientId));
+    industry = client?.industryConfig || undefined;
+  }
+
   let authorityAdjustments: DMAuthorityAdjustment[] = [];
   try {
     authorityAdjustments = await getDMAuthorityAdjustments(clientId);
@@ -298,7 +315,7 @@ export async function runDMFit(clientId?: string): Promise<DMFitSummary> {
       ? { name: c.primaryDMName, title: c.primaryDMTitle, email: c.primaryDMEmail, phone: c.primaryDMPhone }
       : null;
 
-    const candidate = selectOfferDM(c.companyName, allDMs, primaryDM, c.notes, authorityAdjustments);
+    const candidate = await selectOfferDM(c.companyName, allDMs, primaryDM, c.notes, authorityAdjustments, industry);
 
     if (candidate) {
       offerDMSelected++;

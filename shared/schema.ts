@@ -100,3 +100,17 @@ export const webhookPayloadSchema = z.object({
 });
 
 export type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
+
+export const platformInsights = pgTable("platform_insights", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  industry: text("industry").notNull(),
+  title: text("title").notNull(),
+  conversionRate: integer("conversion_rate").notNull().default(0),
+  sampleSize: integer("sample_size").notNull().default(0),
+  reachedDmRate: integer("reached_dm_rate").notNull().default(0),
+  lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+});
+
+export const insertPlatformInsightSchema = createInsertSchema(platformInsights).omit({ id: true });
+export type InsertPlatformInsight = z.infer<typeof insertPlatformInsightSchema>;
+export type PlatformInsight = typeof platformInsights.$inferSelect;

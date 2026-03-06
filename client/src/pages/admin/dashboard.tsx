@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin-layout";
-import { Users, Activity, Zap, Clock } from "lucide-react";
+import { Users, Activity, Zap, Clock, Globe, RefreshCw, TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface AdminStats {
   totalClients: number;
@@ -10,10 +13,40 @@ interface AdminStats {
   recentRuns: any[];
 }
 
+interface PlatformInsight {
+  id: number;
+  industry: string;
+  title: string;
+  conversionRate: number;
+  sampleSize: number;
+  reachedDmRate: number;
+  lastUpdated: string;
+}
+
 export default function AdminDashboard() {
+  const { toast } = useToast();
+
   const { data: stats, isLoading } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
   });
+
+  const { data: insightsData, isLoading: insightsLoading } = useQuery<{ insights: PlatformInsight[] }>({
+    queryKey: ["/api/admin/platform-insights"],
+  });
+
+  const aggregateMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/platform-insights/aggregate"),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/platform-insights"] });
+      toast({ title: "Aggregation complete", description: `${data.titlesUpdated} title insights from ${data.clientsScanned} clients` });
+    },
+    onError: () => {
+      toast({ title: "Aggregation failed", description: "Check server logs for details", variant: "destructive" });
+    },
+  });
+
+  const insights = insightsData?.insights || [];
 
   return (
     <AdminLayout>
@@ -109,6 +142,97 @@ export default function AdminDashboard() {
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card style={{ border: "1px solid #E2E8F0" }} data-testid="card-cross-client-insights">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base font-semibold flex items-center gap-2" style={{ color: "#0F172A" }}>
+              <Globe className="w-4 h-4" style={{ color: "#10B981" }} />
+              Cross-Client Insights
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => aggregateMutation.mutate()}
+              disabled={aggregateMutation.isPending}
+              style={{ borderColor: "#E2E8F0", color: "#0F172A" }}
+              data-testid="button-aggregate-insights"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${aggregateMutation.isPending ? "animate-spin" : ""}`} />
+              {aggregateMutation.isPending ? "Aggregating..." : "Refresh Insights"}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {insightsLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-12 rounded animate-pulse" style={{ background: "#F8FAFC" }} />
+                ))}
+              </div>
+            ) : insights.length === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-sm" style={{ color: "#94A3B8" }}>No cross-client insights yet</p>
+                <p className="text-xs mt-1" style={{ color: "#94A3B8" }}>Click "Refresh Insights" to aggregate anonymized data across all client machines</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-4 gap-2 px-3 py-1.5">
+                  <span className="text-xs font-medium" style={{ color: "#94A3B8" }}>Title Bucket</span>
+                  <span className="text-xs font-medium text-center" style={{ color: "#94A3B8" }}>Effectiveness</span>
+                  <span className="text-xs font-medium text-center" style={{ color: "#94A3B8" }}>DM Reach Rate</span>
+                  <span className="text-xs font-medium text-right" style={{ color: "#94A3B8" }}>Sample Size</span>
+                </div>
+                {insights.map((insight) => {
+                  const avgRate = insights.reduce((s, i) => s + i.conversionRate, 0) / insights.length;
+                  const isAboveAvg = insight.conversionRate > avgRate;
+                  return (
+                    <div
+                      key={insight.id}
+                      className="grid grid-cols-4 gap-2 items-center px-3 py-2.5 rounded"
+                      style={{ background: "#F8FAFC", border: "1px solid #E2E8F0" }}
+                      data-testid={`row-insight-${insight.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isAboveAvg ? (
+                          <TrendingUp className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#10B981" }} />
+                        ) : (
+                          <TrendingDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#64748B" }} />
+                        )}
+                        <span className="text-sm font-medium truncate" style={{ color: "#0F172A" }}>{insight.title}</span>
+                      </div>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "#E2E8F0" }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.min(insight.conversionRate, 100)}%`,
+                              background: isAboveAvg ? "#10B981" : "#94A3B8",
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs font-mono" style={{ color: isAboveAvg ? "#10B981" : "#64748B" }}>
+                          {insight.conversionRate}%
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-xs font-mono" style={{ color: "#64748B" }}>
+                          {insight.reachedDmRate}%
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-mono" style={{ color: "#94A3B8" }}>
+                          n={insight.sampleSize}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-xs pt-2" style={{ color: "#94A3B8" }}>
+                  Anonymized title performance across {(stats?.activeClients ?? 0)} active client machines. Insights feed into DM fit scoring as cross-client adjustments.
+                </p>
               </div>
             )}
           </CardContent>

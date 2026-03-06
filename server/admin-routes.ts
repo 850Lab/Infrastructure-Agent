@@ -8,6 +8,7 @@ import { getUsageSummary } from "./usage-guard";
 import { startDailyRun, RunAlreadyActiveError } from "./run-daily-web";
 import { exportTableCSV } from "./data-export";
 import { migrateClientData } from "./migrate-client-data";
+import { aggregatePlatformInsights, getPlatformInsightsForIndustry } from "./platform-insights";
 
 const provisionSchema = z.object({
   clientName: z.string().min(1),
@@ -268,6 +269,27 @@ export async function registerAdminRoutes(app: Express): Promise<void> {
     } catch (err: any) {
       log(`Migration error: ${err.message}`, "admin");
       res.status(500).json({ error: "Migration failed", message: err.message });
+    }
+  });
+
+  app.get("/api/admin/platform-insights", authMiddleware, requireRole("platform_admin"), async (req: Request, res: Response) => {
+    try {
+      const industry = req.query.industry as string | undefined;
+      const insights = await storage.getPlatformInsights(industry);
+      res.json({ insights });
+    } catch (err: any) {
+      log(`Platform insights fetch error: ${err.message}`, "admin");
+      res.status(500).json({ error: "Failed to load platform insights" });
+    }
+  });
+
+  app.post("/api/admin/platform-insights/aggregate", authMiddleware, requireRole("platform_admin"), async (_req: Request, res: Response) => {
+    try {
+      const result = await aggregatePlatformInsights();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Platform insights aggregation error: ${err.message}`, "admin");
+      res.status(500).json({ error: "Aggregation failed", message: err.message });
     }
   });
 }

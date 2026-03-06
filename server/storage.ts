@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, webhookLogs, clients, clientConfig, usageLogs } from "@shared/schema";
+import { type User, type InsertUser, type WebhookLog, type InsertWebhookLog, type Client, type InsertClient, type ClientConfig, type InsertClientConfig, type UsageLog, type InsertUsageLog, type PlatformInsight, type InsertPlatformInsight, webhookLogs, clients, clientConfig, usageLogs, platformInsights } from "@shared/schema";
 import { db } from "./db";
 import { desc, eq, and, gte } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -22,6 +22,9 @@ export interface IStorage {
   updateWebhookLog(id: number, data: Partial<InsertWebhookLog>): Promise<WebhookLog | undefined>;
   getWebhookLogs(limit?: number): Promise<WebhookLog[]>;
   getWebhookLog(id: number): Promise<WebhookLog | undefined>;
+  getPlatformInsights(industry?: string): Promise<PlatformInsight[]>;
+  upsertPlatformInsight(industry: string, title: string, conversionRate: number, sampleSize: number, reachedDmRate: number): Promise<PlatformInsight>;
+  clearPlatformInsights(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -117,6 +120,33 @@ export class DatabaseStorage implements IStorage {
   async getWebhookLog(id: number): Promise<WebhookLog | undefined> {
     const [result] = await db.select().from(webhookLogs).where(eq(webhookLogs.id, id));
     return result;
+  }
+
+  async getPlatformInsights(industry?: string): Promise<PlatformInsight[]> {
+    if (industry) {
+      return db.select().from(platformInsights).where(eq(platformInsights.industry, industry)).orderBy(desc(platformInsights.conversionRate));
+    }
+    return db.select().from(platformInsights).orderBy(desc(platformInsights.conversionRate));
+  }
+
+  async upsertPlatformInsight(industry: string, title: string, conversionRate: number, sampleSize: number, reachedDmRate: number): Promise<PlatformInsight> {
+    const existing = await db.select().from(platformInsights)
+      .where(and(eq(platformInsights.industry, industry), eq(platformInsights.title, title)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(platformInsights)
+        .set({ conversionRate, sampleSize, reachedDmRate, lastUpdated: new Date() })
+        .where(eq(platformInsights.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(platformInsights)
+      .values({ industry, title, conversionRate, sampleSize, reachedDmRate, lastUpdated: new Date() })
+      .returning();
+    return created;
+  }
+
+  async clearPlatformInsights(): Promise<void> {
+    await db.delete(platformInsights);
   }
 }
 
