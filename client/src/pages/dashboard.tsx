@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings, AlertTriangle } from "lucide-react";
+import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings, AlertTriangle, Target } from "lucide-react";
 
 const STEP_DONE_FEEDBACK: Record<string, { title: string; description: string }> = {
   opportunity_engine: { title: "Targets acquired", description: "Call list built and prioritized." },
@@ -445,6 +445,22 @@ export default function DashboardPage() {
             </Button>
           </div>
         )}
+
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => navigate("/machine/focus")}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all"
+            style={{
+              background: EMERALD,
+              color: "#FFFFFF",
+              boxShadow: "0 2px 8px rgba(16,185,129,0.25)",
+            }}
+            data-testid="nav-focus-mode"
+          >
+            <Target className="w-4 h-4" />
+            Focus Mode
+          </button>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 mb-6" data-testid="section-nav">
           {SECTION_BUTTONS.map((sec) => {

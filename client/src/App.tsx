@@ -18,6 +18,7 @@ import PipelinePage from "@/pages/pipeline";
 import MachineSettingsPage from "@/pages/machine-settings";
 import CinematicPage from "@/pages/cinematic";
 import ActiveOutreachPage from "@/pages/active-outreach";
+import FocusModePage from "@/pages/focus-mode";
 import EmailSettingsPage from "@/pages/email-settings";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
@@ -133,6 +134,7 @@ function Router() {
         <Route path="/machine/pipeline"><MachineRoute><PipelinePage /></MachineRoute></Route>
         <Route path="/machine/settings"><MachineRoute><MachineSettingsPage /></MachineRoute></Route>
         <Route path="/machine/outreach"><MachineRoute><ActiveOutreachPage /></MachineRoute></Route>
+        <Route path="/machine/focus"><MachineRoute><FocusModePage /></MachineRoute></Route>
         <Route path="/machine/email-settings"><MachineRoute><EmailSettingsPage /></MachineRoute></Route>
 
         {/* Legacy routes redirect to new paths */}
