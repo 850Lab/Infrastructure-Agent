@@ -254,6 +254,21 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }
     }
 
+    try {
+      await timedStep(run_id, "web_intel", async () => {
+        const { runWebIntelForTodayList } = await import("./web-intel");
+        const r = await runWebIntelForTodayList(config.top);
+        eventBus.publish("TRIGGER_FIRED", {
+          trigger: "web_intel",
+          company: `${r.updated} companies with intel, ${r.errors} errors`,
+          ts: Date.now(),
+        }, clientId);
+        return r;
+      }, clientId);
+    } catch (e: any) {
+      errors.push(`Web Intel: ${e.message}`);
+    }
+
     if (changesetBefore) {
       try {
         const changesetAfter = await snapshotTodayListFields(clientId);

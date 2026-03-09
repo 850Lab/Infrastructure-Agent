@@ -502,11 +502,27 @@ function FocusCompanyCard({
 
           {company.rank_reason && (
             <div className="rounded-xl p-3 mb-4" style={{ background: "rgba(16,185,129,0.03)", border: `1px solid rgba(16,185,129,0.15)` }}>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex items-center gap-1.5 mb-2">
                 <Brain className="w-3.5 h-3.5" style={{ color: EMERALD }} />
                 <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Intel</span>
               </div>
-              <p className="text-xs" style={{ color: TEXT }}>{company.rank_reason}</p>
+              {(() => {
+                const reason = company.rank_reason;
+                const tpMatch = reason.match(/Talking point:\s*(.+?)(?=\s+(?:Fresh lead|Hot follow-up|Active pipeline|High priority|As of|Currently|Recent)|\s*$)/i);
+                const talkingPoint = tpMatch ? tpMatch[1].trim() : null;
+                const mainText = reason.replace(/Talking point:\s*.+?(?=\s+(?:Fresh lead|Hot follow-up|Active pipeline|High priority|As of|Currently|Recent)|\s*$)/i, "").trim();
+                return (
+                  <>
+                    <p className="text-xs leading-relaxed" style={{ color: TEXT }}>{mainText}</p>
+                    {talkingPoint && (
+                      <div className="mt-2 rounded-lg px-3 py-2" style={{ background: "rgba(16,185,129,0.06)", border: `1px solid rgba(16,185,129,0.15)` }}>
+                        <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: EMERALD }}>Talking Point</div>
+                        <p className="text-xs italic" style={{ color: TEXT }}>{talkingPoint}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
