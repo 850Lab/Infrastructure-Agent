@@ -342,7 +342,7 @@ function FocusCompanyCard({
       if (!outreachItem) throw new Error("No outreach pipeline entry");
       await apiRequest("POST", "/api/email/send", {
         outreachPipelineId: outreachItem.id,
-        touchNumber: nextTouch,
+        touchNumber: nextTouch || 1,
         recipientEmail,
         recipientName: outreachItem.contactName || company.offer_dm_name || undefined,
         companyId: outreachItem.companyId,
@@ -351,7 +351,7 @@ function FocusCompanyCard({
     },
     onSuccess: () => {
       setEmailSent(true);
-      toast({ title: "Email sent", description: `Touch ${nextTouch} sent to ${recipientEmail}` });
+      toast({ title: "Email sent", description: `Touch ${nextTouch || 1} sent to ${recipientEmail}` });
       queryClient.invalidateQueries({ queryKey: ["/api/email/quota"] });
       onEmailSent();
     },
@@ -398,10 +398,12 @@ function FocusCompanyCard({
   };
 
   function getEmailContent(): { subject: string; body: string } | null {
-    if (!outreachItem || !touchInfo || !isEmailTouch) return null;
-    const raw = nextTouch === 1 ? outreachItem.touch1Email
-      : nextTouch === 3 ? outreachItem.touch3Email
-      : nextTouch === 5 ? outreachItem.touch5Email
+    if (!outreachItem) return null;
+    if (touchInfo && !isEmailTouch) return null;
+    const effectiveTouch = nextTouch || 1;
+    const raw = effectiveTouch === 1 ? outreachItem.touch1Email
+      : effectiveTouch === 3 ? outreachItem.touch3Email
+      : effectiveTouch === 5 ? outreachItem.touch5Email
       : null;
     if (!raw) return null;
     const match = raw.match(/^Subject:\s*(.+?)(?:\r?\n){2}([\s\S]*)$/i);
@@ -445,20 +447,18 @@ function FocusCompanyCard({
                 {company.last_outcome && <span>Last: {company.last_outcome}</span>}
               </div>
             </div>
-            {touchInfo && (
-              <div
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-                style={{
-                  background: isEmailTouch ? "rgba(59,130,246,0.08)" : "rgba(16,185,129,0.08)",
-                  color: isEmailTouch ? BLUE : EMERALD,
-                  border: `1px solid ${isEmailTouch ? "rgba(59,130,246,0.3)" : "rgba(16,185,129,0.3)"}`,
-                }}
-                data-testid={`focus-touch-badge-${index}`}
-              >
-                {isEmailTouch ? <Mail className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
-                Touch {nextTouch} -- {touchInfo.label}
-              </div>
-            )}
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+              style={{
+                background: isEmailTouch || !touchInfo ? "rgba(59,130,246,0.08)" : "rgba(16,185,129,0.08)",
+                color: isEmailTouch || !touchInfo ? BLUE : EMERALD,
+                border: `1px solid ${isEmailTouch || !touchInfo ? "rgba(59,130,246,0.3)" : "rgba(16,185,129,0.3)"}`,
+              }}
+              data-testid={`focus-touch-badge-${index}`}
+            >
+              {isEmailTouch || !touchInfo ? <Mail className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
+              Touch {nextTouch || 1} -- {touchInfo?.label || "Email"}
+            </div>
           </div>
 
           <div className="rounded-xl p-4 mb-4" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
@@ -510,85 +510,9 @@ function FocusCompanyCard({
             </div>
           )}
 
-          {(isCallTouch || !touchInfo) && (
-            <>
-              <div className="mb-4">
-                <button
-                  onClick={() => setShowScripts(!showScripts)}
-                  className="flex items-center gap-2 text-xs font-semibold mb-2"
-                  style={{ color: showScripts ? EMERALD : MUTED }}
-                  data-testid={`focus-toggle-scripts-${index}`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  {showScripts ? "Hide Scripts" : "Show Call Scripts"}
-                  {showScripts ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                </button>
-                {showScripts && (
-                  <div className="space-y-2">
-                    <ScriptBlock title="Call Opener" text={company.playbook_opener} copyId={`focus-opener-${index}`} />
-                    <ScriptBlock title="Gatekeeper Script" text={company.playbook_gatekeeper} copyId={`focus-gk-${index}`} />
-                    <ScriptBlock title="Voicemail" text={company.playbook_voicemail} copyId={`focus-vm-${index}`} />
-                    <ScriptBlock title="Follow-up Text" text={company.playbook_followup} copyId={`focus-fu-${index}`} />
-                  </div>
-                )}
-              </div>
-
-              {!outcomeLogged && (
-                <div className="mb-4">
-                  <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Log Call Outcome</div>
-                  <div className="grid grid-cols-4 gap-1.5" data-testid={`focus-outcomes-${index}`}>
-                    {OUTCOMES.map((o) => {
-                      const Icon = o.icon;
-                      return (
-                        <button
-                          key={o.value}
-                          onClick={() => handleOutcome(o.value)}
-                          disabled={logCallMutation.isPending}
-                          className="flex flex-col items-center gap-1 py-2.5 px-1 rounded-lg text-xs font-semibold transition-colors"
-                          style={{ background: `${o.color}10`, color: o.color, border: `1px solid ${o.color}30` }}
-                          data-testid={`focus-outcome-${o.value.toLowerCase().replace(/\s+/g, "-")}-${index}`}
-                        >
-                          <Icon className="w-4 h-4" />
-                          {o.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {outcomeLogged && (
-                <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ background: "rgba(16,185,129,0.05)", border: `1px solid rgba(16,185,129,0.2)` }} data-testid={`focus-outcome-logged-${index}`}>
-                  <CheckCircle2 className="w-5 h-5" style={{ color: EMERALD }} />
-                  <span className="text-sm font-semibold" style={{ color: TEXT }}>Outcome logged</span>
-                </div>
-              )}
-
-              {lastCallId && (
-                <div className="rounded-xl p-3 mb-4" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Mic className="w-3.5 h-3.5" style={{ color: MUTED }} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Recording</span>
-                  </div>
-                  {uploaded ? (
-                    <div className="flex items-center gap-2 text-xs" style={{ color: EMERALD }}>
-                      <CheckCircle2 className="w-4 h-4" /> Recording uploaded
-                    </div>
-                  ) : (
-                    <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: BLUE }}>
-                      <input type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRecordingUpload(f); }} data-testid={`focus-recording-${index}`} />
-                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      {uploading ? "Uploading..." : "Upload call recording (optional)"}
-                    </label>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {isEmailTouch && emailContent && (
+          {(isEmailTouch || !touchInfo) && emailContent && (
             <div className="mb-4">
-              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Email Touch {nextTouch}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Email Touch {nextTouch || 1}</div>
               <div className="rounded-xl p-4" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
                 <div className="mb-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Subject</span>
@@ -630,9 +554,81 @@ function FocusCompanyCard({
             </div>
           )}
 
-          {isEmailTouch && !emailContent && (
+          {(isEmailTouch || !touchInfo) && !emailContent && (
             <div className="rounded-xl p-4 mb-4 text-center" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
-              <p className="text-xs" style={{ color: MUTED }}>No email content generated for Touch {nextTouch} yet. Run the Outreach Engine first.</p>
+              <p className="text-xs" style={{ color: MUTED }}>No email content generated for Touch {nextTouch || 1} yet. Run the Outreach Engine first.</p>
+            </div>
+          )}
+
+          <div className="mb-4">
+            <button
+              onClick={() => setShowScripts(!showScripts)}
+              className="flex items-center gap-2 text-xs font-semibold mb-2"
+              style={{ color: showScripts ? EMERALD : MUTED }}
+              data-testid={`focus-toggle-scripts-${index}`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              {showScripts ? "Hide Scripts" : "Show Call Scripts"}
+              {showScripts ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+            {showScripts && (
+              <div className="space-y-2">
+                <ScriptBlock title="Call Opener" text={company.playbook_opener} copyId={`focus-opener-${index}`} />
+                <ScriptBlock title="Gatekeeper Script" text={company.playbook_gatekeeper} copyId={`focus-gk-${index}`} />
+                <ScriptBlock title="Voicemail" text={company.playbook_voicemail} copyId={`focus-vm-${index}`} />
+                <ScriptBlock title="Follow-up Text" text={company.playbook_followup} copyId={`focus-fu-${index}`} />
+              </div>
+            )}
+          </div>
+
+          {!outcomeLogged && (
+            <div className="mb-4">
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Log Call Outcome</div>
+              <div className="grid grid-cols-4 gap-1.5" data-testid={`focus-outcomes-${index}`}>
+                {OUTCOMES.map((o) => {
+                  const Icon = o.icon;
+                  return (
+                    <button
+                      key={o.value}
+                      onClick={() => handleOutcome(o.value)}
+                      disabled={logCallMutation.isPending}
+                      className="flex flex-col items-center gap-1 py-2.5 px-1 rounded-lg text-xs font-semibold transition-colors"
+                      style={{ background: `${o.color}10`, color: o.color, border: `1px solid ${o.color}30` }}
+                      data-testid={`focus-outcome-${o.value.toLowerCase().replace(/\s+/g, "-")}-${index}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {outcomeLogged && (
+            <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ background: "rgba(16,185,129,0.05)", border: `1px solid rgba(16,185,129,0.2)` }} data-testid={`focus-outcome-logged-${index}`}>
+              <CheckCircle2 className="w-5 h-5" style={{ color: EMERALD }} />
+              <span className="text-sm font-semibold" style={{ color: TEXT }}>Outcome logged</span>
+            </div>
+          )}
+
+          {lastCallId && (
+            <div className="rounded-xl p-3 mb-4" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Mic className="w-3.5 h-3.5" style={{ color: MUTED }} />
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Recording</span>
+              </div>
+              {uploaded ? (
+                <div className="flex items-center gap-2 text-xs" style={{ color: EMERALD }}>
+                  <CheckCircle2 className="w-4 h-4" /> Recording uploaded
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: BLUE }}>
+                  <input type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRecordingUpload(f); }} data-testid={`focus-recording-${index}`} />
+                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {uploading ? "Uploading..." : "Upload call recording (optional)"}
+                </label>
+              )}
             </div>
           )}
         </div>
