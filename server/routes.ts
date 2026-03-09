@@ -199,6 +199,15 @@ export async function registerRoutes(
     res.json(logEntry);
   });
 
+  app.post("/api/demo-request", async (req, res) => {
+    const { name, company, email, phone } = req.body;
+    if (!name || !email) {
+      return res.status(400).json({ error: "Name and email are required" });
+    }
+    console.log(`[demo-request] New demo request from ${name} (${email}) — Company: ${company || "N/A"}, Phone: ${phone || "N/A"}`);
+    res.json({ success: true });
+  });
+
   app.post("/api/test-webhook", async (req, res) => {
     const { recordId } = req.body;
     if (!recordId) {
