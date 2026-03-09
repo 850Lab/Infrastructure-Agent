@@ -28,6 +28,7 @@ Key features include:
 -   **Workflow & Productivity**: Run Diff, Revert Last Run, Opportunities Pipeline, Machine Feedback, Rank Explainability Layer, Machine Identity & Settings, First-Run Cinematic, Onboarding Wizard, Admin Platform, and Focus Mode for guided daily work sessions.
 -   **Data Quality & Learning**: Targeting Accuracy, Query Generation Performance Tracking, Time-Decay Weighting, Authority Trend Tracking, Cross-Client Learning, DM Status Classification, DM Recovery Queue, and Information Ceiling Detection.
 -   **Production Safety**: Includes React Error Boundaries, Process Guards, Concurrency Guards, Rate Limit Handling, and Fetch Timeouts.
+-   **Compliance Pages**: Public `/privacy` and `/terms` pages for Twilio A2P registration, with footer links from the landing page.
 -   **Multi-Campaign Support**: Allows for multiple active campaigns, each with isolated data and configurable settings.
 
 ## External Dependencies

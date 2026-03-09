@@ -21,6 +21,8 @@ import ActiveOutreachPage from "@/pages/active-outreach";
 import FocusModePage from "@/pages/focus-mode";
 import EmailSettingsPage from "@/pages/email-settings";
 import LandingPage from "@/pages/landing";
+import PrivacyPage from "@/pages/privacy";
+import TermsPage from "@/pages/terms";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -82,7 +84,7 @@ function OnboardingGate({ children }: { children: ReactNode }) {
 
     if (role === "platform_admin") return;
 
-    const skipPaths = ["/login", "/site", "/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
+    const skipPaths = ["/login", "/site", "/privacy", "/terms", "/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
     const onProtectedPage = !skipPaths.includes(location);
 
     if (me.needsOnboarding && onProtectedPage) {
@@ -116,6 +118,8 @@ function Router() {
     <OnboardingGate>
       <Switch>
         <Route path="/site" component={LandingPage} />
+        <Route path="/privacy" component={PrivacyPage} />
+        <Route path="/terms" component={TermsPage} />
         <Route path="/login" component={LoginPage} />
 
         <Route path="/admin/dashboard"><AdminRoute><AdminDashboard /></AdminRoute></Route>
