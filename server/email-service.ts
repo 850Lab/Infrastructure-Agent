@@ -215,11 +215,10 @@ export async function sendOutreachEmail(params: {
     .where(eq(outreachPipeline.id, params.outreachPipelineId));
   if (!pipeline) return { success: false, error: "Outreach pipeline item not found" };
 
-  // Get the touch content based on touch number
   const touchField: Record<number, string | null> = {
-    1: pipeline.touch1Email,
-    3: pipeline.touch3Email,
-    5: pipeline.touch5Email,
+    2: pipeline.touch2Call,
+    4: pipeline.touch4Call,
+    6: pipeline.touch6Call,
   };
   const touchContent = touchField[params.touchNumber];
   if (!touchContent) {

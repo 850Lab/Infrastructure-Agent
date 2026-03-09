@@ -150,12 +150,12 @@ interface TodayCompany {
 }
 
 const TOUCH_LABELS = [
-  { num: 1, label: "Email", icon: Mail, day: 1, isEmail: true },
-  { num: 2, label: "Call", icon: Phone, day: 3, isEmail: false },
-  { num: 3, label: "Email", icon: Mail, day: 5, isEmail: true },
-  { num: 4, label: "Call", icon: Phone, day: 7, isEmail: false },
-  { num: 5, label: "Email", icon: Mail, day: 10, isEmail: true },
-  { num: 6, label: "Call", icon: Phone, day: 14, isEmail: false },
+  { num: 1, label: "Call", icon: Phone, day: 1, isEmail: false },
+  { num: 2, label: "Email", icon: Mail, day: 3, isEmail: true },
+  { num: 3, label: "Call", icon: Phone, day: 5, isEmail: false },
+  { num: 4, label: "Email", icon: Mail, day: 7, isEmail: true },
+  { num: 5, label: "Call", icon: Phone, day: 10, isEmail: false },
+  { num: 6, label: "Email", icon: Mail, day: 14, isEmail: true },
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {

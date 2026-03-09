@@ -427,7 +427,7 @@ export function registerEmailRoutes(app: Express) {
         manualSent: number;
       }> = {};
 
-      for (const touch of [1, 3, 5]) {
+      for (const touch of [2, 4, 6]) {
         touchMap[touch] = {
           touchNumber: touch,
           sent: 0, failed: 0, deferred: 0,
@@ -570,9 +570,9 @@ export function registerEmailRoutes(app: Express) {
         return;
       }
 
-      const touchField = touchNumber === 1 ? "touch1Email" : touchNumber === 3 ? "touch3Email" : touchNumber === 5 ? "touch5Email" : null;
+      const touchField = touchNumber === 2 ? "touch2Call" : touchNumber === 4 ? "touch4Call" : touchNumber === 6 ? "touch6Call" : null;
       if (!touchField) {
-        res.status(400).json({ error: "Invalid touch number (must be 1, 3, or 5)" });
+        res.status(400).json({ error: "Invalid touch number (must be 2, 4, or 6)" });
         return;
       }
 
@@ -611,7 +611,7 @@ export function registerEmailRoutes(app: Express) {
         return;
       }
 
-      const touchField = touchNumber === 1 ? "touch1Email" : touchNumber === 3 ? "touch3Email" : touchNumber === 5 ? "touch5Email" : null;
+      const touchField = touchNumber === 2 ? "touch2Call" : touchNumber === 4 ? "touch4Call" : touchNumber === 6 ? "touch6Call" : null;
       if (!touchField) {
         res.status(400).json({ error: "Invalid touch number" });
         return;

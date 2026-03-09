@@ -14,12 +14,12 @@ const openai = new OpenAI({
 });
 
 const TOUCH_SCHEDULE = [
-  { day: 1, type: "email" as const, label: "Qualification Email" },
-  { day: 3, type: "call" as const, label: "Follow-up Call" },
-  { day: 5, type: "email" as const, label: "Follow-up Email" },
-  { day: 7, type: "call" as const, label: "Check-in Call" },
-  { day: 10, type: "email" as const, label: "Final Email" },
-  { day: 14, type: "call" as const, label: "Final Call" },
+  { day: 1, type: "call" as const, label: "Qualification Call" },
+  { day: 3, type: "email" as const, label: "Follow-up Email" },
+  { day: 5, type: "call" as const, label: "Follow-up Call" },
+  { day: 7, type: "email" as const, label: "Check-in Email" },
+  { day: 10, type: "call" as const, label: "Final Call" },
+  { day: 14, type: "email" as const, label: "Final Email" },
 ];
 
 const PIPELINE_STATUSES = ["ACTIVE", "COMPLETED", "RESPONDED", "NOT_INTERESTED"] as const;
@@ -59,11 +59,11 @@ function addDays(date: Date, days: number): Date {
 
 async function generateOutreachEmails(
   company: CompanyForOutreach,
-  touchNumber: 1 | 3 | 5
+  touchNumber: 2 | 4 | 6
 ): Promise<{ subject: string; body: string }> {
   const cfg = getIndustryConfig();
-  const touchLabel = touchNumber === 1 ? "initial qualification" : touchNumber === 3 ? "follow-up" : "final outreach";
-  const urgency = touchNumber === 5 ? "This is the FINAL email attempt. Create urgency without being pushy." : "";
+  const touchLabel = touchNumber === 2 ? "follow-up after initial call" : touchNumber === 4 ? "follow-up" : "final outreach";
+  const urgency = touchNumber === 6 ? "This is the FINAL email attempt. Create urgency without being pushy." : "";
 
   const prompt = `You are a B2B sales email writer for the ${cfg.name} industry (${cfg.market} market).
 Write a ${touchLabel} email for ${company.companyName}.
@@ -108,17 +108,17 @@ Return ONLY valid JSON.`;
   }
 }
 
-function generateCallScript(company: CompanyForOutreach, touchNumber: 2 | 4 | 6): string {
+function generateCallScript(company: CompanyForOutreach, touchNumber: 1 | 3 | 5): string {
   const dmRef = company.dmName ? `Ask for ${company.dmName}` : "Ask for the person who handles equipment/facilities decisions";
   const titleRef = company.dmTitle ? ` (${company.dmTitle})` : "";
 
-  if (touchNumber === 2) {
-    return `CALL SCRIPT — Touch 2 (Day 3)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. I sent an email a couple days ago about [VALUE PROP]. Wanted to follow up briefly — is now a good time?"\n\nIf unavailable: Leave voicemail referencing the email.`;
+  if (touchNumber === 1) {
+    return `CALL SCRIPT — Touch 1 (Day 1)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. We work with contractors like yours on [VALUE PROP]. Wanted to see if this is something worth a quick conversation about — do you have 2 minutes?"\n\nIf unavailable: Leave brief voicemail with value prop and callback number.`;
   }
-  if (touchNumber === 4) {
-    return `CALL SCRIPT — Touch 4 (Day 7)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] again with [COMPANY]. I've reached out a couple times — just want to make sure this got on your radar. We work with companies like yours on [VALUE PROP]. Worth a quick conversation?"\n\nIf unavailable: Leave brief voicemail with callback number.`;
+  if (touchNumber === 3) {
+    return `CALL SCRIPT — Touch 3 (Day 5)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] again with [COMPANY]. I sent an email a couple days ago about [VALUE PROP] — just wanted to make sure it landed on your radar. Worth a quick chat?"\n\nIf unavailable: Leave voicemail referencing the email.`;
   }
-  return `CALL SCRIPT — Touch 6 FINAL (Day 14)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. This is my last attempt to reach out — I've sent a couple emails and called before. If there's any interest in [VALUE PROP], I'd love 5 minutes. If not, no hard feelings at all."\n\nIf unavailable: Leave final voicemail. Mark sequence complete.`;
+  return `CALL SCRIPT — Touch 5 FINAL CALL (Day 10)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. I've reached out a couple times about [VALUE PROP]. This is my last call — if there's any interest, I'd love 5 minutes. If not, no hard feelings."\n\nIf unavailable: Leave final voicemail with callback number.`;
 }
 
 export async function populateOutreachPipeline(clientId: string): Promise<{ added: number; skipped: number }> {
@@ -185,34 +185,35 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
     };
 
     const now = new Date();
-    let touch1Email = "";
-    let touch3Email = "";
-    let touch5Email = "";
+
+    const touch1Call = generateCallScript(company, 1);
+    const touch3Call = generateCallScript(company, 3);
+    const touch5Call = generateCallScript(company, 5);
+
+    let touch2Email = "";
+    let touch4Email = "";
+    let touch6Email = "";
 
     try {
-      const t1 = await generateOutreachEmails(company, 1);
-      touch1Email = `Subject: ${t1.subject}\n\n${t1.body}`;
+      const t2 = await generateOutreachEmails(company, 2);
+      touch2Email = `Subject: ${t2.subject}\n\n${t2.body}`;
     } catch {
-      touch1Email = "[Email generation pending]";
+      touch2Email = "[Email generation pending]";
     }
 
     try {
-      const t3 = await generateOutreachEmails(company, 3);
-      touch3Email = `Subject: ${t3.subject}\n\n${t3.body}`;
+      const t4 = await generateOutreachEmails(company, 4);
+      touch4Email = `Subject: ${t4.subject}\n\n${t4.body}`;
     } catch {
-      touch3Email = "[Email generation pending]";
+      touch4Email = "[Email generation pending]";
     }
 
     try {
-      const t5 = await generateOutreachEmails(company, 5);
-      touch5Email = `Subject: ${t5.subject}\n\n${t5.body}`;
+      const t6 = await generateOutreachEmails(company, 6);
+      touch6Email = `Subject: ${t6.subject}\n\n${t6.body}`;
     } catch {
-      touch5Email = "[Email generation pending]";
+      touch6Email = "[Email generation pending]";
     }
-
-    const touch2Call = generateCallScript(company, 2);
-    const touch4Call = generateCallScript(company, 4);
-    const touch6Call = generateCallScript(company, 6);
 
     await storage.createOutreachPipeline({
       clientId,
@@ -220,12 +221,12 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
       companyName,
       contactName: dmName || null,
       contactEmail: dmEmail || null,
-      touch1Email,
-      touch2Call,
-      touch3Email,
-      touch4Call,
-      touch5Email,
-      touch6Call,
+      touch1Email: touch1Call,
+      touch2Call: touch2Email,
+      touch3Email: touch3Call,
+      touch4Call: touch4Email,
+      touch5Email: touch5Call,
+      touch6Call: touch6Email,
       pipelineStatus: "ACTIVE",
       nextTouchDate: addDays(now, TOUCH_SCHEDULE[0].day),
       touchesCompleted: 0,

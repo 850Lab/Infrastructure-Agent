@@ -117,12 +117,12 @@ interface SessionOutcome {
 }
 
 const TOUCH_LABELS = [
-  { num: 1, label: "Email", icon: Mail, day: 1, isEmail: true },
-  { num: 2, label: "Call", icon: Phone, day: 3, isEmail: false },
-  { num: 3, label: "Email", icon: Mail, day: 5, isEmail: true },
-  { num: 4, label: "Call", icon: Phone, day: 7, isEmail: false },
-  { num: 5, label: "Email", icon: Mail, day: 10, isEmail: true },
-  { num: 6, label: "Call", icon: Phone, day: 14, isEmail: false },
+  { num: 1, label: "Call", icon: Phone, day: 1, isEmail: false },
+  { num: 2, label: "Email", icon: Mail, day: 3, isEmail: true },
+  { num: 3, label: "Call", icon: Phone, day: 5, isEmail: false },
+  { num: 4, label: "Email", icon: Mail, day: 7, isEmail: true },
+  { num: 5, label: "Call", icon: Phone, day: 10, isEmail: false },
+  { num: 6, label: "Email", icon: Mail, day: 14, isEmail: true },
 ];
 
 const OUTCOMES = [
@@ -401,9 +401,9 @@ function FocusCompanyCard({
     if (!outreachItem) return null;
     if (touchInfo && !isEmailTouch) return null;
     const effectiveTouch = nextTouch || 1;
-    const raw = effectiveTouch === 1 ? outreachItem.touch1Email
-      : effectiveTouch === 3 ? outreachItem.touch3Email
-      : effectiveTouch === 5 ? outreachItem.touch5Email
+    const raw = effectiveTouch === 2 ? outreachItem.touch2Call
+      : effectiveTouch === 4 ? outreachItem.touch4Call
+      : effectiveTouch === 6 ? outreachItem.touch6Call
       : null;
     if (!raw) return null;
     const match = raw.match(/^Subject:\s*(.+?)(?:\r?\n){2}([\s\S]*)$/i);
@@ -450,14 +450,14 @@ function FocusCompanyCard({
             <div
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
               style={{
-                background: isEmailTouch || !touchInfo ? "rgba(59,130,246,0.08)" : "rgba(16,185,129,0.08)",
-                color: isEmailTouch || !touchInfo ? BLUE : EMERALD,
-                border: `1px solid ${isEmailTouch || !touchInfo ? "rgba(59,130,246,0.3)" : "rgba(16,185,129,0.3)"}`,
+                background: isEmailTouch ? "rgba(59,130,246,0.08)" : "rgba(16,185,129,0.08)",
+                color: isEmailTouch ? BLUE : EMERALD,
+                border: `1px solid ${isEmailTouch ? "rgba(59,130,246,0.3)" : "rgba(16,185,129,0.3)"}`,
               }}
               data-testid={`focus-touch-badge-${index}`}
             >
-              {isEmailTouch || !touchInfo ? <Mail className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
-              Touch {nextTouch || 1} -- {touchInfo?.label || "Email"}
+              {isEmailTouch ? <Mail className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
+              Touch {nextTouch || 1} -- {touchInfo?.label || "Call"}
             </div>
           </div>
 
@@ -537,7 +537,7 @@ function FocusCompanyCard({
             </div>
           )}
 
-          {(isEmailTouch || !touchInfo) && emailContent && (
+          {isEmailTouch && emailContent && (
             <div className="mb-4">
               <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Email Touch {nextTouch || 1}</div>
               <div className="rounded-xl p-4" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
@@ -581,7 +581,7 @@ function FocusCompanyCard({
             </div>
           )}
 
-          {(isEmailTouch || !touchInfo) && !emailContent && (
+          {isEmailTouch && !emailContent && (
             <div className="rounded-xl p-4 mb-4 text-center" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
               <p className="text-xs" style={{ color: MUTED }}>No email content generated for Touch {nextTouch || 1} yet. Run the Outreach Engine first.</p>
             </div>
