@@ -322,15 +322,33 @@ Engagement score: ${c.engagementScore}. Times called: ${c.timesCalled}.
 TONE: Confident, concise, operator voice. Industry-specific language for ${cfg.name}.
 CRITICAL: Never hallucinate facts. Only reference evidence that appears above. Use company name and any known names naturally.
 
-Generate a JSON object with these exact fields:
-{
-  "call_opener": "Opening script when the decision maker answers. Max 45 seconds spoken. ${bestDMName ? `Address ${bestDMName} by name.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`}",
-  "gatekeeper_ask": "What to say if a receptionist/gatekeeper answers. Max 12 seconds. ${c.gatekeeperName ? `Address ${c.gatekeeperName} by name.` : "Be professional and direct."} ${bestDMName ? `Ask to speak with ${bestDMName}.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`}",
-  "voicemail": "Voicemail script. Max 25 seconds. Leave callback reason and phone number placeholder [YOUR_NUMBER].",
-  "email_subject": "Email subject line. Short, specific, no spam words.",
-  "email_body": "Follow-up email body. Max 130 words. Professional but conversational.",
-  "followup_text": "SMS/text follow-up message. Max 240 characters."
-}
+Generate a JSON object with these 6 fields: call_opener, gatekeeper_ask, voicemail, email_subject, email_body, followup_text.
+
+SCRIPT FORMAT RULES:
+- call_opener and gatekeeper_ask must be FULL CONVERSATION GUIDES, not just opening lines.
+- Structure each script as multiple stages separated by double newlines (\\n\\n).
+- Start each stage with an ALL CAPS LABEL followed by a colon, then the spoken script.
+- DO NOT include any meta-instructions, format descriptions, or preambles. Start directly with "OPENER:" as the first words.
+
+CALL_OPENER REQUIRED STAGES (separate each with \\n\\n):
+OPENER: ${bestDMName ? `Address ${bestDMName} by name.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`} Introduce yourself and state why you are calling. 2-3 sentences.
+IF THEY SHOW INTEREST: Build on their interest and transition to qualifying. 2-3 sentences.
+QUALIFYING QUESTIONS: 2-3 specific questions to determine fit (crew size, current solution, timeline, pain points). Write as a numbered list.
+HANDLE OBJECTIONS: Write 3 common objections each starting with a dash, followed by the response. Cover: "We already have a vendor", "Not in the budget", "Just send me info".
+THE ASK: How to close — request a meeting, demo, or site visit with a specific proposed time. 2 sentences.
+IF THEY SAY NO: Graceful exit that leaves the door open. 1-2 sentences.
+
+GATEKEEPER_ASK REQUIRED STAGES (separate each with \\n\\n):
+OPENER: ${c.gatekeeperName ? `Address ${c.gatekeeperName} by name.` : "Greet professionally."} ${bestDMName ? `Ask to speak with ${bestDMName}.` : `Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "person in charge"}.`} 1-2 sentences.
+IF THEY ASK WHY: Brief, confident reason for calling. Sound like a peer, not a salesperson. 1-2 sentences.
+IF THEY BLOCK: Redirect strategy — ask for the right person by title, offer to leave a message, or ask for their email. 2-3 sentences.
+IF DM IS UNAVAILABLE: Ask for best time to call back, try to get DM's direct line or email. 1-2 sentences.
+
+OTHER FIELDS:
+- voicemail: 20-30 seconds spoken. Name, company, reason, one compelling callback reason, [YOUR_NUMBER], name again.
+- email_subject: Short, specific subject line. No spam words.
+- email_body: Follow-up email. Max 130 words. Professional but conversational.
+- followup_text: SMS/text message. Max 240 characters.
 
 Return ONLY valid JSON, no markdown formatting.`;
 }
@@ -350,13 +368,27 @@ async function generatePlaybook(c: PlaybookCompany, cfg: IndustryConfig): Promis
 
   const parsed = JSON.parse(content);
 
+  function flattenField(val: any): string {
+    if (typeof val === "string") return val;
+    if (val && typeof val === "object") {
+      if (Array.isArray(val)) return val.map(flattenField).join("\n\n");
+      return Object.entries(val)
+        .map(([k, v]) => {
+          const label = k.replace(/_/g, " ").toUpperCase().trim();
+          return `${label}: ${typeof v === "string" ? v : JSON.stringify(v)}`;
+        })
+        .join("\n\n");
+    }
+    return String(val || "");
+  }
+
   return {
-    call_opener: String(parsed.call_opener || ""),
-    gatekeeper_ask: String(parsed.gatekeeper_ask || ""),
-    voicemail: String(parsed.voicemail || ""),
-    email_subject: String(parsed.email_subject || ""),
-    email_body: String(parsed.email_body || ""),
-    followup_text: String(parsed.followup_text || "").slice(0, 240),
+    call_opener: flattenField(parsed.call_opener),
+    gatekeeper_ask: flattenField(parsed.gatekeeper_ask),
+    voicemail: flattenField(parsed.voicemail),
+    email_subject: flattenField(parsed.email_subject),
+    email_body: flattenField(parsed.email_body),
+    followup_text: flattenField(parsed.followup_text).slice(0, 240),
   };
 }
 

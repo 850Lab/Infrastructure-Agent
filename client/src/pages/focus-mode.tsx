@@ -175,15 +175,70 @@ function CopyButton({ text, label, id }: { text: string; label: string; id: stri
   );
 }
 
+function parseScriptSections(text: string): Array<{ label: string; body: string }> {
+  const sections: Array<{ label: string; body: string }> = [];
+  const parts = text.split(/\n\n+/);
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^([A-Z][A-Z0-9_ /-]+?):\s*([\s\S]*)$/);
+    if (match) {
+      const label = match[1].replace(/_/g, " ").trim();
+      sections.push({ label, body: match[2].trim() });
+    } else if (sections.length > 0) {
+      sections[sections.length - 1].body += "\n\n" + trimmed;
+    } else {
+      sections.push({ label: "", body: trimmed });
+    }
+  }
+  return sections;
+}
+
+const SECTION_COLORS: Record<string, string> = {
+  "OPENER": EMERALD,
+  "IF THEY SHOW INTEREST": "#22C55E",
+  "IF THEY SAY YES / SHOW INTEREST": "#22C55E",
+  "IF THEY SAY YES": "#22C55E",
+  "QUALIFYING QUESTIONS": BLUE,
+  "HANDLE OBJECTIONS": AMBER,
+  "THE ASK": EMERALD_DARK,
+  "IF THEY SAY NO": MUTED,
+  "IF THEY ASK WHY": BLUE,
+  "IF THEY BLOCK": AMBER,
+  "IF DM IS UNAVAILABLE": MUTED,
+};
+
 function ScriptBlock({ title, text, copyId }: { title: string; text: string; copyId: string }) {
   if (!text) return null;
+  const sections = parseScriptSections(text);
+  const hasMultipleSections = sections.length > 1 || (sections.length === 1 && sections[0].label);
+
   return (
-    <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center justify-between mb-1.5">
+    <div className="rounded-lg overflow-hidden" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+      <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>{title}</span>
         <CopyButton text={text} label="Copy" id={copyId} />
       </div>
-      <p className="text-xs leading-relaxed" style={{ color: TEXT }}>{text}</p>
+      {hasMultipleSections ? (
+        <div className="px-3 pb-3 space-y-2">
+          {sections.map((sec, i) => {
+            const color = SECTION_COLORS[sec.label] || TEXT;
+            return (
+              <div key={i}>
+                {sec.label && (
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color }}>{sec.label}</span>
+                  </div>
+                )}
+                <p className="text-xs leading-relaxed pl-3" style={{ color: TEXT }}>{sec.body}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-xs leading-relaxed px-3 pb-3" style={{ color: TEXT }}>{text}</p>
+      )}
     </div>
   );
 }
