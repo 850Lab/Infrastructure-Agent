@@ -263,7 +263,6 @@ export function registerTodayRoutes(app: Express) {
       };
       if (notes) callFields.Notes = notes;
       if (gatekeeper_name) callFields.Gatekeeper_Name = gatekeeper_name;
-      if (clientId) callFields.Client_ID = clientId;
 
       const created = await airtableCreate("Calls", callFields);
       if (!created) {
