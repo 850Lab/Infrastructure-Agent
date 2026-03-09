@@ -195,9 +195,15 @@ async function analyzeIntelWithGPT(
     };
   }
 
-  const prompt = `You are a B2B sales intelligence analyst for industrial contractor outreach in the Gulf Coast region (Texas, Louisiana).
+  const prompt = `You are a B2B sales intelligence analyst for Texas Cool Down Trailers — we sell and lease MOBILE COOLING TRAILERS to industrial contractors working in high-heat environments along the Gulf Coast (Texas, Louisiana). Our trailers keep crews safe and productive during plant turnarounds, shutdowns, refinery maintenance, and any extended heat-exposure work.
 
-Analyze the following web data about "${companyName}" and extract ACTIONABLE SALES INTEL — information that would help a sales rep have a meaningful, personalized conversation.
+YOUR JOB: Analyze the web data below about "${companyName}" and extract intel that helps our sales rep have a STRATEGIC conversation that leads to a trailer lease or purchase.
+
+WHAT WE SELL:
+- Mobile cooling stations/trailers deployed on-site at refineries, chemical plants, and industrial job sites
+- Available for short-term (turnaround/shutdown) or extended lease, or purchase
+- Designed for crews doing scaffolding, insulation, mechanical, coating, blasting, and maintenance work in extreme heat
+- Key buyers: Safety Directors, HSE Managers, Site Superintendents, Operations Managers
 
 WEBSITE CONTENT:
 ${websiteContent.slice(0, 12000) || "(No website content available)"}
@@ -211,17 +217,22 @@ ${searchContent.slice(0, 12000) || "(No search result content available)"}
 EXISTING INTEL:
 ${existingIntel || "(None)"}
 
-Extract and return a JSON object with these fields:
+Return a JSON object:
 {
-  "summary": "2-3 sentence intel brief about this company. Focus on what they DO, how big they are, and what makes them relevant. Include specific details like service areas, specialties, notable clients, or project types. Never say 'no information found' — if you have ANY data, lead with the most useful detail.",
-  "signals": ["Array of specific business signals found: recent projects, contract wins, expansions, hiring, safety incidents, regulatory filings, partnerships, equipment purchases. Each should be a specific finding, not generic."],
-  "recentActivity": "Any recent news, projects, job postings, or changes. Include dates if found. Empty string if truly nothing.",
-  "industryKeywords": ["Specific industry terms that describe their work: turnaround, shutdown, refinery, petrochemical, fabrication, mechanical, insulation, scaffolding, etc."],
-  "talkingPoints": ["3-5 specific conversation starters a sales rep could use on a cold call. Reference actual details about the company. E.g., 'I saw you completed work on the Motiva Port Arthur project — how did that go?' or 'Your team does turnaround work in Lake Charles — are you staffing up for spring?'"],
-  "confidence": "high/medium/low based on how much usable intel was found"
+  "summary": "2-3 sentence intel brief. Focus on: what they do, where they work, crew size if findable, what kind of sites/projects (refinery, plant, offshore, etc.), and WHY they would need cooling trailers. Connect every detail back to heat exposure potential.",
+  "signals": ["Specific findings that indicate they NEED cooling support: outdoor/indoor heat work, turnaround projects, refinery contracts, large crew sizes, OSHA safety focus, hiring surges, recent project wins at hot-environment sites. Each signal should explain WHY it means they need our trailers."],
+  "recentActivity": "Recent projects, hiring, contract wins, or expansions — especially anything involving refinery work, plant shutdowns, turnarounds, or summer season staffing. Include dates if found.",
+  "industryKeywords": ["Terms from their work that connect to heat exposure: turnaround, shutdown, refinery, petrochemical, insulation, scaffolding, blasting, coating, mechanical, plant maintenance, etc."],
+  "talkingPoints": ["3-5 STRATEGIC conversation bridges that connect a specific detail about THIS company to our cooling trailers. Each talking point should: (1) reference something specific about them, and (2) bridge naturally to why they need on-site cooling. Examples of GOOD talking points: 'I saw your crews do insulation work at refineries in Lake Charles — those jobs get brutal in summer heat. How are you handling crew cooling on-site right now?' or 'You have a turnaround project coming up at the Motiva facility — have you locked in your heat mitigation plan yet? We deploy cooling trailers specifically for that.' or 'With your team doing scaffolding on refinery units, OSHA heat illness regs are tightening — are you set up with dedicated cooling stations?' BAD talking points (DO NOT GENERATE THESE): 'How is your business going?' or 'Tell me about your services' or 'I noticed you have a website.' Every talking point MUST connect to cooling/heat/safety."],
+  "confidence": "high = found specific projects, crew details, or heat-related work indicators / medium = found general industrial work that implies heat exposure / low = minimal useful data"
 }
 
-Be specific and actionable. Generic statements like "They are a contractor" are useless. If their website is a basic brochure, say what you CAN determine from it. If search results mention them in project databases, bid lists, or news articles, extract those specifics.`;
+CRITICAL RULES:
+- Every talking point must be a BRIDGE from their specific situation to our cooling trailers
+- If they do ANY work at refineries, chemical plants, or outdoor industrial sites, that IS a cooling trailer opportunity — say why
+- If they mention OSHA, safety, HSE, or heat illness prevention, that directly connects to our product
+- If they're hiring or expanding crews, that means more people who need cooling
+- Do NOT generate generic business questions — every question must strategically lead toward a trailer conversation`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -248,6 +259,13 @@ Be specific and actionable. Generic statements like "They are a contractor" are 
 function formatIntelForRankReason(intel: CompanyIntel, existingReason: string): string {
   const parts: string[] = [];
 
+  const bucketLine = existingReason.split(".").find(s =>
+    s.includes("Hot follow-up") || s.includes("Fresh lead") || s.includes("Active pipeline") || s.includes("High priority")
+  );
+  if (bucketLine) {
+    parts.push(bucketLine.trim() + ".");
+  }
+
   if (intel.summary) {
     parts.push(intel.summary);
   }
@@ -256,18 +274,15 @@ function formatIntelForRankReason(intel: CompanyIntel, existingReason: string): 
     parts.push(`Talking point: ${intel.talkingPoints[0]}`);
   }
 
+  if (intel.talkingPoints.length > 1) {
+    parts.push(`Talking point: ${intel.talkingPoints[1]}`);
+  }
+
   if (intel.recentActivity) {
     parts.push(intel.recentActivity);
   }
 
-  const bucketLine = existingReason.split(".").find(s =>
-    s.includes("Hot follow-up") || s.includes("Fresh lead") || s.includes("Active pipeline") || s.includes("High priority")
-  );
-  if (bucketLine) {
-    parts.unshift(bucketLine.trim() + ".");
-  }
-
-  return parts.join(" ").slice(0, 1500);
+  return parts.join(" ").slice(0, 2000);
 }
 
 function formatIntelForEvidence(intel: CompanyIntel, existingEvidence: string): string {
@@ -399,7 +414,7 @@ export async function gatherCompanyIntel(
   }
 }
 
-export async function runWebIntelForTodayList(limit: number = 25): Promise<{
+export async function runWebIntelForTodayList(limit: number = 25, force: boolean = false): Promise<{
   processed: number;
   updated: number;
   errors: number;
@@ -446,10 +461,12 @@ export async function runWebIntelForTodayList(limit: number = 25): Promise<{
     if (!companyName) continue;
 
     const existingReason = String(f.Rank_Reason || "");
-    const hasWebIntel = existingReason.includes("Talking point:") || existingReason.includes("Web Intel:");
-    if (hasWebIntel) {
-      logIntel(`${companyName}: already has web intel — skipping`);
-      continue;
+    if (!force) {
+      const hasWebIntel = existingReason.includes("Talking point:") || existingReason.includes("Web Intel:");
+      if (hasWebIntel) {
+        logIntel(`${companyName}: already has web intel — skipping`);
+        continue;
+      }
     }
 
     const result = await gatherCompanyIntel(

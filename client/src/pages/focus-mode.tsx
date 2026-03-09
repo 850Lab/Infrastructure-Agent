@@ -508,16 +508,27 @@ function FocusCompanyCard({
               </div>
               {(() => {
                 const reason = company.rank_reason;
-                const tpMatch = reason.match(/Talking point:\s*(.+?)(?=\s+(?:Fresh lead|Hot follow-up|Active pipeline|High priority|As of|Currently|Recent)|\s*$)/i);
-                const talkingPoint = tpMatch ? tpMatch[1].trim() : null;
-                const mainText = reason.replace(/Talking point:\s*.+?(?=\s+(?:Fresh lead|Hot follow-up|Active pipeline|High priority|As of|Currently|Recent)|\s*$)/i, "").trim();
+                const talkingPoints: string[] = [];
+                const tpParts = reason.split(/Talking point:\s*/i);
+                const mainText = (tpParts[0] || "").trim();
+                for (let i = 1; i < tpParts.length; i++) {
+                  const cleaned = tpParts[i].trim();
+                  if (cleaned) talkingPoints.push(cleaned);
+                }
                 return (
                   <>
                     <p className="text-xs leading-relaxed" style={{ color: TEXT }}>{mainText}</p>
-                    {talkingPoint && (
-                      <div className="mt-2 rounded-lg px-3 py-2" style={{ background: "rgba(16,185,129,0.06)", border: `1px solid rgba(16,185,129,0.15)` }}>
-                        <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: EMERALD }}>Talking Point</div>
-                        <p className="text-xs italic" style={{ color: TEXT }}>{talkingPoint}</p>
+                    {talkingPoints.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {talkingPoints.map((tp, i) => (
+                          <div key={i} className="rounded-lg px-3 py-2" style={{ background: "rgba(16,185,129,0.06)", border: `1px solid rgba(16,185,129,0.15)` }}>
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <Target className="w-3 h-3" style={{ color: EMERALD }} />
+                              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Strategic Bridge {talkingPoints.length > 1 ? i + 1 : ""}</span>
+                            </div>
+                            <p className="text-xs italic" style={{ color: TEXT }}>{tp}</p>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </>

@@ -5,6 +5,7 @@ const limitArg = args.find(a => a.startsWith("--limit="));
 const limit = limitArg ? parseInt(limitArg.split("=")[1]) : 25;
 const companyArg = args.find(a => a.startsWith("--company="));
 const singleCompany = companyArg ? companyArg.split("=").slice(1).join("=") : null;
+const forceArg = args.includes("--force");
 
 async function main() {
   console.log("╔══════════════════════════════════════╗");
@@ -29,10 +30,10 @@ async function main() {
     return;
   }
 
-  console.log(`Config: limit=${limit}`);
+  console.log(`Config: limit=${limit}${forceArg ? " force=true" : ""}`);
   console.log();
 
-  const result = await runWebIntelForTodayList(limit);
+  const result = await runWebIntelForTodayList(limit, forceArg);
 
   console.log();
   console.log("═══════════════ SUMMARY ═══════════════");
