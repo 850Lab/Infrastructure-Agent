@@ -6,7 +6,7 @@ import { authMiddleware } from "./dashboard-routes";
 import { log } from "./logger";
 import { processCall } from "./call-engine";
 import { scopedFormula } from "./airtable-scoped";
-import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic } from "./openai";
+import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic, extractFollowupDate } from "./openai";
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 
@@ -399,6 +399,51 @@ export function registerTodayRoutes(app: Express) {
             log(`Authority detection: NO AUTHORITY for call ${callId} — ${authorityResult.reason}`, "today");
           }
 
+          const followupExtraction = extractFollowupDate(transcription);
+          let extractedFollowupDate: string | null = null;
+          if (followupExtraction.detected && followupExtraction.isoDate) {
+            extractedFollowupDate = followupExtraction.isoDate;
+            writebackFields.Next_Followup = followupExtraction.isoDate;
+            writebackFields.Followup_Source = `Transcript: "${followupExtraction.rawPhrase}" (${followupExtraction.confidence} confidence)`;
+            log(`Follow-up date extracted for call ${callId}: ${followupExtraction.isoDate} from "${followupExtraction.rawPhrase}" (${followupExtraction.source}, ${followupExtraction.confidence})`, "today");
+
+            try {
+              const callRecUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${encodeURIComponent("Calls")}/${callId}`;
+              const callRecRes = await fetch(callRecUrl, {
+                headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` },
+              });
+              if (callRecRes.ok) {
+                const callRec = await callRecRes.json();
+                const companyName = String(callRec.fields?.Company || "").trim();
+                if (companyName) {
+                  const escaped = companyName.replace(/'/g, "\\'");
+                  const formula = encodeURIComponent(`LOWER({company_name}) = LOWER('${escaped}')`);
+                  const compSearchUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${encodeURIComponent("Companies")}?filterByFormula=${formula}&pageSize=1`;
+                  const compRes = await fetch(compSearchUrl, {
+                    headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` },
+                  });
+                  if (compRes.ok) {
+                    const compData = await compRes.json();
+                    const compRec = compData.records?.[0];
+                    if (compRec) {
+                      await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${encodeURIComponent("Companies")}/${compRec.id}`, {
+                        method: "PATCH",
+                        headers: {
+                          Authorization: `Bearer ${AIRTABLE_API_KEY()}`,
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ fields: { Followup_Due: followupExtraction.isoDate } }),
+                      });
+                      log(`Company ${companyName}: Followup_Due set to ${followupExtraction.isoDate} (from transcript)`, "today");
+                    }
+                  }
+                }
+              }
+            } catch (e: any) {
+              log(`Failed to update company followup from transcript: ${e.message}`, "today");
+            }
+          }
+
           const writebackUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${encodeURIComponent("Calls")}/${callId}`;
           await fetch(writebackUrl, {
             method: "PATCH",
@@ -421,6 +466,8 @@ export function registerTodayRoutes(app: Express) {
             noAuthority: authorityDetected,
             authorityReason: authorityResult.reason || null,
             suggestedRole: authorityResult.suggestedRole || null,
+            extractedFollowupDate,
+            followupSource: followupExtraction.rawPhrase || null,
             ts: Date.now(),
           }, clientId);
         } catch (e: any) {

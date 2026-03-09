@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { webhookPayloadSchema } from "@shared/schema";
 import { fetchAirtableRecord, extractAudioAttachment, downloadAudio, updateAirtableRecord } from "./airtable";
-import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic } from "./openai";
+import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic, extractFollowupDate } from "./openai";
 import { registerMakeRoutes } from "./make-routes";
 import { registerActiveWorkRoutes } from "./active-work-routes";
 import { registerForemanRoutes } from "./foreman-routes";
@@ -80,6 +80,45 @@ async function handleWebhook(req: Request, res: Response) {
       writebackFields.Problem_Detected = deterministicResult.problem_detected;
       writebackFields.Proposed_Patch_Type = deterministicResult.proposed_patch_type;
       writebackFields.Analysis_Confidence = deterministicResult.confidence;
+    }
+
+    const followupExtraction = extractFollowupDate(transcription);
+    if (followupExtraction.detected && followupExtraction.isoDate) {
+      writebackFields.Next_Followup = followupExtraction.isoDate;
+      writebackFields.Followup_Source = `Transcript: "${followupExtraction.rawPhrase}" (${followupExtraction.confidence} confidence)`;
+      log(`Follow-up date extracted for record ${recordId}: ${followupExtraction.isoDate} from "${followupExtraction.rawPhrase}" (${followupExtraction.source}, ${followupExtraction.confidence})`, "webhook");
+
+      try {
+        const record2 = await fetchAirtableRecord(recordId);
+        const companyName = String(record2.fields?.Company || "").trim();
+        if (companyName) {
+          const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY!;
+          const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID!;
+          const escaped = companyName.replace(/'/g, "\\'");
+          const formula = encodeURIComponent(`LOWER({company_name}) = LOWER('${escaped}')`);
+          const compSearchUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent("Companies")}?filterByFormula=${formula}&pageSize=1`;
+          const compRes = await fetch(compSearchUrl, {
+            headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
+          });
+          if (compRes.ok) {
+            const compData = await compRes.json();
+            const compRec = compData.records?.[0];
+            if (compRec) {
+              await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent("Companies")}/${compRec.id}`, {
+                method: "PATCH",
+                headers: {
+                  Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ fields: { Followup_Due: followupExtraction.isoDate } }),
+              });
+              log(`Company ${companyName}: Followup_Due set to ${followupExtraction.isoDate} (from transcript via webhook)`, "webhook");
+            }
+          }
+        }
+      } catch (e: any) {
+        log(`Failed to update company followup from webhook transcript: ${e.message}`, "webhook");
+      }
     }
 
     await updateAirtableRecord(recordId, writebackFields);

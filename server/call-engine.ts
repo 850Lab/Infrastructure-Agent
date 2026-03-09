@@ -307,7 +307,20 @@ export async function processCall(call: CallRecord, clientId?: string, atConfig?
   }
 
   const callUpdate: Record<string, any> = { Processed: true };
-  if (followupDate) {
+
+  let existingTranscriptFollowup: string | null = null;
+  try {
+    const callRec = await airtableRequest(`${callTable}/${call.id}`, {}, atConfig);
+    const fs = callRec.fields?.Followup_Source;
+    if (fs && String(fs).startsWith("Transcript:") && callRec.fields?.Next_Followup) {
+      existingTranscriptFollowup = String(callRec.fields.Next_Followup);
+      logEngine(`Transcript-extracted follow-up already set for ${call.company}: ${existingTranscriptFollowup} — preserving over default`);
+    }
+  } catch {}
+
+  if (existingTranscriptFollowup) {
+    followupDate = existingTranscriptFollowup;
+  } else if (followupDate) {
     callUpdate.Next_Followup = followupDate;
   }
 

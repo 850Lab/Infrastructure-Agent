@@ -112,6 +112,223 @@ export function analyzeContainmentDeterministic(transcription: string): Determin
   };
 }
 
+export interface FollowupDateExtraction {
+  detected: boolean;
+  rawPhrase: string | null;
+  isoDate: string | null;
+  confidence: "high" | "medium" | "low";
+  source: "explicit_date" | "relative_time" | "day_of_week" | "none";
+}
+
+export function extractFollowupDate(transcription: string, referenceDate?: Date): FollowupDateExtraction {
+  const ref = referenceDate || new Date();
+  const lower = transcription.toLowerCase();
+  const noResult: FollowupDateExtraction = { detected: false, rawPhrase: null, isoDate: null, confidence: "low", source: "none" };
+
+  const callbackPhrases = [
+    /call\s*(?:me\s*)?back\s+(.+?)(?:[.!?,]|$)/gi,
+    /reach\s*(?:back\s*)?out\s+(.+?)(?:[.!?,]|$)/gi,
+    /follow\s*up\s+(.+?)(?:[.!?,]|$)/gi,
+    /try\s*(?:me\s*)?(?:back\s*)?(?:again\s+)?(.+?)(?:[.!?,]|$)/gi,
+    /check\s*back\s+(.+?)(?:[.!?,]|$)/gi,
+    /(?:call|contact|reach)\s+(?:us|me)\s+(.+?)(?:[.!?,]|$)/gi,
+    /(?:i'll|i\s*will)\s+be\s+(?:available|free|here|around)\s+(.+?)(?:[.!?,]|$)/gi,
+    /(?:busy|tied up|unavailable)\s+(?:until|till)\s+(.+?)(?:[.!?,]|$)/gi,
+    /(?:let's|let\s*us)\s+(?:talk|connect|touch base)\s+(.+?)(?:[.!?,]|$)/gi,
+  ];
+
+  let bestMatch: { phrase: string; date: Date; confidence: "high" | "medium"; source: FollowupDateExtraction["source"] } | null = null;
+
+  for (const pattern of callbackPhrases) {
+    let match;
+    while ((match = pattern.exec(lower)) !== null) {
+      const timePhrase = match[1].trim();
+      const parsed = parseTimePhrase(timePhrase, ref);
+      if (parsed) {
+        if (!bestMatch || parsed.confidence === "high") {
+          bestMatch = { phrase: match[0].trim(), ...parsed };
+        }
+      }
+    }
+  }
+
+  const explicitPatterns = [
+    /(?:on|after|around)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?(?:\s+of\s+)?(?:\s+(january|february|march|april|may|june|july|august|september|october|november|december))?/gi,
+    /(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?/gi,
+    /(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?/g,
+  ];
+
+  for (const pattern of explicitPatterns) {
+    let match;
+    while ((match = pattern.exec(lower)) !== null) {
+      const context = lower.slice(Math.max(0, match.index - 60), match.index + match[0].length + 20);
+      const hasCallbackContext = /call\s*(?:me\s*)?back|reach\s*(?:back\s*)?out|follow\s*up|check\s*back|contact\s+(?:us|me)|available|free\s+(?:on|after|around)|try\s*(?:me\s*)?(?:back|again)|talk|connect|touch\s*base|busy\s+until|unavailable\s+until/i.test(context);
+      if (!hasCallbackContext) continue;
+
+      const parsed = parseExplicitDate(match, ref);
+      if (parsed && (!bestMatch || parsed.confidence === "high")) {
+        bestMatch = { phrase: match[0].trim(), ...parsed };
+      }
+    }
+  }
+
+  if (!bestMatch) return noResult;
+
+  return {
+    detected: true,
+    rawPhrase: bestMatch.phrase,
+    isoDate: bestMatch.date.toISOString(),
+    confidence: bestMatch.confidence,
+    source: bestMatch.source,
+  };
+}
+
+function parseTimePhrase(phrase: string, ref: Date): { date: Date; confidence: "high" | "medium"; source: FollowupDateExtraction["source"] } | null {
+  const lower = phrase.toLowerCase().trim();
+
+  const dayMap: Record<string, number> = {
+    sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+  };
+  for (const [dayName, dayNum] of Object.entries(dayMap)) {
+    if (lower.includes(dayName)) {
+      const d = new Date(ref);
+      const currentDay = d.getDay();
+      let daysAhead = dayNum - currentDay;
+      if (daysAhead <= 0) daysAhead += 7;
+      d.setDate(d.getDate() + daysAhead);
+      d.setHours(9, 0, 0, 0);
+      return { date: d, confidence: "high", source: "day_of_week" };
+    }
+  }
+
+  if (/tomorrow/i.test(lower)) {
+    const d = new Date(ref);
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "high", source: "relative_time" };
+  }
+
+  const relativeMatch = lower.match(/(?:in\s+)?(\d+|a|an|one|two|three|four|five|couple(?:\s+of)?)\s+(day|week|month|hour)s?/i);
+  if (relativeMatch) {
+    const numWord = relativeMatch[1].toLowerCase();
+    const numMap: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5 };
+    let num = numMap[numWord] || parseInt(numWord) || 1;
+    if (numWord.startsWith("couple")) num = 2;
+    const unit = relativeMatch[2].toLowerCase();
+    const d = new Date(ref);
+    if (unit === "hour") {
+      d.setHours(d.getHours() + num);
+      return { date: d, confidence: "high", source: "relative_time" };
+    }
+    if (unit === "day") d.setDate(d.getDate() + num);
+    else if (unit === "week") d.setDate(d.getDate() + num * 7);
+    else if (unit === "month") d.setMonth(d.getMonth() + num);
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "high", source: "relative_time" };
+  }
+
+  if (/next\s+week/i.test(lower)) {
+    const d = new Date(ref);
+    d.setDate(d.getDate() + 7);
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "medium", source: "relative_time" };
+  }
+
+  if (/next\s+month/i.test(lower)) {
+    const d = new Date(ref);
+    d.setMonth(d.getMonth() + 1);
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "medium", source: "relative_time" };
+  }
+
+  if (/end\s+of\s+(the\s+)?week/i.test(lower)) {
+    const d = new Date(ref);
+    const daysToFri = 5 - d.getDay();
+    d.setDate(d.getDate() + (daysToFri <= 0 ? daysToFri + 7 : daysToFri));
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "medium", source: "relative_time" };
+  }
+
+  if (/end\s+of\s+(the\s+)?month/i.test(lower)) {
+    const d = new Date(ref);
+    d.setMonth(d.getMonth() + 1, 0);
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "medium", source: "relative_time" };
+  }
+
+  if (/after\s+(the\s+)?holidays?/i.test(lower) || /after\s+(the\s+)?new\s+year/i.test(lower)) {
+    const d = new Date(ref);
+    d.setMonth(0, 6);
+    if (d <= ref) d.setFullYear(d.getFullYear() + 1);
+    d.setHours(9, 0, 0, 0);
+    return { date: d, confidence: "medium", source: "relative_time" };
+  }
+
+  const monthMap: Record<string, number> = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+  };
+  for (const [monthName, monthNum] of Object.entries(monthMap)) {
+    if (lower.includes(monthName)) {
+      const dayMatch = lower.match(/(\d{1,2})/);
+      const d = new Date(ref);
+      d.setMonth(monthNum, dayMatch ? parseInt(dayMatch[1]) : 1);
+      if (d <= ref) d.setFullYear(d.getFullYear() + 1);
+      d.setHours(9, 0, 0, 0);
+      return { date: d, confidence: "high", source: "explicit_date" };
+    }
+  }
+
+  return null;
+}
+
+function parseExplicitDate(match: RegExpExecArray, ref: Date): { date: Date; confidence: "high" | "medium"; source: FollowupDateExtraction["source"] } | null {
+  const monthMap: Record<string, number> = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+  };
+
+  const full = match[0].toLowerCase();
+
+  if (full.includes("/")) {
+    const parts = full.match(/(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?/);
+    if (parts) {
+      const m = parseInt(parts[1]) - 1;
+      const day = parseInt(parts[2]);
+      let year = parts[3] ? parseInt(parts[3]) : ref.getFullYear();
+      if (year < 100) year += 2000;
+      const d = new Date(year, m, day, 9, 0, 0);
+      if (d <= ref) d.setFullYear(d.getFullYear() + 1);
+      return { date: d, confidence: "high", source: "explicit_date" };
+    }
+  }
+
+  for (const [name, num] of Object.entries(monthMap)) {
+    if (full.includes(name)) {
+      const dayMatch = full.match(/(\d{1,2})/);
+      const d = new Date(ref);
+      d.setMonth(num, dayMatch ? parseInt(dayMatch[1]) : 1);
+      if (d <= ref) d.setFullYear(d.getFullYear() + 1);
+      d.setHours(9, 0, 0, 0);
+      return { date: d, confidence: "high", source: "explicit_date" };
+    }
+  }
+
+  const dayOnly = full.match(/(\d{1,2})/);
+  if (dayOnly) {
+    const day = parseInt(dayOnly[1]);
+    if (day >= 1 && day <= 31) {
+      const d = new Date(ref);
+      d.setDate(day);
+      if (d <= ref) d.setMonth(d.getMonth() + 1);
+      d.setHours(9, 0, 0, 0);
+      return { date: d, confidence: "medium", source: "explicit_date" };
+    }
+  }
+
+  return null;
+}
+
 export async function analyzeContainment(transcription: string): Promise<string> {
   log("Analyzing containment language...", "openai");
 
