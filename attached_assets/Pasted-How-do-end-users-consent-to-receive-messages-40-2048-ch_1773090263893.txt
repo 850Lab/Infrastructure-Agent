@@ -1,0 +1,19 @@
+How do end-users consent to receive messages? (40-2048 characters)
+Example: End users opt-in by visiting www.examplewebsite.com and adding their phone number. They then check a box agreeing to receive text messages from Example Brand. Opt-in occurs after end users create an account; see screenshot of opt-in (www.example.com/screenshot-of-the-form-field). Additionally, end users can also opt-in by texting START to (111) 222-3333 to opt in.
+This field should describe how end users opt-in to the campaign, therefore giving consent to the sender to receive their messages. If multiple opt-in methods can be used for the same campaign, they must all be listed. 
+Learn more
+Privacy Policy URL
+https://example.com/privacy-policy
+Enter a direct link to your privacy policy. This document must detail what data you collect, how it’s used, and confirm that information won’t be shared with third parties or for marketing purposes.
+Terms and Conditions URL
+https://example.com/terms-and-conditions
+Provide a direct link to your terms and conditions. Ensure it includes the program name, description, message/data rates, message frequency, support contact info, and opt-out instructions (HELP and STOP in bold). For more details, see Twilio Support Article.
+Opt-in Keywords (max 255 characters)
+Example: Subscribe, Start
+If end users can text in a keyword (for example, “Subscribe”) to start receiving messages from your campaign, those keywords must be provided. If you do not support opt-in via text, please leave this blank. 
+Learn more
+Press Delete or Backspace to remove. Press Enter to toggle selection.
+Opt-in Message (20-320 characters)
+Example: Acme Corporation: You are now opted-in. For help, reply HELP. To opt-out, reply STOP
+If end users can text in a keyword to start receiving messages from your campaign, the auto-reply messages sent to the end users must be provided. The opt-in response should include the Brand name, confirmation of opt-in enrollment to a recurring message campaign, how to get help, and clear description of how to opt-out. If you do not support opt-in via text, please leave this blank. 
+Learn more
