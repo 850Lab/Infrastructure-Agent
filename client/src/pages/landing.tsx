@@ -4,7 +4,8 @@ import {
   Phone, PhoneCall, PhoneOff, Mail, BarChart3, Users, Target, Brain,
   ArrowRight, ArrowLeft, CheckCircle2, Loader2, Mic, MicOff,
   Building2, User, MapPin, Clock, FileText, TrendingUp,
-  Calendar, Shield, ChevronRight, Play, CircleDot
+  Calendar, Shield, ChevronRight, Play, CircleDot, Ban, ClipboardCheck,
+  AlertTriangle, ShieldCheck, UserX
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -197,6 +198,34 @@ function AccountScreen() {
               <Calendar className="w-3 h-3" /> Schedule
             </button>
           </div>
+          <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-4 h-4" style={{ color: EMERALD }} />
+              <span className="text-xs font-bold" style={{ color: NAVY }}>Compliance Status</span>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: MUTED }}>DNC Registry</span>
+                <span className="font-semibold" style={{ color: EMERALD }}>Cleared</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: MUTED }}>Internal Opt-Out List</span>
+                <span className="font-semibold" style={{ color: EMERALD }}>Not Listed</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: MUTED }}>Contact Type</span>
+                <span className="font-semibold" style={{ color: BLUE }}>B2B — Business Line</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: MUTED }}>Last Contact</span>
+                <span className="font-semibold" style={{ color: NAVY }}>Never (New Lead)</span>
+              </div>
+            </div>
+          </div>
+          <button className="w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-opacity hover:opacity-80" style={{ background: "rgba(239,68,68,0.06)", color: RED, border: `1px solid rgba(239,68,68,0.15)` }}>
+            <UserX className="w-3.5 h-3.5" />
+            Add to Do Not Contact List
+          </button>
         </div>
       </div>
     </MockScreen>
@@ -241,10 +270,18 @@ function CallScreen() {
           </div>
         </div>
 
+        <div className="rounded-lg p-3" style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.15)` }}>
+          <div className="flex items-center gap-2 text-xs" style={{ color: EMERALD }}>
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span className="font-semibold">B2B Business Call — DNC Cleared — Opt-out monitoring active</span>
+          </div>
+        </div>
+
         <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
           <div className="flex items-center gap-2 mb-2">
             <FileText className="w-4 h-4" style={{ color: BLUE }} />
             <span className="text-xs font-bold" style={{ color: NAVY }}>Live Transcription</span>
+            <span className="text-xs px-2 py-0.5 rounded-full ml-auto" style={{ background: "rgba(16,185,129,0.08)", color: EMERALD }}>Opt-out detection: Active</span>
           </div>
           <div className="space-y-2 text-xs" style={{ color: MUTED }}>
             <p><span className="font-semibold" style={{ color: NAVY }}>You:</span> Hi Mike, this is James with Texas Automation Systems. I noticed Gulf Coast just picked up the Exxon Baytown maintenance contract...</p>
@@ -354,6 +391,27 @@ function AnalysisScreen() {
             </div>
             <p className="text-xs" style={{ color: MUTED }}>Automatically moved based on call analysis</p>
           </div>
+
+          <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-2 mb-2">
+              <ClipboardCheck className="w-4 h-4" style={{ color: EMERALD }} />
+              <span className="text-xs font-bold" style={{ color: NAVY }}>Compliance Audit</span>
+            </div>
+            <div className="space-y-2">
+              {[
+                ["Opt-Out Requested", "No", EMERALD],
+                ["DNC Status", "Cleared (pre-call)", EMERALD],
+                ["Recording Consent", "Verbal — Logged", EMERALD],
+                ["Contact Type", "B2B Business Line", BLUE],
+                ["Call Initiated By", "Human (Click-to-Call)", BLUE],
+              ].map(([label, value, color]) => (
+                <div key={label as string} className="flex items-center justify-between text-xs">
+                  <span style={{ color: MUTED }}>{label}</span>
+                  <span className="font-semibold" style={{ color: color as string }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </MockScreen>
@@ -377,7 +435,7 @@ function PipelineScreen() {
             { label: "Calls Today", value: "14", change: "+3 vs avg" },
             { label: "Connect Rate", value: "38%", change: "+5% this week" },
             { label: "Meetings Set", value: "4", change: "this week" },
-            { label: "Pipeline Value", value: "$186K", change: "+$42K this month" },
+            { label: "Opt-Out Rate", value: "0.8%", change: "2 this month" },
           ].map((stat) => (
             <div key={stat.label} className="rounded-lg p-3 text-center" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
               <div className="text-xl font-bold" style={{ color: NAVY }}>{stat.value}</div>
@@ -419,6 +477,27 @@ function PipelineScreen() {
             ))}
           </div>
         </div>
+
+        <div className="rounded-lg p-3" style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.15)` }}>
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-4 h-4" style={{ color: EMERALD }} />
+            <span className="text-xs font-bold" style={{ color: NAVY }}>Compliance Dashboard</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "DNC Checks", value: "247", sub: "all cleared" },
+              { label: "Opt-Outs Honored", value: "2", sub: "100% compliance" },
+              { label: "Consent Logs", value: "189", sub: "all recorded" },
+              { label: "Audit Trail", value: "Complete", sub: "exportable" },
+            ].map((item) => (
+              <div key={item.label} className="text-center">
+                <div className="text-sm font-bold" style={{ color: NAVY }}>{item.value}</div>
+                <div className="text-xs" style={{ color: MUTED }}>{item.label}</div>
+                <div className="text-xs" style={{ color: EMERALD }}>{item.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </MockScreen>
   );
@@ -426,10 +505,10 @@ function PipelineScreen() {
 
 function DemoStep({ step }: { step: number }) {
   const descriptions = [
-    { title: "Review the account", subtitle: "Every lead is presented with full context — company details, decision maker info, AI-generated talking points, and a personalized call script. Your rep knows exactly who they're calling and why." },
-    { title: "Make the call", subtitle: "One-click calling powered by Twilio. Calls are recorded with consent, transcribed in real-time, and tagged with compliance metadata. Your team calls directly from the platform." },
-    { title: "AI analyzes the conversation", subtitle: "After each call, AI processes the transcription to extract key insights — interest level, decision maker status, next steps, and follow-up dates. Everything is logged automatically." },
-    { title: "Track your pipeline", subtitle: "See real-time performance across your team. Call volume, connect rates, pipeline progression, and revenue impact — all in one view. Know what's working and where to focus." },
+    { title: "Review the account", subtitle: "Every lead is presented with full context — company details, decision maker info, AI-generated talking points, and compliance status. DNC registry and opt-out lists are checked before any contact is made." },
+    { title: "Make the call", subtitle: "Human-initiated, one-click calling powered by Twilio. Calls are recorded with consent, transcribed in real-time, and monitored for opt-out requests. Every call generates a full compliance audit trail." },
+    { title: "AI analyzes the conversation", subtitle: "After each call, AI processes the transcription to extract insights, detect opt-out requests, log consent status, and schedule follow-ups. Compliance data is captured automatically alongside business intelligence." },
+    { title: "Track your pipeline", subtitle: "See real-time performance and compliance metrics across your team. Call volume, connect rates, opt-out tracking, DNC checks, and consent logs — all in one view." },
   ];
 
   if (step >= 4) return null;
