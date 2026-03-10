@@ -445,9 +445,9 @@ function PipelineScreen() {
           ))}
         </div>
 
-        <div className="grid grid-cols-5 gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
           {stages.map((stage) => (
-            <div key={stage.name} className="rounded-lg p-2" style={{ border: `1px solid ${BORDER}` }}>
+            <div key={stage.name} className="rounded-lg p-2 flex-shrink-0" style={{ border: `1px solid ${BORDER}`, minWidth: "120px", flex: "1 1 0" }}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold" style={{ color: NAVY }}>{stage.name}</span>
                 <span className="text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${stage.color}15`, color: stage.color }}>{stage.count}</span>
@@ -528,7 +528,7 @@ function DemoStep({ step }: { step: number }) {
 export default function LandingPage() {
   const [, navigate] = useLocation();
   const [step, setStep] = useState(0);
-  const totalSteps = 5;
+  const totalSteps = 6;
 
   const goNext = () => setStep(prev => Math.min(prev + 1, totalSteps - 1));
   const goPrev = () => setStep(prev => Math.max(prev - 1, 0));
@@ -570,7 +570,7 @@ export default function LandingPage() {
 
           {step > 0 && step < 5 && (
             <>
-              <StepIndicator current={step - 1} total={totalSteps} onStep={(n) => setStep(n + 1)} />
+              <StepIndicator current={step - 1} total={5} onStep={(n) => setStep(n + 1)} />
               <div className="mt-6">
                 <DemoStep step={step - 1} />
                 <div className="transition-all">
