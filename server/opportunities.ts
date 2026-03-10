@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { authMiddleware } from "./dashboard-routes";
-import { syncDealToHubSpot, isHubSpotConnected } from "./hubspot-sync";
+import { syncDealToHubSpot, isHubSpotConnected, createInvoiceInHubSpot, type InvoiceData } from "./hubspot-sync";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -168,6 +168,42 @@ function syncDealToHubSpotBackground(clientId: string, companyName: string, stag
   })();
 }
 
+function autoCreateInvoiceBackground(clientId: string, companyName: string, valueEstimate?: number) {
+  (async () => {
+    try {
+      const connected = await isHubSpotConnected(clientId);
+      if (!connected) return;
+
+      const amount = valueEstimate || 28000;
+      const result = await createInvoiceInHubSpot(clientId, {
+        companyName,
+        proposalTitle: "Sale of Cool Down Trailers",
+        lineItems: [{ description: "Texas Cool Down Trailer", quantity: 1, unitPrice: amount }],
+        taxRate: 8.25,
+        features: [
+          "Air-conditioned cooling station",
+          "Designed for industrial job sites",
+          "Workforce recovery / break area",
+          "Heat stress prevention support",
+          "Durable trailer construction",
+          "Electrical connection compatible with generator or site power",
+        ],
+        terms: [
+          "Trailers inspected prior to delivery",
+          "Warranty and maintenance options available",
+          "50% deposit",
+          "Balance upon receipt",
+        ],
+      });
+      if (result.synced) {
+        logOpp(`Auto-invoice created for ${companyName}: $${result.total?.toLocaleString()}`);
+      }
+    } catch (e: any) {
+      logOpp(`Auto-invoice error for ${companyName}: ${e.message}`);
+    }
+  })();
+}
+
 export async function handleCallOutcome(
   companyName: string,
   outcome: string,
@@ -191,6 +227,7 @@ export async function handleCallOutcome(
         });
         if (clientId) {
           syncDealToHubSpotBackground(clientId, companyName, "Won");
+          autoCreateInvoiceBackground(clientId, companyName, existing.fields.Value_Estimate);
         }
         return { action: "updated_to_won", opportunityId: existing.id };
       } else {
@@ -203,6 +240,7 @@ export async function handleCallOutcome(
         });
         if (clientId) {
           syncDealToHubSpotBackground(clientId, companyName, "Won");
+          autoCreateInvoiceBackground(clientId, companyName);
         }
         return { action: "created_won", opportunityId: rec?.id };
       }
@@ -377,6 +415,7 @@ export function registerOpportunityRoutes(app: Express) {
     try {
       const { id } = req.params;
       const { stage, next_action, next_action_due, notes, value_estimate, owner } = req.body;
+      const clientId = (req as any).user?.clientId;
 
       const updates: Record<string, any> = {
         Last_Updated: new Date().toISOString(),
@@ -411,6 +450,11 @@ export function registerOpportunityRoutes(app: Express) {
         companyName = String(rec.fields.Company || "");
       }
 
+      if (stage === "Won" && clientId && companyName) {
+        syncDealToHubSpotBackground(clientId, companyName, "Won");
+        autoCreateInvoiceBackground(clientId, companyName, rec.fields.Value_Estimate);
+      }
+
       res.json({
         id: rec.id,
         company: companyName,
@@ -425,6 +469,72 @@ export function registerOpportunityRoutes(app: Express) {
     } catch (err: any) {
       logOpp(`POST /api/opportunities/:id/update error: ${err.message}`);
       res.status(500).json({ error: "Failed to update opportunity" });
+    }
+  });
+
+  app.post("/api/opportunities/:id/invoice", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        return res.status(400).json({ error: "No client context" });
+      }
+
+      const connected = await isHubSpotConnected(clientId);
+      if (!connected) {
+        return res.status(400).json({ error: "HubSpot not connected" });
+      }
+
+      const table = encodeURIComponent("Opportunities");
+      const fields = ["Company", "Stage", "Value_Estimate", "Notes"];
+      const fieldParams = fields.map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
+      const oppData = await airtableRequest(`${table}/${id}?${fieldParams}`);
+
+      let companyName = "";
+      if (Array.isArray(oppData.fields.Company) && oppData.fields.Company.length > 0) {
+        const nameMap = await resolveCompanyNames(oppData.fields.Company);
+        companyName = nameMap.get(oppData.fields.Company[0]) || "";
+      } else if (typeof oppData.fields.Company === "string") {
+        companyName = oppData.fields.Company;
+      }
+
+      if (!companyName) {
+        return res.status(400).json({ error: "Could not resolve company name" });
+      }
+
+      const invoiceData: InvoiceData = {
+        companyName,
+        contactName: req.body.contactName,
+        contactTitle: req.body.contactTitle,
+        contactEmail: req.body.contactEmail,
+        officeAddress: req.body.officeAddress,
+        proposalTitle: req.body.proposalTitle,
+        lineItems: req.body.lineItems || [],
+        taxRate: req.body.taxRate ?? 0,
+        terms: req.body.terms || [],
+        features: req.body.features || [],
+        depositPercent: req.body.depositPercent,
+      };
+
+      if (!invoiceData.lineItems.length) {
+        return res.status(400).json({ error: "At least one line item is required" });
+      }
+
+      const result = await createInvoiceInHubSpot(clientId, invoiceData);
+
+      if (!result.synced) {
+        return res.status(500).json({ error: "Failed to create invoice in HubSpot" });
+      }
+
+      res.json({
+        success: true,
+        noteId: result.noteId,
+        dealId: result.dealId,
+        total: result.total,
+      });
+    } catch (err: any) {
+      logOpp(`POST /api/opportunities/:id/invoice error: ${err.message}`);
+      res.status(500).json({ error: "Failed to create invoice" });
     }
   });
 

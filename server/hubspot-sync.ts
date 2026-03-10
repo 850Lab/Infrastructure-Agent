@@ -63,7 +63,13 @@ async function hsApi(token: string, path: string, options: RequestInit = {}): Pr
     throw new Error(`HubSpot ${resp.status}: ${text.slice(0, 300)}`);
   }
 
-  return resp.json();
+  const text = await resp.text();
+  if (!text || text.trim() === "") return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 async function findContactByEmail(token: string, email: string): Promise<string | null> {
@@ -367,6 +373,166 @@ export async function syncContactToHubSpot(clientId: string, data: {
     return { synced: true, contactId: hsContactId || undefined };
   } catch (e: any) {
     log(`[hubspot-sync] Contact sync error for ${data.email}: ${e.message}`, "hubspot");
+    return { synced: false };
+  }
+}
+
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface InvoiceData {
+  companyName: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactEmail?: string;
+  officeAddress?: string;
+  proposalTitle?: string;
+  lineItems: InvoiceLineItem[];
+  taxRate?: number;
+  terms?: string[];
+  features?: string[];
+  depositPercent?: number;
+}
+
+function formatInvoiceAsNote(data: InvoiceData): string {
+  const date = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+
+  const subtotal = data.lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const taxRate = data.taxRate ?? 0;
+  const taxAmount = subtotal * (taxRate / 100);
+  const total = subtotal + taxAmount;
+
+  let note = `SALES PROPOSAL\n`;
+  note += `Date: ${date}\n\n`;
+
+  if (data.contactName || data.contactTitle || data.companyName) {
+    note += `To: ${data.contactName || ""}`;
+    if (data.contactTitle) note += `\n${data.contactTitle}`;
+    note += `\n${data.companyName}`;
+    if (data.officeAddress) note += `\n${data.officeAddress}`;
+    note += `\n\n`;
+  }
+
+  note += `Proposal: ${data.proposalTitle || "Sale of Equipment"}\n\n`;
+  note += `--- Equipment Sale ---\n`;
+
+  for (const item of data.lineItems) {
+    const lineTotal = item.quantity * item.unitPrice;
+    note += `${item.description}  |  Qty: ${item.quantity}  |  Unit: $${item.unitPrice.toLocaleString()}  |  Total: $${lineTotal.toLocaleString()}\n`;
+  }
+
+  note += `\nSubtotal: $${subtotal.toLocaleString()}`;
+  if (taxRate > 0) {
+    note += `\nTax Rate: ${taxRate}%`;
+    note += `\nSales Tax: $${taxAmount.toLocaleString()}`;
+  }
+  note += `\nTotal: $${total.toLocaleString()}\n`;
+
+  if (data.features && data.features.length > 0) {
+    note += `\n--- Features ---\n`;
+    for (const f of data.features) {
+      note += `- ${f}\n`;
+    }
+  }
+
+  if (data.terms && data.terms.length > 0) {
+    note += `\n--- Terms ---\n`;
+    for (const t of data.terms) {
+      note += `- ${t}\n`;
+    }
+  }
+
+  return note;
+}
+
+export async function createInvoiceInHubSpot(clientId: string, data: InvoiceData): Promise<{
+  synced: boolean;
+  noteId?: string;
+  dealId?: string;
+  total?: number;
+}> {
+  if (!clientId) return { synced: false };
+
+  const accessToken = await getAccessToken(clientId);
+  if (!accessToken) return { synced: false };
+
+  try {
+    const subtotal = data.lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const taxRate = data.taxRate ?? 0;
+    const taxAmount = subtotal * (taxRate / 100);
+    const total = subtotal + taxAmount;
+
+    const noteBody = formatInvoiceAsNote(data);
+
+    const note = await hsApi(accessToken, "/crm/v3/objects/notes", {
+      method: "POST",
+      body: JSON.stringify({
+        properties: {
+          hs_timestamp: new Date().toISOString(),
+          hs_note_body: noteBody,
+        },
+      }),
+    });
+
+    let dealId: string | undefined;
+    const existingDealId = await findDealByName(accessToken, `${data.companyName} - Won`);
+    if (!existingDealId) {
+      const dealSearch = await findDealByName(accessToken, data.companyName);
+      dealId = dealSearch || undefined;
+    } else {
+      dealId = existingDealId;
+    }
+
+    if (dealId) {
+      await hsApi(accessToken, `/crm/v3/objects/deals/${dealId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          properties: { amount: String(total) },
+        }),
+      });
+
+      if (note?.id) {
+        try {
+          await hsApi(accessToken, `/crm/v3/objects/notes/${note.id}/associations/deals/${dealId}/note_to_deal`, {
+            method: "PUT",
+          });
+        } catch (e: any) {
+          log(`[hubspot-sync] Invoice note-deal association failed: ${e.message}`, "hubspot");
+        }
+      }
+    }
+
+    const hsCompanyId = await findCompanyByName(accessToken, data.companyName);
+    if (hsCompanyId && note?.id) {
+      try {
+        await hsApi(accessToken, `/crm/v3/objects/notes/${note.id}/associations/companies/${hsCompanyId}/note_to_company`, {
+          method: "PUT",
+        });
+      } catch (e: any) {
+        log(`[hubspot-sync] Invoice note-company association failed: ${e.message}`, "hubspot");
+      }
+    }
+
+    if (data.contactEmail && note?.id) {
+      const hsContactId = await findContactByEmail(accessToken, data.contactEmail);
+      if (hsContactId) {
+        try {
+          await hsApi(accessToken, `/crm/v3/objects/notes/${note.id}/associations/contacts/${hsContactId}/note_to_contact`, {
+            method: "PUT",
+          });
+        } catch (e: any) {
+          log(`[hubspot-sync] Invoice note-contact association failed: ${e.message}`, "hubspot");
+        }
+      }
+    }
+
+    log(`[hubspot-sync] Invoice created for ${data.companyName}: $${total.toLocaleString()} (note=${note?.id || "none"}, deal=${dealId || "none"})`, "hubspot");
+    return { synced: true, noteId: note?.id, dealId, total };
+  } catch (e: any) {
+    log(`[hubspot-sync] Invoice creation error for ${data.companyName}: ${e.message}`, "hubspot");
     return { synced: false };
   }
 }

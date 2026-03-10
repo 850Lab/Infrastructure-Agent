@@ -106,6 +106,7 @@ function HubSpotCard() {
             <p className="text-xs" style={{ color: MUTED }}>New DMs sync as HubSpot contacts</p>
             <p className="text-xs" style={{ color: MUTED }}>Qualified deals create HubSpot deals</p>
             <p className="text-xs" style={{ color: MUTED }}>Companies linked automatically</p>
+            <p className="text-xs" style={{ color: MUTED }}>Won deals auto-generate invoices in HubSpot</p>
           </div>
           <div className="flex gap-2">
             <Button

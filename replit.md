@@ -38,5 +38,5 @@ Key features include:
 -   **Make.com**: Integrated for scenario auditing and blueprint management.
 -   **Apollo.io**: Used for decision-maker enrichment and data acquisition.
 -   **Outscraper**: Utilized for Google Maps searches and website lookup services.
--   **HubSpot**: Per-client OAuth integration. Auto-syncs call outcomes as notes/engagements, DMs as contacts, qualified deals as HubSpot deals, and companies. Sync module: `server/hubspot-sync.ts`. OAuth routes: `server/hubspot.ts`. Token storage: `hubspot_tokens` DB table.
+-   **HubSpot**: Per-client OAuth integration. Auto-syncs call outcomes as notes/engagements, DMs as contacts, qualified deals as HubSpot deals, and companies. Won deals auto-generate invoices (sales proposals) as structured notes linked to deals/companies/contacts. Manual invoice creation via Pipeline page modal with line items, tax, features, and terms. Sync module: `server/hubspot-sync.ts`. OAuth routes: `server/hubspot.ts`. Token storage: `hubspot_tokens` DB table.
 -   **PostgreSQL**: Stores webhook logs, user accounts, client registry, and various system-specific data tables.
