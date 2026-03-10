@@ -99,7 +99,7 @@ export default function ContactsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<FilterState>({ dmStatus: "all", leadStatus: "all", onTodayList: "all" });
-  const [addForm, setAddForm] = useState({ companyName: "", website: "", phone: "", city: "", state: "" });
+  const [addForm, setAddForm] = useState({ companyName: "", website: "", phone: "", city: "", state: "", contactName: "", contactTitle: "", contactEmail: "", contactPhone: "" });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearchChange = useCallback((val: string) => {
@@ -171,7 +171,7 @@ export default function ContactsPage() {
     },
     onSuccess: (data) => {
       toast({ title: `${data.companyName} added`, description: "You can now enrich this lead." });
-      setAddForm({ companyName: "", website: "", phone: "", city: "", state: "" });
+      setAddForm({ companyName: "", website: "", phone: "", city: "", state: "", contactName: "", contactTitle: "", contactEmail: "", contactPhone: "" });
       setShowAddForm(false);
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
     },
@@ -293,6 +293,53 @@ export default function ContactsPage() {
                   style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFF" }}
                   placeholder="TX"
                   data-testid="input-state"
+                />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3 pt-2 border-t" style={{ borderColor: BORDER }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Decision Maker (optional)</span>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium mb-1 block" style={{ color: MUTED }}>Contact Name</label>
+                <input
+                  value={addForm.contactName}
+                  onChange={(e) => setAddForm(prev => ({ ...prev, contactName: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFF" }}
+                  placeholder="John Smith"
+                  data-testid="input-contact-name"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium mb-1 block" style={{ color: MUTED }}>Title</label>
+                <input
+                  value={addForm.contactTitle}
+                  onChange={(e) => setAddForm(prev => ({ ...prev, contactTitle: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFF" }}
+                  placeholder="Safety Director"
+                  data-testid="input-contact-title"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium mb-1 block" style={{ color: MUTED }}>Email</label>
+                <input
+                  value={addForm.contactEmail}
+                  onChange={(e) => setAddForm(prev => ({ ...prev, contactEmail: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFF" }}
+                  placeholder="john@acme-industrial.com"
+                  data-testid="input-contact-email"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium mb-1 block" style={{ color: MUTED }}>Contact Phone</label>
+                <input
+                  value={addForm.contactPhone}
+                  onChange={(e) => setAddForm(prev => ({ ...prev, contactPhone: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ border: `1px solid ${BORDER}`, color: TEXT, background: "#FFF" }}
+                  placeholder="(409) 555-5678"
+                  data-testid="input-contact-phone"
                 />
               </div>
               <div className="flex items-end">

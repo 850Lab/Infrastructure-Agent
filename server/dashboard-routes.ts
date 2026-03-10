@@ -1043,7 +1043,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
   app.post("/api/companies/add", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { companyName, website, phone, city, state } = req.body;
+      const { companyName, website, phone, city, state, contactName, contactTitle, contactEmail, contactPhone } = req.body;
       if (!companyName) return res.status(400).json({ ok: false, error: "Company name is required" });
 
       const table = encodeURIComponent("Companies");
@@ -1068,6 +1068,39 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         throw new Error(`Airtable error ${resp.status}: ${errBody}`);
       }
       const record = await resp.json();
+
+      if (contactName) {
+        try {
+          const dmTable = encodeURIComponent("Decision_Makers");
+          const dmFields: Record<string, any> = {
+            full_name: contactName,
+            company_name_text: companyName,
+            source: "manual",
+            enriched_at: new Date().toISOString(),
+          };
+          if (contactTitle) dmFields.title = contactTitle;
+          if (contactEmail) dmFields.email = contactEmail;
+          if (contactPhone) dmFields.phone = contactPhone;
+
+          const dmUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${dmTable}`;
+          const dmResp = await fetch(dmUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${AIRTABLE_API_KEY()}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ fields: dmFields }),
+          });
+          if (dmResp.ok) {
+            log(`Created DM "${contactName}" for ${companyName}`, "contacts");
+          } else {
+            const dmErr = await dmResp.text();
+            log(`DM creation warning: ${dmErr}`, "contacts");
+          }
+        } catch (dmErr: any) {
+          log(`DM creation failed (non-blocking): ${dmErr.message}`, "contacts");
+        }
+      }
 
       const clientId = (req as any).user?.clientId || "global";
       await db.insert(manualLeads).values({
