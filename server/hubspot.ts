@@ -15,12 +15,31 @@ const SCOPES = [
   "crm.objects.companies.write",
   "crm.objects.deals.read",
   "crm.objects.deals.write",
+  "sales-email-read",
+  "crm.objects.custom.read",
+  "crm.objects.custom.write",
 ].join(" ");
+
+const oauthStates = new Map<string, { clientId: string; expires: number }>();
 
 function getRedirectUri(req: Request): string {
   const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
   const proto = req.headers["x-forwarded-proto"] || "https";
   return `${proto}://${host}/api/hubspot/callback`;
+}
+
+function createOAuthState(clientId: string): string {
+  const nonce = `hs_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+  oauthStates.set(nonce, { clientId, expires: Date.now() + 10 * 60 * 1000 });
+  return nonce;
+}
+
+function validateOAuthState(state: string): string | null {
+  const entry = oauthStates.get(state);
+  if (!entry) return null;
+  oauthStates.delete(state);
+  if (Date.now() > entry.expires) return null;
+  return entry.clientId;
 }
 
 async function refreshAccessToken(clientId: string): Promise<string | null> {
@@ -97,7 +116,7 @@ export function registerHubspotRoutes(app: Express) {
     }
 
     const redirectUri = getRedirectUri(req);
-    const state = clientId;
+    const state = createOAuthState(clientId);
     const url = `https://app.hubspot.com/oauth/authorize?client_id=${encodeURIComponent(HUBSPOT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(SCOPES)}&state=${encodeURIComponent(state)}`;
 
     log(`HubSpot OAuth initiated for client ${clientId}, redirect: ${redirectUri}`, "hubspot");
@@ -110,7 +129,11 @@ export function registerHubspotRoutes(app: Express) {
       return res.status(400).send("Missing code or state parameter");
     }
 
-    const clientId = String(state);
+    const clientId = validateOAuthState(String(state));
+    if (!clientId) {
+      log(`HubSpot OAuth callback: invalid or expired state`, "hubspot");
+      return res.status(400).send("Invalid or expired OAuth state. Please try connecting again.");
+    }
     const redirectUri = getRedirectUri(req);
 
     try {

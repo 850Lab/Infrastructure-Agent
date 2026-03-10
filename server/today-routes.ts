@@ -9,6 +9,7 @@ import { scopedFormula } from "./airtable-scoped";
 import { transcribeAudio, analyzeContainment, analyzeContainmentDeterministic, extractFollowupDate } from "./openai";
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
+import { syncCallToHubSpot, isHubSpotConnected } from "./hubspot-sync";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -251,7 +252,7 @@ export function registerTodayRoutes(app: Express) {
         return res.status(400).json({ error: "company_name and outcome are required" });
       }
 
-      const validOutcomes = ["No Answer", "Gatekeeper", "Decision Maker", "Qualified", "Callback", "Not Interested", "Won", "Lost"];
+      const validOutcomes = ["No Answer", "Gatekeeper", "Decision Maker", "Qualified", "Callback", "Not Interested", "Won", "Lost", "NoAuthority"];
       if (!validOutcomes.includes(outcome)) {
         return res.status(400).json({ error: `Invalid outcome. Must be one of: ${validOutcomes.join(", ")}` });
       }

@@ -2,6 +2,7 @@ import { handleCallOutcome } from "./opportunities";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 import { enrichCompany } from "./dm-enrichment";
 import { log as logMsg } from "./logger";
+import { syncCallToHubSpot, isHubSpotConnected } from "./hubspot-sync";
 
 interface CallRecord {
   id: string;
@@ -183,6 +184,34 @@ async function findCompanyByName(companyName: string, clientId?: string, atConfi
   }
 }
 
+async function getDMFieldsForCompany(companyName: string, clientId?: string, atConfig?: { apiKey: string; baseId: string }): Promise<{
+  name: string;
+  email: string;
+  phone: string;
+  title: string;
+} | null> {
+  if (!companyName) return null;
+  const table = encodeURIComponent("Companies");
+  const escaped = companyName.replace(/'/g, "\\'");
+  const baseFormula = `LOWER({company_name}) = LOWER('${escaped}')`;
+
+  try {
+    const formula = encodeURIComponent(clientId ? scopedFormula(clientId, baseFormula) : baseFormula);
+    const data = await airtableRequest(`${table}?filterByFormula=${formula}&pageSize=1&fields[]=Primary_DM_Name&fields[]=Primary_DM_Email&fields[]=Primary_DM_Phone&fields[]=Primary_DM_Title&fields[]=Offer_DM_Name&fields[]=Offer_DM_Email&fields[]=Offer_DM_Phone&fields[]=Offer_DM_Title`, {}, atConfig);
+    const rec = data.records?.[0];
+    if (!rec) return null;
+    const f = rec.fields;
+    return {
+      name: String(f.Offer_DM_Name || f.Primary_DM_Name || ""),
+      email: String(f.Offer_DM_Email || f.Primary_DM_Email || ""),
+      phone: String(f.Offer_DM_Phone || f.Primary_DM_Phone || ""),
+      title: String(f.Offer_DM_Title || f.Primary_DM_Title || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function addDays(fromDate: Date, days: number): string {
   const d = new Date(fromDate);
   d.setDate(d.getDate() + days);
@@ -331,12 +360,55 @@ export async function processCall(call: CallRecord, clientId?: string, atConfig?
 
   let opportunityResult = null;
   try {
-    opportunityResult = await handleCallOutcome(call.company, call.outcome, call.notes);
+    opportunityResult = await handleCallOutcome(call.company, call.outcome, call.notes, clientId);
     if (opportunityResult) {
       logEngine(`Opportunity ${opportunityResult.action} for ${call.company} (${opportunityResult.opportunityId})`);
     }
   } catch (e: any) {
     logEngine(`Opportunity handling error for ${call.company}: ${e.message}`);
+  }
+
+  if (clientId) {
+    (async () => {
+      try {
+        const connected = await isHubSpotConnected(clientId);
+        if (connected && call.company) {
+          const companyRec = await findCompanyByName(call.company, clientId, atConfig);
+          const hsData: {
+            companyName: string;
+            outcome: string;
+            notes?: string;
+            dmName?: string;
+            dmEmail?: string;
+            dmPhone?: string;
+            dmTitle?: string;
+            callTime?: string;
+          } = {
+            companyName: call.company,
+            outcome: call.outcome,
+            notes: call.notes || undefined,
+            callTime: call.callTime || undefined,
+          };
+
+          if (companyRec) {
+            const dmFields = await getDMFieldsForCompany(call.company, clientId, atConfig);
+            if (dmFields) {
+              hsData.dmName = dmFields.name || undefined;
+              hsData.dmEmail = dmFields.email || undefined;
+              hsData.dmPhone = dmFields.phone || undefined;
+              hsData.dmTitle = dmFields.title || undefined;
+            }
+          }
+
+          const hsResult = await syncCallToHubSpot(clientId, hsData);
+          if (hsResult.synced) {
+            logEngine(`HubSpot sync OK: ${call.company} → ${call.outcome}`);
+          }
+        }
+      } catch (e: any) {
+        logEngine(`HubSpot sync error for ${call.company}: ${e.message}`);
+      }
+    })();
   }
 
   return { leadStatusSet: newLeadStatus, followupDate, engagementDelta, companyUpdated, gatekeeperRecorded, opportunityResult };

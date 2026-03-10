@@ -83,7 +83,7 @@ function HubSpotCard() {
         <p className="text-sm font-bold" style={{ color: TEXT }}>HubSpot Integration</p>
       </div>
       <p className="text-xs mb-4" style={{ color: MUTED }}>
-        Connect your HubSpot CRM to sync contacts, companies, and deals. Each client connects their own HubSpot account.
+        Connect your HubSpot CRM. When connected, the machine automatically syncs call activity, contacts, and deals to your HubSpot.
       </p>
 
       {isLoading ? (
@@ -99,6 +99,13 @@ function HubSpotCard() {
             {hubStatus.hubId && (
               <span className="text-xs ml-auto" style={{ color: MUTED }}>Hub ID: {hubStatus.hubId}</span>
             )}
+          </div>
+          <div className="rounded-lg p-3 space-y-1.5" style={{ background: "rgba(248,250,252,1)", border: `1px solid ${BORDER}` }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Auto-sync active</p>
+            <p className="text-xs" style={{ color: MUTED }}>Call outcomes sync as HubSpot notes + engagement</p>
+            <p className="text-xs" style={{ color: MUTED }}>New DMs sync as HubSpot contacts</p>
+            <p className="text-xs" style={{ color: MUTED }}>Qualified deals create HubSpot deals</p>
+            <p className="text-xs" style={{ color: MUTED }}>Companies linked automatically</p>
           </div>
           <div className="flex gap-2">
             <Button

@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { authMiddleware } from "./dashboard-routes";
+import { syncDealToHubSpot, isHubSpotConnected } from "./hubspot-sync";
 
 const AIRTABLE_API_KEY = () => process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = () => process.env.AIRTABLE_BASE_ID || "";
@@ -149,10 +150,29 @@ async function updateOpportunity(recordId: string, fields: Record<string, any>):
   }
 }
 
+function syncDealToHubSpotBackground(clientId: string, companyName: string, stage: string) {
+  (async () => {
+    try {
+      const connected = await isHubSpotConnected(clientId);
+      if (connected) {
+        await syncDealToHubSpot(clientId, {
+          companyName,
+          dealName: `${companyName} - ${stage}`,
+          stage,
+        });
+        logOpp(`HubSpot deal synced: ${companyName} (${stage})`);
+      }
+    } catch (e: any) {
+      logOpp(`HubSpot deal sync error: ${e.message}`);
+    }
+  })();
+}
+
 export async function handleCallOutcome(
   companyName: string,
   outcome: string,
-  notes?: string
+  notes?: string,
+  clientId?: string,
 ): Promise<{ action: string; opportunityId?: string } | null> {
   const shouldCreate = ["Qualified", "Callback", "Won", "Not Interested"].includes(outcome);
   if (!shouldCreate) return null;
@@ -169,6 +189,9 @@ export async function handleCallOutcome(
             ? `${existing.fields.Notes}\n${new Date().toISOString().slice(0, 10)}: Won`
             : `${new Date().toISOString().slice(0, 10)}: Won`,
         });
+        if (clientId) {
+          syncDealToHubSpotBackground(clientId, companyName, "Won");
+        }
         return { action: "updated_to_won", opportunityId: existing.id };
       } else {
         const rec = await createOpportunity({
@@ -178,6 +201,9 @@ export async function handleCallOutcome(
           Last_Updated: new Date().toISOString(),
           Notes: notes || "",
         });
+        if (clientId) {
+          syncDealToHubSpotBackground(clientId, companyName, "Won");
+        }
         return { action: "created_won", opportunityId: rec?.id };
       }
     }
@@ -191,6 +217,9 @@ export async function handleCallOutcome(
             ? `${existing.fields.Notes}\n${new Date().toISOString().slice(0, 10)}: Not Interested`
             : `${new Date().toISOString().slice(0, 10)}: Not Interested`,
         });
+        if (clientId) {
+          syncDealToHubSpotBackground(clientId, companyName, "Lost");
+        }
         return { action: "updated_to_lost", opportunityId: existing.id };
       }
       return null;
@@ -231,6 +260,11 @@ export async function handleCallOutcome(
         }
         if (notes) fields.Notes = notes;
         const rec = await createOpportunity(fields);
+
+        if (clientId) {
+          syncDealToHubSpotBackground(clientId, companyName, stage);
+        }
+
         return { action: "created_qualified", opportunityId: rec?.id };
       }
     }
