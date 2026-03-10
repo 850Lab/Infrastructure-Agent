@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { hubspotTokens } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { authMiddleware } from "./auth";
 import { log } from "./logger";
 
@@ -20,26 +20,29 @@ const SCOPES = [
   "crm.objects.custom.write",
 ].join(" ");
 
-const oauthStates = new Map<string, { clientId: string; expires: number }>();
-
 function getRedirectUri(req: Request): string {
   const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
   const proto = req.headers["x-forwarded-proto"] || "https";
   return `${proto}://${host}/api/hubspot/callback`;
 }
 
-function createOAuthState(clientId: string): string {
+async function createOAuthState(clientId: string): Promise<string> {
   const nonce = `hs_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
-  oauthStates.set(nonce, { clientId, expires: Date.now() + 10 * 60 * 1000 });
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  await db.execute(
+    sql`INSERT INTO hubspot_oauth_states (nonce, client_id, expires_at) VALUES (${nonce}, ${clientId}, ${expiresAt})`
+  );
   return nonce;
 }
 
-function validateOAuthState(state: string): string | null {
-  const entry = oauthStates.get(state);
-  if (!entry) return null;
-  oauthStates.delete(state);
-  if (Date.now() > entry.expires) return null;
-  return entry.clientId;
+async function validateOAuthState(state: string): Promise<string | null> {
+  const rows = await db.execute(
+    sql`DELETE FROM hubspot_oauth_states WHERE nonce = ${state} RETURNING client_id, expires_at`
+  );
+  const row = (rows as any).rows?.[0];
+  if (!row) return null;
+  if (new Date(row.expires_at) < new Date()) return null;
+  return row.client_id;
 }
 
 async function refreshAccessToken(clientId: string): Promise<string | null> {
@@ -107,7 +110,7 @@ async function hubspotApi(clientId: string, path: string, options: RequestInit =
 }
 
 export function registerHubspotRoutes(app: Express) {
-  app.get("/api/hubspot/auth", authMiddleware, (req: Request, res: Response) => {
+  app.get("/api/hubspot/auth", authMiddleware, async (req: Request, res: Response) => {
     const clientId = (req as any).user?.clientId;
     if (!clientId) return res.status(400).json({ error: "Client context required" });
 
@@ -116,7 +119,7 @@ export function registerHubspotRoutes(app: Express) {
     }
 
     const redirectUri = getRedirectUri(req);
-    const state = createOAuthState(clientId);
+    const state = await createOAuthState(clientId);
     const url = `https://app.hubspot.com/oauth/authorize?client_id=${encodeURIComponent(HUBSPOT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(SCOPES)}&state=${encodeURIComponent(state)}`;
 
     log(`HubSpot OAuth initiated for client ${clientId}, redirect: ${redirectUri}`, "hubspot");
@@ -129,7 +132,7 @@ export function registerHubspotRoutes(app: Express) {
       return res.status(400).send("Missing code or state parameter");
     }
 
-    const clientId = validateOAuthState(String(state));
+    const clientId = await validateOAuthState(String(state));
     if (!clientId) {
       log(`HubSpot OAuth callback: invalid or expired state`, "hubspot");
       return res.status(400).send("Invalid or expired OAuth state. Please try connecting again.");
