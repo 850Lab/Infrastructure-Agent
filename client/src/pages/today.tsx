@@ -1,7 +1,6 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { List } from "react-window";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -10,20 +9,10 @@ import { Button } from "@/components/ui/button";
 import DealCard from "@/components/deal-card";
 import type { Opportunity } from "@/components/deal-card";
 import {
-  Phone,
-  Copy,
-  ChevronDown,
-  ChevronUp,
-  Play,
-  Zap,
-  ClipboardList,
-  Clock,
-  CheckCircle2,
-  User,
-  Loader2,
-  AlertCircle,
+  Phone, Copy, ChevronDown, ChevronUp, Play, Zap, ClipboardList,
+  Clock, CheckCircle2, User, Loader2, AlertCircle, PhoneCall,
+  Target, FileText, BookOpen, Mail, MapPin, ExternalLink, ListChecks
 } from "lucide-react";
-import type { CSSProperties, ReactElement } from "react";
 
 const EMERALD = "#10B981";
 const TEXT = "#0F172A";
@@ -31,18 +20,17 @@ const MUTED = "#94A3B8";
 const BORDER = "#E2E8F0";
 const SUBTLE = "#F8FAFC";
 const ERROR_RED = "#EF4444";
-
-const COLLAPSED_ROW_HEIGHT = 110;
-const EXPANDED_ROW_HEIGHT = 380;
+const AMBER = "#F59E0B";
+const BLUE = "#3B82F6";
 
 const OUTCOMES = [
-  { value: "Decision Maker", label: "DM", color: "#10B981" },
-  { value: "Gatekeeper", label: "GK", color: "#3B82F6" },
-  { value: "No Answer", label: "N/A", color: "#94A3B8" },
+  { value: "Decision Maker", label: "DM", color: EMERALD },
+  { value: "Gatekeeper", label: "GK", color: BLUE },
+  { value: "No Answer", label: "N/A", color: MUTED },
   { value: "Qualified", label: "Qual", color: "#059669" },
-  { value: "Callback", label: "CB", color: "#F59E0B" },
-  { value: "Not Interested", label: "NI", color: "#EF4444" },
-  { value: "NoAuthority", label: "Wrong Person", color: "#F59E0B" },
+  { value: "Callback", label: "CB", color: AMBER },
+  { value: "Not Interested", label: "NI", color: ERROR_RED },
+  { value: "NoAuthority", label: "Wrong Person", color: AMBER },
 ] as const;
 
 const OUTCOME_FEEDBACK: Record<string, { title: string; description: string }> = {
@@ -54,13 +42,6 @@ const OUTCOME_FEEDBACK: Record<string, { title: string; description: string }> =
   "Not Interested": { title: "Signal absorbed", description: "Targeting recalibrated. Moving on." },
   "NoAuthority": { title: "Wrong person flagged", description: "Machine will find the right decision maker." },
 };
-
-const STEP_CHIPS = [
-  { id: "run", label: "Run Pipeline", icon: Play },
-  { id: "call", label: "Call Hot", icon: Zap },
-  { id: "log", label: "Log Outcome", icon: ClipboardList },
-  { id: "followup", label: "Follow Up", icon: Clock },
-] as const;
 
 interface TodayCompany {
   id: string;
@@ -96,16 +77,46 @@ interface Briefing {
   pipeline_ran_today: boolean;
 }
 
-const bucketColor = (bucket: string) => {
+const bucketMeta = (bucket: string) => {
   switch (bucket) {
-    case "Hot Follow-up": return ERROR_RED;
-    case "Working": return "#F59E0B";
-    case "Fresh": return "#3B82F6";
-    default: return MUTED;
+    case "Hot Follow-up": return { color: ERROR_RED, bg: "rgba(239,68,68,0.06)", label: "Hot" };
+    case "Working": return { color: AMBER, bg: "rgba(245,158,11,0.06)", label: "Working" };
+    case "Fresh": return { color: BLUE, bg: "rgba(59,130,246,0.06)", label: "Fresh" };
+    default: return { color: MUTED, bg: "rgba(148,163,184,0.06)", label: bucket || "New" };
   }
 };
 
-interface CompanyRowInnerProps {
+function PlaybookSection({ company, idx }: { company: TodayCompany; idx: number }) {
+  const scripts = [
+    { key: "opener", label: "Call Opener", content: company.playbook_opener, icon: Phone },
+    { key: "gatekeeper", label: "Gatekeeper Script", content: company.playbook_gatekeeper, icon: User },
+    { key: "voicemail", label: "Voicemail", content: company.playbook_voicemail, icon: Mail },
+    { key: "followup", label: "Follow-up", content: company.playbook_followup, icon: Clock },
+  ].filter(s => s.content);
+
+  if (scripts.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5" data-testid={`playbooks-${idx}`}>
+      {scripts.map(s => (
+        <div key={s.key} className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center gap-1.5 mb-2">
+            <s.icon className="w-3 h-3" style={{ color: EMERALD }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>{s.label}</span>
+          </div>
+          <p className="text-xs leading-relaxed" style={{ color: TEXT }} data-testid={`playbook-${s.key}-${idx}`}>
+            {s.content}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompanyCard({
+  company, idx, isExpanded, hasLogged, loggedOutcome,
+  copiedId, opp, isPending, onToggleExpand, onCopyPhone, onOutcome,
+}: {
   company: TodayCompany;
   idx: number;
   isExpanded: boolean;
@@ -117,53 +128,41 @@ interface CompanyRowInnerProps {
   onToggleExpand: (id: string) => void;
   onCopyPhone: (phone: string, id: string) => void;
   onOutcome: (name: string, outcome: string) => void;
-}
-
-function CompanyRowInner({
-  company, idx, isExpanded, hasLogged, loggedOutcome,
-  copiedId, opp, isPending, onToggleExpand, onCopyPhone, onOutcome,
-}: CompanyRowInnerProps) {
+}) {
   const callPhone = company.offer_dm_phone || company.phone;
   const isMobile = /^\+?\d[\d\s()-]{7,}$/.test(callPhone);
+  const bkt = bucketMeta(company.bucket);
 
   return (
     <div
-      className="rounded-xl overflow-hidden"
+      className="rounded-xl overflow-hidden transition-all"
       style={{
         background: "#FFF",
-        border: `1px solid ${hasLogged ? `${EMERALD}30` : BORDER}`,
-        boxShadow: hasLogged ? `0 0 0 1px ${EMERALD}15` : "0 1px 2px rgba(0,0,0,0.04)",
+        border: `1px solid ${hasLogged ? "rgba(16,185,129,0.25)" : BORDER}`,
+        boxShadow: hasLogged ? "0 0 0 1px rgba(16,185,129,0.08)" : "0 1px 3px rgba(0,0,0,0.04)",
       }}
       data-testid={`company-row-${idx}`}
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
-          <div
-            className="w-2 h-2 rounded-full mt-2 flex-shrink-0"
-            style={{ background: bucketColor(company.bucket) }}
-            title={company.bucket}
-          />
+          <div className="flex flex-col items-center gap-1 flex-shrink-0 pt-0.5">
+            <div className="w-2 h-2 rounded-full" style={{ background: bkt.color }} title={company.bucket} />
+            <span className="text-[9px] font-bold" style={{ color: bkt.color }}>{company.final_priority}</span>
+          </div>
+
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-sm font-semibold truncate" style={{ color: TEXT }} data-testid={`company-name-${idx}`}>
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="text-sm font-bold truncate" style={{ color: TEXT }} data-testid={`company-name-${idx}`}>
                 {company.company_name}
-              </p>
-              <span
-                className="text-xs font-mono px-1.5 py-0.5 rounded"
-                style={{
-                  background: company.final_priority >= 60 ? `${EMERALD}12` : company.final_priority >= 40 ? "#F59E0B12" : `${MUTED}12`,
-                  color: company.final_priority >= 60 ? EMERALD : company.final_priority >= 40 ? "#D97706" : MUTED,
-                }}
-              >
-                P{company.final_priority}
               </span>
-              {company.bucket && (
-                <span className="text-xs font-mono" style={{ color: bucketColor(company.bucket) }}>
-                  {company.bucket}
-                </span>
-              )}
+              <span
+                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{ background: bkt.bg, color: bkt.color }}
+              >
+                {bkt.label}
+              </span>
               {hasLogged && (
-                <span className="flex items-center gap-0.5 text-xs" style={{ color: EMERALD }}>
+                <span className="flex items-center gap-0.5 text-[10px] font-semibold" style={{ color: EMERALD }}>
                   <CheckCircle2 className="w-3 h-3" /> {loggedOutcome}
                 </span>
               )}
@@ -176,7 +175,7 @@ function CompanyRowInner({
                   Ask for: {company.offer_dm_name}
                 </span>
                 {company.offer_dm_title && (
-                  <span className="text-xs" style={{ color: MUTED }}>({company.offer_dm_title})</span>
+                  <span className="text-[11px]" style={{ color: MUTED }}>({company.offer_dm_title})</span>
                 )}
               </div>
             )}
@@ -185,44 +184,42 @@ function CompanyRowInner({
 
             <div className="flex items-center gap-2 flex-wrap">
               {callPhone ? (
-                <>
-                  {isMobile ? (
-                    <a
-                      href={`tel:${callPhone.replace(/\s/g, "")}`}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
-                      style={{ background: `${EMERALD}12`, color: EMERALD }}
-                      data-testid={`call-button-${idx}`}
-                    >
-                      <Phone className="w-3 h-3" /> Call
-                    </a>
-                  ) : (
-                    <button
-                      onClick={() => onCopyPhone(callPhone, company.id)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
-                      style={{ background: `${EMERALD}12`, color: EMERALD }}
-                      data-testid={`call-button-${idx}`}
-                    >
-                      {copiedId === company.id ? <CheckCircle2 className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      {copiedId === company.id ? "Copied" : callPhone}
-                    </button>
-                  )}
-                </>
+                isMobile ? (
+                  <a
+                    href={`tel:${callPhone.replace(/\s/g, "")}`}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                    style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: "1px solid rgba(16,185,129,0.15)" }}
+                    data-testid={`call-button-${idx}`}
+                  >
+                    <Phone className="w-3 h-3" /> Call
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => onCopyPhone(callPhone, company.id)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                    style={{ background: "rgba(16,185,129,0.08)", color: EMERALD, border: "1px solid rgba(16,185,129,0.15)" }}
+                    data-testid={`call-button-${idx}`}
+                  >
+                    {copiedId === company.id ? <CheckCircle2 className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    {copiedId === company.id ? "Copied" : callPhone}
+                  </button>
+                )
               ) : (
-                <span className="text-xs font-mono" style={{ color: MUTED }}>No phone</span>
+                <span className="text-xs" style={{ color: MUTED }}>No phone</span>
               )}
 
               {!hasLogged && (
-                <div className="flex items-center gap-1" data-testid={`outcome-buttons-${idx}`}>
+                <div className="flex items-center gap-1 flex-wrap" data-testid={`outcome-buttons-${idx}`}>
                   {OUTCOMES.map((o) => (
                     <button
                       key={o.value}
                       onClick={() => onOutcome(company.company_name, o.value)}
                       disabled={isPending}
-                      className="px-2 py-1 rounded-md text-xs font-semibold transition-all hover:opacity-80"
+                      className="px-2 py-1 rounded-md text-[11px] font-semibold transition-all hover:opacity-80"
                       style={{
                         background: `${o.color}12`,
                         color: o.color,
-                        border: `1px solid ${o.color}25`,
+                        border: `1px solid ${o.color}20`,
                       }}
                       data-testid={`outcome-${o.value.toLowerCase().replace(/\s+/g, "-")}-${idx}`}
                     >
@@ -234,7 +231,7 @@ function CompanyRowInner({
 
               <button
                 onClick={() => onToggleExpand(company.id)}
-                className="ml-auto p-1 rounded"
+                className="ml-auto p-1.5 rounded-lg transition-colors hover:bg-gray-50"
                 style={{ color: MUTED }}
                 data-testid={`expand-${idx}`}
               >
@@ -246,122 +243,46 @@ function CompanyRowInner({
       </div>
 
       {isExpanded && (
-        <div className="overflow-hidden">
-          <div className="px-4 pb-4 pt-0 border-t" style={{ borderColor: BORDER }}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              {company.playbook_opener && (
-                <div className="rounded-lg p-3" style={{ background: SUBTLE }}>
-                  <p className="text-xs font-mono tracking-widest uppercase mb-1.5" style={{ color: MUTED }}>Call Opener</p>
-                  <p className="text-xs leading-relaxed" style={{ color: TEXT }} data-testid={`playbook-opener-${idx}`}>
-                    {company.playbook_opener}
-                  </p>
-                </div>
-              )}
-              {company.playbook_gatekeeper && (
-                <div className="rounded-lg p-3" style={{ background: SUBTLE }}>
-                  <p className="text-xs font-mono tracking-widest uppercase mb-1.5" style={{ color: MUTED }}>Gatekeeper Script</p>
-                  <p className="text-xs leading-relaxed" style={{ color: TEXT }} data-testid={`playbook-gatekeeper-${idx}`}>
-                    {company.playbook_gatekeeper}
-                  </p>
-                </div>
-              )}
-              {company.playbook_voicemail && (
-                <div className="rounded-lg p-3" style={{ background: SUBTLE }}>
-                  <p className="text-xs font-mono tracking-widest uppercase mb-1.5" style={{ color: MUTED }}>Voicemail</p>
-                  <p className="text-xs leading-relaxed" style={{ color: TEXT }}>
-                    {company.playbook_voicemail}
-                  </p>
-                </div>
-              )}
-              {company.playbook_followup && (
-                <div className="rounded-lg p-3" style={{ background: SUBTLE }}>
-                  <p className="text-xs font-mono tracking-widest uppercase mb-1.5" style={{ color: MUTED }}>Follow-up</p>
-                  <p className="text-xs leading-relaxed" style={{ color: TEXT }}>
-                    {company.playbook_followup}
-                  </p>
-                </div>
-              )}
-            </div>
+        <div className="px-4 pb-4 pt-0" style={{ borderTop: `1px solid ${BORDER}` }}>
+          <div className="mt-3">
+            <PlaybookSection company={company} idx={idx} />
+          </div>
 
-            {(company.rank_reason || company.rank_evidence) && (
-              <div className="mt-3 rounded-lg p-3" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15` }}>
-                <p className="text-xs font-mono tracking-widest uppercase mb-1.5" style={{ color: EMERALD }}>Rank Evidence</p>
-                {company.rank_reason && (
-                  <p className="text-xs leading-relaxed mb-1" style={{ color: TEXT }}>
-                    {company.rank_reason}
-                  </p>
-                )}
-                {company.rank_evidence && (
-                  <p className="text-xs leading-relaxed" style={{ color: MUTED }}>
-                    {company.rank_evidence}
-                  </p>
-                )}
+          {(company.rank_reason || company.rank_evidence) && (
+            <div className="mt-3 rounded-lg p-3" style={{ background: "rgba(16,185,129,0.03)", border: `1px solid rgba(16,185,129,0.12)` }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Target className="w-3 h-3" style={{ color: EMERALD }} />
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Rank Evidence</span>
               </div>
-            )}
-
-            <div className="flex items-center gap-3 mt-3 flex-wrap">
-              {company.times_called > 0 && (
-                <span className="text-xs font-mono" style={{ color: MUTED }}>
-                  Called {company.times_called}x
-                </span>
+              {company.rank_reason && (
+                <p className="text-xs leading-relaxed" style={{ color: TEXT }}>{company.rank_reason}</p>
               )}
-              {company.last_outcome && (
-                <span className="text-xs font-mono" style={{
-                  color: company.last_outcome === "NoAuthority" ? "#F59E0B" : MUTED
-                }} data-testid={`outcome-badge-${company.id}`}>
-                  Last: {company.last_outcome === "NoAuthority" ? "Wrong Person" : company.last_outcome}
-                </span>
-              )}
-              {company.lead_status && (
-                <span className="text-xs font-mono" style={{ color: MUTED }}>
-                  Status: {company.lead_status}
-                </span>
-              )}
-              {company.followup_due && (
-                <span className="text-xs font-mono" style={{ color: "#F59E0B" }}>
-                  Follow-up: {new Date(company.followup_due).toLocaleDateString()}
-                </span>
+              {company.rank_evidence && (
+                <p className="text-xs leading-relaxed mt-1" style={{ color: MUTED }}>{company.rank_evidence}</p>
               )}
             </div>
+          )}
+
+          <div className="flex items-center gap-3 mt-3 flex-wrap">
+            {company.times_called > 0 && (
+              <span className="text-[11px]" style={{ color: MUTED }}>Called {company.times_called}x</span>
+            )}
+            {company.last_outcome && (
+              <span className="text-[11px]" style={{ color: company.last_outcome === "NoAuthority" ? AMBER : MUTED }} data-testid={`outcome-badge-${company.id}`}>
+                Last: {company.last_outcome === "NoAuthority" ? "Wrong Person" : company.last_outcome}
+              </span>
+            )}
+            {company.lead_status && (
+              <span className="text-[11px]" style={{ color: MUTED }}>Status: {company.lead_status}</span>
+            )}
+            {company.followup_due && (
+              <span className="text-[11px] font-medium" style={{ color: AMBER }}>
+                Follow-up: {new Date(company.followup_due).toLocaleDateString()}
+              </span>
+            )}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-interface VirtualRowProps {
-  companies: TodayCompany[];
-  expandedCompany: string | null;
-  loggedCalls: Map<string, string>;
-  copiedId: string | null;
-  oppByCompany: Map<string, Opportunity>;
-  isPending: boolean;
-  onToggleExpand: (id: string) => void;
-  onCopyPhone: (phone: string, id: string) => void;
-  onOutcome: (name: string, outcome: string) => void;
-}
-
-function VirtualRow(props: { index: number; style: CSSProperties } & VirtualRowProps): ReactElement | null {
-  const { index, style, companies, expandedCompany, loggedCalls, copiedId, oppByCompany, isPending, onToggleExpand, onCopyPhone, onOutcome } = props;
-  const company = companies[index];
-  if (!company) return null;
-
-  return (
-    <div style={{ ...style, paddingBottom: 8 }}>
-      <CompanyRowInner
-        company={company}
-        idx={index}
-        isExpanded={expandedCompany === company.id}
-        hasLogged={loggedCalls.has(company.company_name)}
-        loggedOutcome={loggedCalls.get(company.company_name)}
-        copiedId={copiedId}
-        opp={company.company_name ? oppByCompany.get(company.company_name.toLowerCase()) : undefined}
-        isPending={isPending}
-        onToggleExpand={onToggleExpand}
-        onCopyPhone={onCopyPhone}
-        onOutcome={onOutcome}
-      />
     </div>
   );
 }
@@ -373,10 +294,10 @@ export default function TodayPage() {
   const { toast } = useToast();
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
   const [loggedCalls, setLoggedCalls] = useState<Map<string, string>>(new Map());
-  const [activeStep, setActiveStep] = useState<string>("call");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [callListOpen, setCallListOpen] = useState(false);
 
-  const { data: todayData, isLoading: isQueryLoading, isFetching } = useQuery<{ companies: TodayCompany[]; count: number }>({
+  const { data: todayData, isFetching } = useQuery<{ companies: TodayCompany[]; count: number }>({
     queryKey: ["/api/today-list"],
     enabled: !!token,
     refetchInterval: 30000,
@@ -425,7 +346,7 @@ export default function TodayPage() {
   });
 
   const logCallMutation = useMutation({
-    mutationFn: (data: { company_name: string; outcome: string; notes?: string; gatekeeper_name?: string }) =>
+    mutationFn: (data: { company_name: string; outcome: string }) =>
       apiRequest("POST", "/api/calls/log", data),
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: ["/api/today-list"] });
@@ -454,6 +375,10 @@ export default function TodayPage() {
   const followupCount = followupsData?.count ?? 0;
   const callsLogged = loggedCalls.size;
 
+  const hotCount = companies.filter(c => c.bucket === "Hot Follow-up").length;
+  const withDM = companies.filter(c => c.offer_dm_name).length;
+  const withPlaybook = companies.filter(c => c.playbook_opener).length;
+
   const handleCopyPhone = useCallback((phone: string, companyId: string) => {
     navigator.clipboard.writeText(phone).catch(() => {});
     setCopiedId(companyId);
@@ -468,35 +393,45 @@ export default function TodayPage() {
     setExpandedCompany(prev => prev === id ? null : id);
   }, []);
 
-  const getRowHeight = useCallback((index: number) => {
-    const company = companies[index];
-    if (!company) return COLLAPSED_ROW_HEIGHT;
-    return expandedCompany === company.id ? EXPANDED_ROW_HEIGHT : COLLAPSED_ROW_HEIGHT;
-  }, [companies, expandedCompany]);
-
-  const useVirtualization = companies.length > 30;
-
-  const rowProps: VirtualRowProps = useMemo(() => ({
-    companies,
-    expandedCompany,
-    loggedCalls,
-    copiedId,
-    oppByCompany,
-    isPending: logCallMutation.isPending,
-    onToggleExpand: handleToggleExpand,
-    onCopyPhone: handleCopyPhone,
-    onOutcome: handleOutcome,
-  }), [companies, expandedCompany, loggedCalls, copiedId, oppByCompany, logCallMutation.isPending, handleToggleExpand, handleCopyPhone, handleOutcome]);
-
   return (
     <AppLayout showBackToChip>
-      <div className="p-4 md:p-6" style={{ minHeight: "calc(100vh - 56px)" }}>
+      <div className="p-4 md:p-6 max-w-[1200px] mx-auto" style={{ minHeight: "calc(100vh - 56px)" }}>
+
+        <div className="mb-6">
+          <span className="text-[10px] font-mono tracking-widest uppercase" style={{ color: MUTED }}>
+            Today / Mission Control
+          </span>
+          <div className="flex items-center justify-between mt-1">
+            <div>
+              <h1 className="text-xl font-bold" style={{ color: TEXT }} data-testid="text-page-title">
+                Mission Control
+              </h1>
+              <p className="text-xs mt-0.5" style={{ color: MUTED }}>
+                {companies.length} companies on today's list · {callsLogged} calls logged
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {companies.length > 0 && (
+                <Button
+                  onClick={() => navigate("/machine/outreach")}
+                  className="rounded-lg text-xs font-bold px-4 h-8 gap-1.5"
+                  style={{ background: TEXT, color: "#FFF" }}
+                  data-testid="button-enter-outreach"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  Outreach
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {topAction && (
           <div
             className="rounded-xl p-4 mb-5 flex items-center gap-3"
             style={{
-              background: topAction.type === "RUN_PIPELINE" ? `${TEXT}08` : `${EMERALD}08`,
-              border: `1px solid ${topAction.type === "RUN_PIPELINE" ? `${TEXT}20` : `${EMERALD}25`}`,
+              background: topAction.type === "RUN_PIPELINE" ? "rgba(15,23,42,0.03)" : "rgba(16,185,129,0.04)",
+              border: `1px solid ${topAction.type === "RUN_PIPELINE" ? "rgba(15,23,42,0.1)" : "rgba(16,185,129,0.15)"}`,
             }}
             data-testid="next-best-action"
           >
@@ -510,7 +445,7 @@ export default function TodayPage() {
                 size="sm"
                 onClick={() => runPipelineMutation.mutate()}
                 disabled={runPipelineMutation.isPending}
-                className="rounded-lg text-xs font-semibold px-3 h-8"
+                className="rounded-lg text-xs font-bold px-3 h-8"
                 style={{ background: TEXT, color: "#FFF" }}
                 data-testid="nba-run-button"
               >
@@ -520,73 +455,115 @@ export default function TodayPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 mb-5 overflow-x-auto" data-testid="step-chips">
-          {STEP_CHIPS.map((chip) => {
-            const isActive = activeStep === chip.id;
-            let badge = "";
-            if (chip.id === "call") badge = `${companies.length}`;
-            if (chip.id === "log") badge = `${callsLogged}`;
-            if (chip.id === "followup") badge = `${followupCount}`;
-
-            return (
-              <button
-                key={chip.id}
-                onClick={() => {
-                  setActiveStep(chip.id);
-                  if (chip.id === "run") runPipelineMutation.mutate();
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
-                style={{
-                  background: isActive ? `${EMERALD}12` : SUBTLE,
-                  border: `1px solid ${isActive ? `${EMERALD}35` : BORDER}`,
-                  color: isActive ? EMERALD : TEXT,
-                }}
-                data-testid={`step-chip-${chip.id}`}
-              >
-                <chip.icon className="w-3.5 h-3.5" />
-                {chip.label}
-                {badge && (
-                  <span
-                    className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-mono"
-                    style={{ background: isActive ? `${EMERALD}20` : `${TEXT}08`, fontSize: "10px" }}
-                  >
-                    {badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          {[
+            { label: "Call List", value: companies.length, icon: ListChecks, color: TEXT },
+            { label: "Hot", value: hotCount, icon: Zap, color: ERROR_RED },
+            { label: "With DM", value: withDM, icon: User, color: EMERALD },
+            { label: "Follow-ups", value: followupCount, icon: Clock, color: AMBER },
+          ].map(s => (
+            <div
+              key={s.label}
+              className="rounded-xl p-3.5"
+              style={{ background: "#FFF", border: `1px solid ${BORDER}` }}
+              data-testid={`stat-${s.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide" style={{ color: MUTED }}>{s.label}</span>
+                <s.icon className="w-3.5 h-3.5" style={{ color: s.color }} />
+              </div>
+              <span className="text-2xl font-bold" style={{ color: TEXT }}>{s.value}</span>
+            </div>
+          ))}
         </div>
 
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-lg font-bold" style={{ color: TEXT }} data-testid="text-page-title">
-              Mission Control
-            </h1>
-            <p className="text-xs font-mono" style={{ color: MUTED }}>
-              {companies.length} companies · {callsLogged} calls logged today
-            </p>
-          </div>
-          {companies.length > 0 && (
-            <Button
-              onClick={() => navigate("/machine/outreach")}
-              className="rounded-lg text-sm font-semibold px-5 h-9 gap-2"
-              style={{ background: TEXT, color: "#FFF" }}
-              data-testid="button-enter-outreach"
-            >
-              <Phone className="w-4 h-4" />
-              Outreach
-            </Button>
+        <div
+          className="rounded-xl mb-5 overflow-hidden"
+          style={{ background: "#FFF", border: `1px solid ${BORDER}`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
+          data-testid="panel-call-list"
+        >
+          <button
+            onClick={() => setCallListOpen(!callListOpen)}
+            className="w-full flex items-center justify-between p-4 transition-colors hover:bg-gray-50/50"
+            data-testid="button-toggle-call-list"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.12)" }}>
+                <PhoneCall className="w-4 h-4" style={{ color: EMERALD }} />
+              </div>
+              <div className="text-left">
+                <span className="text-sm font-bold block" style={{ color: TEXT }}>Today's Call List</span>
+                <span className="text-[11px]" style={{ color: MUTED }}>
+                  {companies.length} companies · {withPlaybook} with playbooks · {callsLogged} logged
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {callsLogged > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(16,185,129,0.08)", color: EMERALD }}>
+                  {callsLogged}/{companies.length}
+                </span>
+              )}
+              {callListOpen ? <ChevronUp className="w-4 h-4" style={{ color: MUTED }} /> : <ChevronDown className="w-4 h-4" style={{ color: MUTED }} />}
+            </div>
+          </button>
+
+          {callListOpen && (
+            <div style={{ borderTop: `1px solid ${BORDER}` }}>
+              {!todayData && isFetching && (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: EMERALD }} />
+                </div>
+              )}
+
+              {todayData && companies.length === 0 && (
+                <div className="text-center py-12 px-4">
+                  <Play className="w-8 h-8 mx-auto mb-3" style={{ color: MUTED }} />
+                  <p className="text-sm font-medium" style={{ color: TEXT }}>No companies on today's list</p>
+                  <p className="text-xs mb-4" style={{ color: MUTED }}>Run the pipeline to generate your call list.</p>
+                  <Button
+                    onClick={() => runPipelineMutation.mutate()}
+                    disabled={runPipelineMutation.isPending}
+                    className="rounded-lg text-xs font-bold px-6 h-9"
+                    style={{ background: TEXT, color: "#FFF" }}
+                    data-testid="empty-run-button"
+                  >
+                    {runPipelineMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Run Pipeline"}
+                  </Button>
+                </div>
+              )}
+
+              {companies.length > 0 && (
+                <div className="p-3 space-y-2" data-testid="company-list">
+                  {companies.map((company, idx) => (
+                    <CompanyCard
+                      key={company.id}
+                      company={company}
+                      idx={idx}
+                      isExpanded={expandedCompany === company.id}
+                      hasLogged={loggedCalls.has(company.company_name)}
+                      loggedOutcome={loggedCalls.get(company.company_name)}
+                      copiedId={copiedId}
+                      opp={company.company_name ? oppByCompany.get(company.company_name.toLowerCase()) : undefined}
+                      isPending={logCallMutation.isPending}
+                      onToggleExpand={handleToggleExpand}
+                      onCopyPhone={handleCopyPhone}
+                      onOutcome={handleOutcome}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        {!todayData && isFetching && (
+        {!callListOpen && !todayData && isFetching && (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: MUTED }} />
           </div>
         )}
 
-        {todayData && companies.length === 0 && (
+        {!callListOpen && todayData && companies.length === 0 && (
           <div
             className="text-center py-16 rounded-xl"
             style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}
@@ -597,46 +574,64 @@ export default function TodayPage() {
             <Button
               onClick={() => runPipelineMutation.mutate()}
               disabled={runPipelineMutation.isPending}
-              className="rounded-lg text-sm font-semibold px-6 h-10"
+              className="rounded-lg text-xs font-bold px-6 h-10"
               style={{ background: TEXT, color: "#FFF" }}
-              data-testid="empty-run-button"
+              data-testid="empty-run-button-main"
             >
               {runPipelineMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Run Pipeline"}
             </Button>
           </div>
         )}
 
-        <div data-testid="company-list">
-          {companies.length > 0 && useVirtualization ? (
-            <List
-              rowComponent={VirtualRow}
-              rowCount={companies.length}
-              rowHeight={getRowHeight}
-              rowProps={rowProps}
-              overscanCount={5}
-              style={{ height: "calc(100vh - 320px)", minHeight: 400 }}
-            />
-          ) : (
-            <div className="space-y-2">
-              {companies.map((company, idx) => (
-                <CompanyRowInner
-                  key={company.id}
-                  company={company}
-                  idx={idx}
-                  isExpanded={expandedCompany === company.id}
-                  hasLogged={loggedCalls.has(company.company_name)}
-                  loggedOutcome={loggedCalls.get(company.company_name)}
-                  copiedId={copiedId}
-                  opp={company.company_name ? oppByCompany.get(company.company_name.toLowerCase()) : undefined}
-                  isPending={logCallMutation.isPending}
-                  onToggleExpand={handleToggleExpand}
-                  onCopyPhone={handleCopyPhone}
-                  onOutcome={handleOutcome}
-                />
-              ))}
+        {!callListOpen && companies.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div
+              className="rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-50/50"
+              style={{ background: "#FFF", border: `1px solid ${BORDER}` }}
+              onClick={() => setCallListOpen(true)}
+              data-testid="card-quick-call"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Phone className="w-4 h-4" style={{ color: EMERALD }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Start Calling</span>
+              </div>
+              <p className="text-xs" style={{ color: MUTED }}>
+                {companies.length - callsLogged} remaining · {hotCount > 0 ? `${hotCount} hot leads` : "Open call list"}
+              </p>
             </div>
-          )}
-        </div>
+
+            <div
+              className="rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-50/50"
+              style={{ background: "#FFF", border: `1px solid ${BORDER}` }}
+              onClick={() => setCallListOpen(true)}
+              data-testid="card-quick-playbooks"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <BookOpen className="w-4 h-4" style={{ color: BLUE }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Playbooks</span>
+              </div>
+              <p className="text-xs" style={{ color: MUTED }}>
+                {withPlaybook} scripts ready · Expand companies for scripts
+              </p>
+            </div>
+
+            <div
+              className="rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-50/50"
+              style={{ background: "#FFF", border: `1px solid ${BORDER}` }}
+              onClick={() => navigate("/machine/outreach")}
+              data-testid="card-quick-outreach"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Mail className="w-4 h-4" style={{ color: AMBER }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Outreach</span>
+              </div>
+              <p className="text-xs" style={{ color: MUTED }}>
+                View pipeline and send follow-ups
+              </p>
+            </div>
+          </div>
+        )}
+
       </div>
     </AppLayout>
   );
