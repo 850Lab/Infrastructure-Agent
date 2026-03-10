@@ -21,6 +21,7 @@ import {
   Trophy,
   XCircle,
   Receipt,
+  Mail,
   Plus,
   Trash2,
   X,
@@ -120,7 +121,7 @@ function InvoiceModal({ opp, onClose }: { opp: Opportunity; onClose: () => void 
         terms,
       }),
     onSuccess: () => {
-      toast({ title: "Invoice created in HubSpot", description: `Total: $${total.toLocaleString()}` });
+      toast({ title: "Proposal sent", description: `Emailed to ${contactEmail} — $${total.toLocaleString()}` });
       queryClient.invalidateQueries({ predicate: (q) => {
         const key = q.queryKey[0];
         return typeof key === "string" && key.startsWith("/api/opportunities");
@@ -156,7 +157,7 @@ function InvoiceModal({ opp, onClose }: { opp: Opportunity; onClose: () => void 
       <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 shadow-xl" style={{ border: `1px solid ${BORDER}` }}>
         <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: BORDER }}>
           <div>
-            <p className="text-xs font-mono tracking-wider uppercase" style={{ color: MUTED }}>Create Invoice</p>
+            <p className="text-xs font-mono tracking-wider uppercase" style={{ color: MUTED }}>Send Proposal</p>
             <h2 className="text-lg font-bold" style={{ color: TEXT }} data-testid="text-invoice-title">{opp.company}</h2>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100" data-testid="button-close-invoice">
@@ -382,9 +383,9 @@ function InvoiceModal({ opp, onClose }: { opp: Opportunity; onClose: () => void 
             data-testid="button-submit-invoice"
           >
             {invoiceMutation.isPending ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating...</>
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending...</>
             ) : (
-              <><Receipt className="w-4 h-4 mr-2" /> Push to HubSpot</>
+              <><Mail className="w-4 h-4 mr-2" /> Send Proposal</>
             )}
           </Button>
         </div>

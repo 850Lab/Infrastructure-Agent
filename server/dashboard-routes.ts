@@ -1089,25 +1089,144 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       const clientId = (req as any).user?.clientId;
       if (!clientId) return res.status(400).json({ error: "No client context" });
 
-      const { isHubSpotConnected: checkHS, createInvoiceInHubSpot } = await import("./hubspot-sync");
-      const connected = await checkHS(clientId);
-      if (!connected) return res.status(400).json({ error: "HubSpot not connected" });
-
       const { companyName, contactName, contactTitle, contactEmail, officeAddress,
         proposalTitle, lineItems, taxRate, features, terms } = req.body;
 
       if (!companyName) return res.status(400).json({ error: "Company name required" });
-      if (!lineItems?.length) return res.status(400).json({ error: "At least one line item required" });
+      if (!Array.isArray(lineItems) || !lineItems.length) return res.status(400).json({ error: "At least one line item required" });
+      if (!contactEmail) return res.status(400).json({ error: "Recipient email required to send proposal" });
 
-      const result = await createInvoiceInHubSpot(clientId, {
-        companyName, contactName, contactTitle, contactEmail, officeAddress,
-        proposalTitle, lineItems, taxRate: taxRate ?? 0, features: features || [], terms: terms || [],
+      const esc = (s: string) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+      const subtotal = lineItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+      const taxAmount = subtotal * ((taxRate || 0) / 100);
+      const total = subtotal + taxAmount;
+
+      let hubspotResult: any = null;
+      try {
+        const { isHubSpotConnected: checkHS, createInvoiceInHubSpot } = await import("./hubspot-sync");
+        const connected = await checkHS(clientId);
+        if (connected) {
+          hubspotResult = await createInvoiceInHubSpot(clientId, {
+            companyName, contactName, contactTitle, contactEmail, officeAddress,
+            proposalTitle, lineItems, taxRate: taxRate ?? 0, features: features || [], terms: terms || [],
+          });
+          log(`Proposal synced to HubSpot for ${companyName}`, "proposals");
+        }
+      } catch (hsErr: any) {
+        log(`HubSpot sync skipped: ${hsErr.message}`, "proposals");
+      }
+
+      const lineItemsHtml = lineItems.map((item: any) => {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.unitPrice) || 0;
+        const lineTotal = qty * price;
+        return `<tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:14px;color:#0F172A;">${esc(item.description)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:14px;color:#0F172A;text-align:center;">${qty}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:14px;color:#0F172A;text-align:right;">$${price.toLocaleString()}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-size:14px;color:#0F172A;text-align:right;font-weight:600;">$${lineTotal.toLocaleString()}</td>
+        </tr>`;
+      }).join("");
+
+      const featuresHtml = (Array.isArray(features) ? features : []).map((f: string) =>
+        `<li style="padding:4px 0;font-size:13px;color:#334155;">${esc(f)}</li>`
+      ).join("");
+
+      const termsHtml = (Array.isArray(terms) ? terms : []).map((t: string) =>
+        `<li style="padding:4px 0;font-size:13px;color:#334155;">${esc(t)}</li>`
+      ).join("");
+
+      const proposalHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:640px;margin:0 auto;padding:24px;">
+    <div style="background:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;overflow:hidden;">
+      <div style="background:#0F172A;padding:32px;text-align:center;">
+        <h1 style="margin:0;color:#FFFFFF;font-size:22px;font-weight:700;">${esc(proposalTitle || "Sales Proposal")}</h1>
+        <p style="margin:8px 0 0;color:#94A3B8;font-size:13px;">Prepared for ${esc(companyName)}</p>
+      </div>
+      <div style="padding:32px;">
+        <div style="margin-bottom:24px;">
+          <p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;">Prepared For</p>
+          ${contactName ? `<p style="margin:0 0 2px;font-size:15px;color:#0F172A;font-weight:600;">${esc(contactName)}</p>` : ""}
+          ${contactTitle ? `<p style="margin:0 0 2px;font-size:13px;color:#64748B;">${esc(contactTitle)}</p>` : ""}
+          ${companyName ? `<p style="margin:0 0 2px;font-size:13px;color:#64748B;">${esc(companyName)}</p>` : ""}
+          ${officeAddress ? `<p style="margin:0;font-size:13px;color:#64748B;">${esc(officeAddress)}</p>` : ""}
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+          <thead>
+            <tr style="background:#F8FAFC;">
+              <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;border-bottom:2px solid #E2E8F0;">Description</th>
+              <th style="padding:10px 12px;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;border-bottom:2px solid #E2E8F0;">Qty</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;border-bottom:2px solid #E2E8F0;">Unit Price</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;border-bottom:2px solid #E2E8F0;">Total</th>
+            </tr>
+          </thead>
+          <tbody>${lineItemsHtml}</tbody>
+        </table>
+
+        <div style="background:#F8FAFC;border-radius:8px;padding:16px;margin-bottom:24px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:13px;color:#64748B;">Subtotal</span>
+            <span style="font-size:14px;color:#0F172A;font-weight:600;">$${subtotal.toLocaleString()}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:13px;color:#64748B;">Tax (${taxRate || 0}%)</span>
+            <span style="font-size:14px;color:#0F172A;">$${taxAmount.toLocaleString()}</span>
+          </div>
+          <div style="border-top:2px solid #E2E8F0;padding-top:12px;display:flex;justify-content:space-between;">
+            <span style="font-size:16px;color:#0F172A;font-weight:700;">Total</span>
+            <span style="font-size:20px;color:#10B981;font-weight:700;">$${total.toLocaleString()}</span>
+          </div>
+        </div>
+
+        ${featuresHtml ? `
+        <div style="margin-bottom:24px;">
+          <p style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;">Features Included</p>
+          <ul style="margin:0;padding:0 0 0 20px;list-style-type:disc;">${featuresHtml}</ul>
+        </div>` : ""}
+
+        ${termsHtml ? `
+        <div style="margin-bottom:24px;">
+          <p style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#94A3B8;font-weight:600;">Terms &amp; Conditions</p>
+          <ul style="margin:0;padding:0 0 0 20px;list-style-type:disc;">${termsHtml}</ul>
+        </div>` : ""}
+
+        <div style="text-align:center;padding:24px 0 8px;border-top:1px solid #E2E8F0;">
+          <p style="margin:0;font-size:12px;color:#94A3B8;">This proposal is valid for 30 days from the date of receipt.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const { sendProposalEmail } = await import("./email-service");
+      const emailResult = await sendProposalEmail({
+        clientId,
+        recipientEmail: contactEmail,
+        recipientName: contactName || "",
+        companyName,
+        proposalTitle: proposalTitle || "Sales Proposal",
+        proposalHtml,
       });
 
-      if (!result.synced) return res.status(500).json({ error: "Failed to create proposal in HubSpot" });
+      if (!emailResult.success) {
+        log(`Proposal email failed for ${companyName}: ${emailResult.error}`, "proposals");
+        return res.status(400).json({ error: emailResult.error });
+      }
 
-      log(`Proposal created for ${companyName}: $${result.total?.toLocaleString()}`, "proposals");
-      res.json({ success: true, noteId: result.noteId, dealId: result.dealId, total: result.total });
+      log(`Proposal emailed to ${contactEmail} for ${companyName}: $${total.toLocaleString()}`, "proposals");
+      res.json({
+        success: true,
+        emailSent: true,
+        hubspotSynced: hubspotResult?.synced || false,
+        total,
+      });
     } catch (err: any) {
       log(`Proposal creation error: ${err.message}`, "proposals");
       res.status(500).json({ error: "Failed to create proposal" });

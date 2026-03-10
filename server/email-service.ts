@@ -437,3 +437,43 @@ export async function getDeferredSends(clientId: string) {
     )
     .orderBy(desc(emailSends.sentAt));
 }
+
+export async function sendProposalEmail(params: {
+  clientId: string;
+  recipientEmail: string;
+  recipientName: string;
+  companyName: string;
+  proposalTitle: string;
+  proposalHtml: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const settings = await getEmailSettings(params.clientId);
+  if (!settings) return { success: false, error: "Email settings not configured for this client. Go to Email Settings to set up SMTP." };
+  if (!settings.smtpHost || !settings.smtpUser || !settings.smtpPass) {
+    return { success: false, error: "SMTP credentials not configured. Go to Email Settings to set up SMTP." };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: settings.smtpHost,
+    port: settings.smtpPort,
+    secure: settings.smtpSecure,
+    auth: { user: settings.smtpUser, pass: settings.smtpPass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+
+  const fromName = settings.fromName || "Proposals";
+  const fromEmail = settings.fromEmail || settings.smtpUser;
+
+  try {
+    await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: params.recipientEmail,
+      subject: `${params.proposalTitle} — ${params.companyName}`,
+      html: params.proposalHtml,
+    });
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: `Email delivery failed: ${err.message || "Unknown SMTP error"}` };
+  }
+}

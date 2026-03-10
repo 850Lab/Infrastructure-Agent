@@ -162,7 +162,7 @@ function ProposalModal({ lead, onClose }: { lead: ManualLead; onClose: () => voi
       }
     },
     onSuccess: () => {
-      toast({ title: "Proposal pushed to HubSpot", description: `${lead.company_name} — $${total.toLocaleString()}` });
+      toast({ title: "Proposal sent", description: `Emailed to ${contactEmail || "recipient"} — $${total.toLocaleString()}` });
       onClose();
     },
     onError: (err: any) => {
@@ -330,9 +330,9 @@ function ProposalModal({ lead, onClose }: { lead: ManualLead; onClose: () => voi
             data-testid="button-submit-proposal"
           >
             {proposalMutation.isPending ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating...</>
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending...</>
             ) : (
-              <><Receipt className="w-4 h-4 mr-2" /> Push Proposal to HubSpot</>
+              <><Mail className="w-4 h-4 mr-2" /> Send Proposal</>
             )}
           </Button>
         </div>
