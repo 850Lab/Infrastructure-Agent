@@ -6,7 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, AlertTriangle, Loader2, Check } from "lucide-react";
+import { ArrowLeft, Save, AlertTriangle, Loader2, Check, Link2, Unlink, ExternalLink } from "lucide-react";
 
 const EMERALD = "#10B981";
 const TEXT = "#0F172A";
@@ -31,6 +31,113 @@ const MARKET_OPTIONS = [
   { value: "agency", label: "Agency / Services" },
   { value: "custom", label: "Custom" },
 ];
+
+const HUBSPOT_ORANGE = "#FF7A59";
+
+function HubSpotCard() {
+  const { toast } = useToast();
+
+  const { data: hubStatus, isLoading } = useQuery<{ connected: boolean; hubId?: string; connectedAt?: string }>({
+    queryKey: ["/api/hubspot/status"],
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/hubspot/disconnect"),
+    onSuccess: () => {
+      toast({ title: "HubSpot disconnected" });
+      queryClient.invalidateQueries({ queryKey: ["/api/hubspot/status"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleConnect = async () => {
+    try {
+      const res = await apiRequest("GET", "/api/hubspot/auth");
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err: any) {
+      toast({ title: "Failed to start OAuth", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const params = new URLSearchParams(window.location.search);
+  const hubspotResult = params.get("hubspot");
+
+  if (hubspotResult === "connected") {
+    queryClient.invalidateQueries({ queryKey: ["/api/hubspot/status"] });
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+
+  return (
+    <div
+      className="rounded-2xl p-6 mb-6"
+      style={{ background: "#FFF", border: `1px solid ${BORDER}`, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+      data-testid="card-hubspot"
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-2 h-2 rounded-full" style={{ background: HUBSPOT_ORANGE }} />
+        <p className="text-sm font-bold" style={{ color: TEXT }}>HubSpot Integration</p>
+      </div>
+      <p className="text-xs mb-4" style={{ color: MUTED }}>
+        Connect your HubSpot CRM to sync contacts, companies, and deals. Each client connects their own HubSpot account.
+      </p>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: MUTED }} />
+          <span className="text-xs" style={{ color: MUTED }}>Checking connection...</span>
+        </div>
+      ) : hubStatus?.connected ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
+            <Check className="w-4 h-4" style={{ color: EMERALD }} />
+            <span className="text-sm font-medium" style={{ color: EMERALD }}>Connected</span>
+            {hubStatus.hubId && (
+              <span className="text-xs ml-auto" style={{ color: MUTED }}>Hub ID: {hubStatus.hubId}</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => disconnectMutation.mutate()}
+              disabled={disconnectMutation.isPending}
+              variant="outline"
+              className="text-xs gap-1.5"
+              style={{ borderColor: BORDER, color: MUTED }}
+              data-testid="button-hubspot-disconnect"
+            >
+              {disconnectMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3" />}
+              Disconnect
+            </Button>
+            <Button
+              onClick={() => window.open("https://app.hubspot.com", "_blank")}
+              variant="outline"
+              className="text-xs gap-1.5"
+              style={{ borderColor: BORDER, color: MUTED }}
+              data-testid="button-hubspot-open"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Open HubSpot
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          onClick={handleConnect}
+          className="text-sm font-bold gap-2"
+          style={{ background: HUBSPOT_ORANGE, color: "#FFF" }}
+          data-testid="button-hubspot-connect"
+        >
+          <Link2 className="w-4 h-4" />
+          Connect HubSpot
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export default function MachineSettingsPage() {
   const { getToken } = useAuth();
@@ -297,6 +404,8 @@ export default function MachineSettingsPage() {
             })}
           </div>
         </div>
+
+        <HubSpotCard />
 
         <div className="flex items-center justify-between">
           <Button

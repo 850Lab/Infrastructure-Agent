@@ -315,3 +315,18 @@ export const emailTemplates = pgTable("email_templates", {
 export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
+
+export const hubspotTokens = pgTable("hubspot_tokens", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull().unique(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  hubId: text("hub_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertHubspotTokenSchema = createInsertSchema(hubspotTokens).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertHubspotToken = z.infer<typeof insertHubspotTokenSchema>;
+export type HubspotToken = typeof hubspotTokens.$inferSelect;
