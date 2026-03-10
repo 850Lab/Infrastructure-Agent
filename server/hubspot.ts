@@ -15,9 +15,6 @@ const SCOPES = [
   "crm.objects.companies.write",
   "crm.objects.deals.read",
   "crm.objects.deals.write",
-  "sales-email-read",
-  "crm.objects.custom.read",
-  "crm.objects.custom.write",
 ].join(" ");
 
 function getRedirectUri(req: Request): string {
