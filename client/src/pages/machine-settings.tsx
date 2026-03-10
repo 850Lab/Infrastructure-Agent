@@ -6,7 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, AlertTriangle, Loader2, Check, Link2, Unlink, ExternalLink } from "lucide-react";
+import { ArrowLeft, Save, AlertTriangle, Loader2, Check, Link2, Unlink, ExternalLink, Mail } from "lucide-react";
 
 const EMERALD = "#10B981";
 const TEXT = "#0F172A";
@@ -414,6 +414,30 @@ export default function MachineSettingsPage() {
         </div>
 
         <HubSpotCard />
+
+        <div
+          className="rounded-2xl p-6 mb-6"
+          style={{ background: "#FFF", border: `1px solid ${BORDER}`, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+          data-testid="card-email-settings"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-2 h-2 rounded-full" style={{ background: EMERALD }} />
+            <p className="text-sm font-bold" style={{ color: TEXT }}>Email Settings</p>
+          </div>
+          <p className="text-xs mb-4" style={{ color: MUTED }}>
+            Configure your SMTP settings to send proposals and outreach emails directly from the platform.
+          </p>
+          <Button
+            onClick={() => navigate("/machine/email-settings")}
+            variant="outline"
+            className="text-sm gap-2"
+            style={{ borderColor: BORDER, color: TEXT }}
+            data-testid="button-email-settings"
+          >
+            <Mail className="w-4 h-4" />
+            Configure Email
+          </Button>
+        </div>
 
         <div className="flex items-center justify-between">
           <Button
