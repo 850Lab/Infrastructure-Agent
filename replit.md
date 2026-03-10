@@ -29,6 +29,7 @@ Key features include:
 -   **Data Quality & Learning**: Targeting Accuracy, Query Generation Performance Tracking, Time-Decay Weighting, Authority Trend Tracking, Cross-Client Learning, DM Status Classification, DM Recovery Queue, and Information Ceiling Detection.
 -   **Production Safety**: Includes React Error Boundaries, Process Guards, Concurrency Guards, Rate Limit Handling, and Fetch Timeouts.
 -   **Compliance Pages**: Public `/privacy` and `/terms` pages for Twilio A2P registration, with footer links from the landing page.
+-   **Contacts/Lead Management**: Redesigned contacts page with Add Lead form (manual company creation in Airtable), per-company Enrich button (triggers DM enrichment + web intel), search/filter, expandable detail rows. API endpoints: `GET /api/companies`, `POST /api/companies/add`, `POST /api/companies/:id/enrich`.
 -   **Multi-Campaign Support**: Allows for multiple active campaigns, each with isolated data and configurable settings.
 
 ## External Dependencies

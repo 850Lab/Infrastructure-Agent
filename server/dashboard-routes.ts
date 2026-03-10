@@ -13,6 +13,8 @@ import { computeDMAuthorityReport } from "./dm-authority-learning";
 import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
+import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
+import { gatherCompanyIntel } from "./web-intel";
 import { storage } from "./storage";
 import { getTimeWeight, getSignalAge, getDecayConstant } from "./time-weight";
 
@@ -986,6 +988,145 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     } catch (err: any) {
       log(`Weighted signals error: ${err.message}`, "analytics");
       res.status(500).json({ error: "Failed to compute weighted signals" });
+    }
+  });
+
+  app.get("/api/companies", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const table = encodeURIComponent("Companies");
+      const companies: any[] = [];
+      let offset: string | undefined;
+      do {
+        const params = offset ? `?pageSize=100&offset=${offset}` : "?pageSize=100";
+        const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${table}${params}`;
+        const resp = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` } });
+        if (!resp.ok) throw new Error(`Airtable error: ${resp.status}`);
+        const data = await resp.json();
+        for (const rec of data.records || []) {
+          const f = rec.fields;
+          companies.push({
+            id: rec.id,
+            companyName: String(f.company_name || f.Company_Name || "").trim(),
+            website: String(f.website || "").trim(),
+            phone: String(f.phone || f.Phone || "").trim(),
+            city: String(f.city || f.City || "").trim(),
+            state: String(f.state || f.State || "").trim(),
+            leadStatus: String(f.Lead_Status || "").trim(),
+            enrichmentStatus: String(f.enrichment_status || "").trim(),
+            primaryDMName: String(f.Primary_DM_Name || "").trim(),
+            primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
+            primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
+            primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
+            rankReason: String(f.Rank_Reason || "").trim(),
+          });
+        }
+        offset = data.offset;
+      } while (offset);
+      res.json({ ok: true, companies });
+    } catch (err: any) {
+      log(`Companies fetch error: ${err.message}`, "contacts");
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.post("/api/companies/add", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyName, website, phone, city, state } = req.body;
+      if (!companyName) return res.status(400).json({ ok: false, error: "Company name is required" });
+
+      const table = encodeURIComponent("Companies");
+      const fields: Record<string, string> = { company_name: companyName };
+      if (website) fields.website = website;
+      if (phone) fields.phone = phone;
+      if (city) fields.city = city;
+      if (state) fields.state = state;
+      fields.Lead_Status = "New";
+
+      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${table}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields }),
+      });
+      if (!resp.ok) {
+        const errBody = await resp.text();
+        throw new Error(`Airtable error ${resp.status}: ${errBody}`);
+      }
+      const record = await resp.json();
+      log(`Added company: ${companyName} (${record.id})`, "contacts");
+      res.json({ ok: true, id: record.id, companyName });
+    } catch (err: any) {
+      log(`Add company error: ${err.message}`, "contacts");
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.post("/api/companies/:id/enrich", authMiddleware, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    try {
+      log(`Manual enrich triggered for ${id}`, "contacts");
+
+      const table = encodeURIComponent("Companies");
+      const recUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${table}/${id}`;
+      const recResp = await fetch(recUrl, { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` } });
+      if (!recResp.ok) throw new Error(`Company not found: ${recResp.status}`);
+      const record = await recResp.json();
+      const f = record.fields;
+      const companyName = f.company_name || f.Company_Name || "Unknown";
+      const website = f.website || "";
+      const city = f.city || f.City || "";
+      const state = f.state || f.State || "";
+
+      let dmResult = null;
+      let intelResult = null;
+      const errors: string[] = [];
+
+      try {
+        const enrichResult = await enrichCompany(id);
+        const written = await writeDMsToAirtable(enrichResult);
+        dmResult = {
+          decisionMakersFound: enrichResult.decisionMakers.length,
+          written,
+          domain: enrichResult.domain,
+          apolloData: enrichResult.apolloData,
+        };
+        if (enrichResult.error) errors.push(`DM: ${enrichResult.error}`);
+      } catch (e: any) {
+        errors.push(`DM enrichment failed: ${e.message}`);
+      }
+
+      try {
+        const intel = await gatherCompanyIntel(
+          id,
+          companyName,
+          website || null,
+          city,
+          state,
+          f.Rank_Reason || "",
+          f.Rank_Evidence || ""
+        );
+        intelResult = {
+          confidence: intel.intel?.confidence || "low",
+          updated: intel.updated,
+        };
+        if (intel.error) errors.push(`Intel: ${intel.error}`);
+      } catch (e: any) {
+        errors.push(`Web intel failed: ${e.message}`);
+      }
+
+      res.json({
+        ok: true,
+        companyName,
+        dm: dmResult,
+        intel: intelResult,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (err: any) {
+      log(`Enrich error for ${id}: ${err.message}`, "contacts");
+      res.status(500).json({ ok: false, error: err.message });
     }
   });
 }
