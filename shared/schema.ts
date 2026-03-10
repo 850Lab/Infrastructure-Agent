@@ -316,6 +316,18 @@ export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit
 export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
 
+export const manualLeads = pgTable("manual_leads", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  airtableRecordId: text("airtable_record_id").notNull(),
+  companyName: text("company_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertManualLeadSchema = createInsertSchema(manualLeads).omit({ id: true, createdAt: true });
+export type InsertManualLead = z.infer<typeof insertManualLeadSchema>;
+export type ManualLead = typeof manualLeads.$inferSelect;
+
 export const hubspotTokens = pgTable("hubspot_tokens", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   clientId: varchar("client_id").notNull().unique(),

@@ -20,6 +20,7 @@ import CinematicPage from "@/pages/cinematic";
 import ActiveOutreachPage from "@/pages/active-outreach";
 import FocusModePage from "@/pages/focus-mode";
 import EmailSettingsPage from "@/pages/email-settings";
+import MyLeadsPage from "@/pages/my-leads";
 import LandingPage from "@/pages/landing";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
@@ -142,6 +143,7 @@ function Router() {
         <Route path="/machine/outreach"><MachineRoute><ActiveOutreachPage /></MachineRoute></Route>
         <Route path="/machine/focus"><MachineRoute><FocusModePage /></MachineRoute></Route>
         <Route path="/machine/email-settings"><MachineRoute><EmailSettingsPage /></MachineRoute></Route>
+        <Route path="/machine/my-leads"><MachineRoute><MyLeadsPage /></MachineRoute></Route>
 
         {/* Legacy routes redirect to new paths */}
         <Route path="/dashboard"><RoleRedirect /></Route>
@@ -156,6 +158,7 @@ function Router() {
         <Route path="/pipeline"><Redirect to="/machine/pipeline" /></Route>
         <Route path="/call-mode"><Redirect to="/machine/outreach" /></Route>
         <Route path="/machine-settings"><Redirect to="/machine/settings" /></Route>
+        <Route path="/my-leads"><Redirect to="/machine/my-leads" /></Route>
 
         <Route path="/"><RoleRedirect /></Route>
         <Route component={NotFound} />

@@ -51,6 +51,7 @@ const SECTION_BUTTONS = [
   { label: "Contacts", route: "/machine/contacts", steps: ["dm_coverage", "dm_fit"] },
   { label: "Analytics", route: "/machine/analytics", steps: ["bootstrap"] },
   { label: "Outreach", route: "/machine/outreach", steps: [] },
+  { label: "My Leads", route: "/machine/my-leads", steps: [] },
 ];
 
 const EMERALD = "#10B981";

@@ -30,6 +30,7 @@ Key features include:
 -   **Production Safety**: Includes React Error Boundaries, Process Guards, Concurrency Guards, Rate Limit Handling, and Fetch Timeouts.
 -   **Compliance Pages**: Public `/privacy` and `/terms` pages for Twilio A2P registration, with footer links from the landing page.
 -   **Contacts/Lead Management**: Redesigned contacts page with Add Lead form (manual company creation in Airtable), per-company Enrich button (triggers DM enrichment + web intel), search/filter, expandable detail rows. API endpoints: `GET /api/companies`, `POST /api/companies/add`, `POST /api/companies/:id/enrich`.
+-   **My Leads Page**: Dedicated page (`/machine/my-leads`) for manually added leads with full tool access — call logging, playbooks, enrich, and proposal creation. Manual lead tracking uses PostgreSQL `manual_leads` table to store Airtable record IDs, then batch-fetches company data from Airtable. Custom proposal modal with line items, tax, features/terms, and HubSpot push. API endpoints: `GET /api/companies/manual`, `POST /api/proposals/create`.
 -   **Multi-Campaign Support**: Allows for multiple active campaigns, each with isolated data and configurable settings.
 
 ## External Dependencies

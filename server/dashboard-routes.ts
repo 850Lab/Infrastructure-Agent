@@ -12,6 +12,9 @@ import { computeOutcomes, computeConfidence } from "./outcomes";
 import { computeDMAuthorityReport } from "./dm-authority-learning";
 import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
+import { db } from "./db";
+import { manualLeads } from "@shared/schema";
+import { eq, inArray } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
@@ -1065,10 +1068,128 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         throw new Error(`Airtable error ${resp.status}: ${errBody}`);
       }
       const record = await resp.json();
-      log(`Added company: ${companyName} (${record.id})`, "contacts");
+
+      const clientId = (req as any).user?.clientId || "global";
+      await db.insert(manualLeads).values({
+        clientId,
+        airtableRecordId: record.id,
+        companyName,
+      });
+
+      log(`Added manual lead: ${companyName} (${record.id})`, "contacts");
       res.json({ ok: true, id: record.id, companyName });
     } catch (err: any) {
       log(`Add company error: ${err.message}`, "contacts");
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.post("/api/proposals/create", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(400).json({ error: "No client context" });
+
+      const { isHubSpotConnected: checkHS, createInvoiceInHubSpot } = await import("./hubspot-sync");
+      const connected = await checkHS(clientId);
+      if (!connected) return res.status(400).json({ error: "HubSpot not connected" });
+
+      const { companyName, contactName, contactTitle, contactEmail, officeAddress,
+        proposalTitle, lineItems, taxRate, features, terms } = req.body;
+
+      if (!companyName) return res.status(400).json({ error: "Company name required" });
+      if (!lineItems?.length) return res.status(400).json({ error: "At least one line item required" });
+
+      const result = await createInvoiceInHubSpot(clientId, {
+        companyName, contactName, contactTitle, contactEmail, officeAddress,
+        proposalTitle, lineItems, taxRate: taxRate ?? 0, features: features || [], terms: terms || [],
+      });
+
+      if (!result.synced) return res.status(500).json({ error: "Failed to create proposal in HubSpot" });
+
+      log(`Proposal created for ${companyName}: $${result.total?.toLocaleString()}`, "proposals");
+      res.json({ success: true, noteId: result.noteId, dealId: result.dealId, total: result.total });
+    } catch (err: any) {
+      log(`Proposal creation error: ${err.message}`, "proposals");
+      res.status(500).json({ error: "Failed to create proposal" });
+    }
+  });
+
+  app.get("/api/companies/manual", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId || "global";
+      const manualRows = await db.select().from(manualLeads).where(eq(manualLeads.clientId, clientId));
+
+      if (manualRows.length === 0) {
+        return res.json({ ok: true, companies: [], count: 0 });
+      }
+
+      const recordIds = manualRows.map(r => r.airtableRecordId);
+      const table = encodeURIComponent("Companies");
+      const fieldNames = [
+        "company_name", "phone", "website", "city",
+        "Lead_Status", "Bucket", "Final_Priority",
+        "Times_Called", "Last_Outcome",
+        "Offer_DM_FitScore", "Offer_DM_Reason",
+        "Primary_DM_Name", "Primary_DM_Email", "Primary_DM_Phone",
+        "Rank_Reason", "Rank_Evidence",
+        "Playbook_Call_Opener", "Playbook_Gatekeeper_Ask", "Playbook_Voicemail",
+        "Playbook_Followup_Text", "Playbook_Email_Subject", "Playbook_Email_Body",
+      ];
+      const fieldParams = fieldNames.map(f => `fields[]=${encodeURIComponent(f)}`).join("&");
+
+      const companies: any[] = [];
+      const BATCH = 10;
+      for (let i = 0; i < recordIds.length; i += BATCH) {
+        const batch = recordIds.slice(i, i + BATCH);
+        const parts = batch.map(id => `RECORD_ID()='${id}'`);
+        const formula = encodeURIComponent(`OR(${parts.join(",")})`);
+        const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${table}?filterByFormula=${formula}&${fieldParams}`;
+        const resp = await fetch(url, {
+          headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` },
+        });
+        if (!resp.ok) {
+          const errBody = await resp.text().catch(() => "");
+          log(`Manual leads Airtable error: ${resp.status} ${errBody.slice(0, 200)}`, "contacts");
+          continue;
+        }
+        const data = await resp.json();
+        for (const rec of data.records || []) {
+          const f = rec.fields;
+          companies.push({
+            id: rec.id,
+            company_name: String(f.company_name || f.Company_Name || ""),
+            phone: String(f.phone || f.Phone || ""),
+            website: String(f.website || f.Website || ""),
+            city: String(f.city || f.City || ""),
+            state: "",
+            lead_status: String(f.Lead_Status || "New"),
+            bucket: String(f.Bucket || ""),
+            final_priority: parseInt(f.Final_Priority || "0", 10) || 0,
+            times_called: parseInt(f.Times_Called || "0", 10) || 0,
+            last_outcome: String(f.Last_Outcome || ""),
+            followup_due: "",
+            offer_dm_name: String(f.Primary_DM_Name || ""),
+            offer_dm_title: "",
+            offer_dm_email: String(f.Primary_DM_Email || ""),
+            offer_dm_phone: String(f.Primary_DM_Phone || ""),
+            rank_reason: String(f.Rank_Reason || ""),
+            rank_evidence: String(f.Rank_Evidence || ""),
+            playbook_opener: String(f.Playbook_Call_Opener || ""),
+            playbook_gatekeeper: String(f.Playbook_Gatekeeper_Ask || ""),
+            playbook_voicemail: String(f.Playbook_Voicemail || ""),
+            playbook_followup: String(f.Playbook_Followup_Text || ""),
+            gatekeeper_name: "",
+            dm_coverage_status: "",
+            industry: "",
+            touch_count: 0,
+          });
+        }
+      }
+
+      log(`Manual leads: ${companies.length} found`, "contacts");
+      res.json({ ok: true, companies, count: companies.length });
+    } catch (err: any) {
+      log(`Manual leads fetch error: ${err.message}`, "contacts");
       res.status(500).json({ ok: false, error: err.message });
     }
   });
