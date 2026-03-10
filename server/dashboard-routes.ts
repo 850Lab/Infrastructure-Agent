@@ -1013,11 +1013,20 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
             state: String(f.state || f.State || "").trim(),
             leadStatus: String(f.Lead_Status || "").trim(),
             enrichmentStatus: String(f.enrichment_status || "").trim(),
+            dmCoverageStatus: String(f.DM_Coverage_Status || "").trim(),
             primaryDMName: String(f.Primary_DM_Name || "").trim(),
             primaryDMTitle: String(f.Primary_DM_Title || "").trim(),
             primaryDMEmail: String(f.Primary_DM_Email || "").trim(),
             primaryDMPhone: String(f.Primary_DM_Phone || "").trim(),
+            offerDMName: String(f.Offer_DM_Name || "").trim(),
+            offerDMTitle: String(f.Offer_DM_Title || "").trim(),
+            offerDMEmail: String(f.Offer_DM_Email || "").trim(),
+            offerDMPhone: String(f.Offer_DM_Phone || "").trim(),
+            lastOutcome: String(f.Last_Outcome || "").trim(),
+            todayCallList: f.Today_Call_List === true,
+            touchCount: parseInt(String(f.Touch_Count || "0")) || 0,
             rankReason: String(f.Rank_Reason || "").trim(),
+            industry: String(f.Industry || f.industry || "").trim(),
           });
         }
         offset = data.offset;
