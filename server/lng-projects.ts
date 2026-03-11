@@ -125,7 +125,7 @@ async function searchAndAnalyzeLng(query: string): Promise<LngSearchResult> {
 
   const searchContext = googleResults.map(r => `- ${r.title}: ${r.snippet} (${r.link})`).join("\n");
 
-  const prompt = `You are an LNG (Liquefied Natural Gas) industry intelligence analyst. Analyze the following search results and web content to extract detailed information about LNG projects, key people/decision makers, and relevant intelligence.
+  const prompt = `You are an LNG (Liquefied Natural Gas) industry intelligence analyst specializing in finding PROCUREMENT decision makers and RELATIONSHIP-BUILDING opportunities. Analyze the following search results and web content.
 
 SEARCH QUERY: "${query}"
 
@@ -139,24 +139,45 @@ Extract and return a JSON object with three arrays:
 
 1. "projects" - LNG projects found (each with: projectName, operator, location, state, status, capacity, estimatedValue, description, contractors, timeline, source, sourceUrl)
 
-2. "contacts" - Key people/decision makers at LNG-related companies. For each contact include:
+2. "contacts" - Key people/decision makers at LNG-related companies. PRIORITY ORDER for contact discovery:
+   A) PROCUREMENT & SUPPLY CHAIN (highest priority):
+      - Procurement Managers/Directors, Purchasing Agents, Supply Chain Managers
+      - Vendor Management, Supplier Relations, Strategic Sourcing
+      - Contract Administrators, Bid/Proposal Coordinators
+      - Materials Managers, Warehouse/Logistics Managers
+      - Anyone who evaluates vendors, approves purchase orders, or manages contractor relationships
+   B) OPERATIONS & FACILITIES:
+      - Operations Managers/Directors, Facility Managers, Plant Managers
+      - Maintenance Managers/Supervisors, Turnaround Managers
+      - Safety Directors/Managers, HSE Managers
+      - Anyone who requests services, files work orders, or manages site contractors
+   C) PROJECT & ENGINEERING:
+      - Project Managers, Construction Managers, Project Engineers
+      - Engineering Managers, QA/QC Managers
+   D) EXECUTIVE (lower priority — already have many of these):
+      - VP of Operations, COO, General Manager
+      - Include but don't prioritize CEO/President unless small company
+
+   For each contact include:
    - Core fields: fullName, title, company, email, phone, linkedin, projectName, source
    - RELATIONSHIP INTEL (critical — dig deep for these):
-     - "communityInvolvement": Any charity work, nonprofit boards, volunteer activities, community organizations, church/religious groups, youth coaching, local government roles, alumni associations, mentorship programs, environmental initiatives. Be specific with organization names.
-     - "upcomingEvents": Industry conferences, trade shows, panel speaking engagements, webinars, charity galas, golf tournaments, chamber of commerce events, university events, awards ceremonies they might attend or speak at. Include dates if found.
+     - "communityInvolvement": Any charity work, nonprofit boards, volunteer activities, community organizations, church/religious groups, youth coaching, local government roles, alumni associations, mentorship programs, environmental initiatives, Rotary/Lions/Kiwanis, industry association committees (ISNetworld, ISOA, API chapters). Be specific with organization names and roles.
+     - "upcomingEvents": Industry conferences, trade shows, panel speaking engagements, webinars, charity galas, golf tournaments, chamber of commerce events, university events, awards ceremonies, ISN events, safety forums, procurement roundtables, supplier diversity fairs they might attend or speak at. Include dates and locations if found.
      - "interests": Hobbies, sports (teams they follow, sports they play), outdoor activities, hunting, fishing, boating, golf memberships, car enthusiasm, aviation, collections, music, family activities. Look in social media bios, interviews, "about me" sections.
      - "socialMedia": Twitter/X handle, Facebook profile, Instagram, personal blog, YouTube channel, podcast appearances. Include actual URLs or handles when found.
-     - "personalNotes": Alma mater/university, military service, hometown, years in industry, career path highlights, awards won, articles they've written, interviews they've given, family mentions (e.g. "family man", "father of 3"), any conversation starters or rapport-building facts.
-   - Include executives, project managers, engineers, operations directors, procurement heads, safety directors
-   - Look for anyone who makes decisions about contractor services, equipment, cooling, safety
+     - "personalNotes": Alma mater/university, military service, hometown, years in industry, career path highlights, awards won, articles they've written, interviews they've given, family mentions, any conversation starters. Note procurement preferences if found (e.g. "prefers local vendors", "values safety record", "sits on supplier diversity committee").
 
 3. "intel" - Relevant intelligence items (each with: category, title, summary, url, date, projectName)
-   - Categories: "hiring" (job postings), "press_release", "event", "regulatory", "construction_update", "social_media", "contract_award", "partnership", "community" (local community engagement by LNG companies)
-   - Include industry events, conferences, and trade shows where LNG people gather
-   - Include events by associated organizations (not just LNG companies directly)
-   - Include local community events, sponsorships, and philanthropic activities by LNG companies
+   Categories: "hiring", "press_release", "event", "regulatory", "construction_update", "social_media", "contract_award", "partnership", "community", "procurement" (RFPs, vendor fairs, prequalification deadlines, approved vendor list openings), "networking" (industry mixers, golf outings, crawfish boils, charity runs, association chapter meetings — any gathering where you can meet these people face-to-face)
+   PRIORITIZE "networking" and "procurement" categories — the goal is finding WHERE to show up and WHO to meet there.
+   Include:
+   - Industry events, conferences, and trade shows where LNG/energy people gather (CERAWeek, Gastech, LNG conferences, OTC, AFPM)
+   - Local Gulf Coast events: chamber of commerce mixers, Rotary meetings, charity golf tournaments, crawfish boils, fishing tournaments, United Way events
+   - Supplier/vendor events: prequalification deadlines, supplier diversity fairs, vendor days, safety orientations
+   - Professional association chapter meetings: API, ISOA, ISN, ASME, local engineering societies
+   - Any event where procurement or operations people from LNG companies will be present
 
-Be extremely thorough. Extract every project, person, and intelligence item you can find. For contacts, aggressively look for personal details from LinkedIn bios, company "about" pages, press releases, news articles, conference speaker bios, social media profiles, and interview transcripts. The goal is to find rapport-building intel that helps a salesperson connect on a human level.
+Be extremely thorough. The user sells services to these companies — they need to know WHO makes purchasing decisions (not just who runs the company) and WHERE they can naturally run into those people to build genuine relationships. Think like a business development strategist: find the procurement gatekeepers and the places where real relationships get built (golf courses, charity events, industry dinners, association meetings).
 
 Return ONLY valid JSON, no markdown formatting.`;
 
@@ -193,12 +214,15 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
 
       const predefinedQueries = [
         query,
-        `${query} decision makers executives leadership`,
-        `${query} hiring jobs careers`,
-        `${query} press release news 2025 2026`,
-        `${query} conference event trade show`,
-        `${query} community involvement charity volunteer board member`,
+        `${query} procurement manager purchasing supply chain vendor management`,
+        `${query} operations manager maintenance supervisor facility manager`,
+        `${query} hiring jobs careers procurement supply chain`,
+        `${query} press release news contract award 2025 2026`,
+        `${query} conference event trade show networking mixer Gulf Coast`,
+        `${query} community involvement charity volunteer board member Rotary chamber of commerce`,
         `${query} leadership LinkedIn speaker biography background`,
+        `${query} supplier vendor prequalification RFP approved vendor list`,
+        `${query} golf tournament charity gala crawfish boil fundraiser industry dinner`,
       ];
 
       const allResults: LngSearchResult = { projects: [], contacts: [], intel: [] };

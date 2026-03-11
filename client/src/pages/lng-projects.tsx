@@ -27,20 +27,24 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string; icon: any 
   contract_award: { label: "Contract", color: "#14B8A6", icon: DollarSign },
   partnership: { label: "Partnership", color: "#6366F1", icon: UserCheck },
   community: { label: "Community", color: "#8B5CF6", icon: Users },
+  procurement: { label: "Procurement", color: "#F97316", icon: DollarSign },
+  networking: { label: "Networking", color: "#06B6D4", icon: Users },
   general: { label: "General", color: MUTED, icon: Newspaper },
 };
 
 const QUICK_SEARCHES = [
   "LNG projects Gulf Coast Texas Louisiana 2025 2026",
-  "LNG terminal construction contractors hiring",
-  "LNG facility expansion decision makers executives",
-  "Golden Pass LNG Port Arthur",
-  "Driftwood LNG Lake Charles",
-  "Rio Grande LNG Brownsville",
-  "Sabine Pass LNG expansion",
-  "Plaquemines LNG Louisiana",
-  "LNG industry events conferences 2026",
-  "LNG project safety cooling services contractors",
+  "Golden Pass LNG Port Arthur procurement supply chain",
+  "Driftwood LNG Lake Charles vendor contractor",
+  "Rio Grande LNG Brownsville operations maintenance",
+  "Sabine Pass LNG Cheniere procurement purchasing manager",
+  "Plaquemines LNG Venture Global supplier prequalification",
+  "LNG terminal procurement manager vendor management Gulf Coast",
+  "LNG facility operations maintenance supervisor plant manager",
+  "CERAWeek Gastech OTC LNG conference networking 2026",
+  "Gulf Coast energy industry golf tournament charity gala mixer",
+  "Lake Charles Port Arthur chamber of commerce Rotary energy",
+  "LNG supplier diversity vendor fair prequalification RFP 2026",
 ];
 
 type TabView = "search" | "saved_projects" | "saved_contacts" | "saved_intel";
