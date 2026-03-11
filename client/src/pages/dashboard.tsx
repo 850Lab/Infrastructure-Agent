@@ -163,7 +163,7 @@ export default function DashboardPage() {
   const lastEventCount = useRef(0);
   const eventTimestamps = useRef<number[]>([]);
 
-  const { data: meData } = useQuery<{ email: string; machine_config: MachineConfigData | null }>({
+  const { data: meData } = useQuery<{ email: string; machine_config: MachineConfigData | null; client?: { client_name?: string } | null }>({
     queryKey: ["/api/me"],
     enabled: !!token,
     staleTime: 60000,
@@ -483,6 +483,21 @@ export default function DashboardPage() {
               </button>
             );
           })}
+          {meData?.client?.client_name === "Texas Cool Down Trailers" && (
+            <button
+              onClick={() => navigate("/machine/lng-projects")}
+              className="px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300"
+              style={{
+                background: "rgba(245,158,11,0.08)",
+                border: "1px solid rgba(245,158,11,0.35)",
+                color: "#F59E0B",
+                boxShadow: "0 0 12px rgba(245,158,11,0.1)",
+              }}
+              data-testid="nav-lng-projects"
+            >
+              LNG Projects
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">

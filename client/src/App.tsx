@@ -21,6 +21,7 @@ import ActiveOutreachPage from "@/pages/active-outreach";
 import FocusModePage from "@/pages/focus-mode";
 import EmailSettingsPage from "@/pages/email-settings";
 import MyLeadsPage from "@/pages/my-leads";
+import LngProjectsPage from "@/pages/lng-projects";
 import LandingPage from "@/pages/landing";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
@@ -144,6 +145,7 @@ function Router() {
         <Route path="/machine/focus"><MachineRoute><FocusModePage /></MachineRoute></Route>
         <Route path="/machine/email-settings"><MachineRoute><EmailSettingsPage /></MachineRoute></Route>
         <Route path="/machine/my-leads"><MachineRoute><MyLeadsPage /></MachineRoute></Route>
+        <Route path="/machine/lng-projects"><MachineRoute><LngProjectsPage /></MachineRoute></Route>
 
         {/* Legacy routes redirect to new paths */}
         <Route path="/dashboard"><RoleRedirect /></Route>

@@ -342,3 +342,63 @@ export const hubspotTokens = pgTable("hubspot_tokens", {
 export const insertHubspotTokenSchema = createInsertSchema(hubspotTokens).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertHubspotToken = z.infer<typeof insertHubspotTokenSchema>;
 export type HubspotToken = typeof hubspotTokens.$inferSelect;
+
+export const lngProjects = pgTable("lng_projects", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  projectName: text("project_name").notNull(),
+  operator: text("operator"),
+  location: text("location"),
+  state: text("state"),
+  status: text("status"),
+  capacity: text("capacity"),
+  estimatedValue: text("estimated_value"),
+  description: text("description"),
+  contractors: text("contractors"),
+  timeline: text("timeline"),
+  source: text("source"),
+  sourceUrl: text("source_url"),
+  notes: text("notes"),
+  savedAt: timestamp("saved_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertLngProjectSchema = createInsertSchema(lngProjects).omit({ id: true, savedAt: true, updatedAt: true });
+export type InsertLngProject = z.infer<typeof insertLngProjectSchema>;
+export type LngProject = typeof lngProjects.$inferSelect;
+
+export const lngContacts = pgTable("lng_contacts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  projectId: integer("project_id"),
+  fullName: text("full_name").notNull(),
+  title: text("title"),
+  company: text("company"),
+  email: text("email"),
+  phone: text("phone"),
+  linkedin: text("linkedin"),
+  source: text("source"),
+  notes: text("notes"),
+  savedAt: timestamp("saved_at").defaultNow().notNull(),
+});
+
+export const insertLngContactSchema = createInsertSchema(lngContacts).omit({ id: true, savedAt: true });
+export type InsertLngContact = z.infer<typeof insertLngContactSchema>;
+export type LngContact = typeof lngContacts.$inferSelect;
+
+export const lngIntel = pgTable("lng_intel", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  projectId: integer("project_id"),
+  category: text("category").notNull(),
+  title: text("title").notNull(),
+  summary: text("summary"),
+  url: text("url"),
+  date: text("date"),
+  rawData: text("raw_data"),
+  savedAt: timestamp("saved_at").defaultNow().notNull(),
+});
+
+export const insertLngIntelSchema = createInsertSchema(lngIntel).omit({ id: true, savedAt: true });
+export type InsertLngIntel = z.infer<typeof insertLngIntelSchema>;
+export type LngIntel = typeof lngIntel.$inferSelect;
