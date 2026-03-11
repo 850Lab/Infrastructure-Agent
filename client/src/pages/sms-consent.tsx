@@ -45,7 +45,7 @@ export default function SmsConsentPage() {
               <div>
                 <h2 className="text-base font-bold mb-2" style={{ color: NAVY }}>Consent Summary</h2>
                 <p className="text-sm leading-relaxed" style={{ color: NAVY }}>
-                  Texas Automation Systems (operated by Pivotal Gamechangers LLC) only sends text messages to business contacts who have provided explicit verbal consent during a live, one-on-one phone conversation with a sales representative. We never send unsolicited text messages, cold SMS, promotional blasts, or marketing messages. All messaging is one-to-one and directly related to a prior business conversation initiated by or with the customer.
+                  Texas Automation Systems (operated by Pivotal Gamechangers LLC) only sends text messages to business contacts who have provided explicit verbal consent during a live, one-on-one phone conversation with a sales representative. When a customer calls a contractor and no one answers, our system records the voicemail, triggers an automatic transcription, logs the lead internally, and sends a single follow-up SMS related to that customer's call. All messaging is one-to-one and triggered only by a customer-initiated phone call. We do not send cold messages, promotional campaigns, or bulk marketing communications. Customers may reply STOP at any time to opt out of further communication.
                 </p>
               </div>
             </div>
@@ -99,6 +99,12 @@ export default function SmsConsentPage() {
                 <p className="font-semibold mb-2" style={{ color: NAVY }}>Sample Message:</p>
                 <p className="italic" style={{ color: MUTED }}>
                   "Sorry we missed your call. How can we help you today?" Reply STOP to opt out.
+                </p>
+              </div>
+              <div className="rounded-lg p-4 mt-3" style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.2)` }}>
+                <p className="font-semibold mb-2" style={{ color: EMERALD }}>Opt-In Confirmation Message:</p>
+                <p className="italic" style={{ color: NAVY }}>
+                  Thank you for contacting us. You have reached Texas Automation Systems. We may send you service-related text messages regarding your inquiry. Reply STOP to unsubscribe. Reply HELP for help. Msg & data rates may apply.
                 </p>
               </div>
             </section>
@@ -158,9 +164,15 @@ export default function SmsConsentPage() {
               </div>
               <div className="rounded-lg p-4" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
                 <p className="mb-2" style={{ color: NAVY }}>Text <strong style={{ color: EMERALD }}>HELP</strong> to the number that messaged you for assistance.</p>
-                <p className="mb-3 italic" style={{ color: MUTED }}>You will receive: "Texas Automation Systems: For support, email Pivotalgcs@gmail.com or call during business hours. Reply STOP to opt out."</p>
+                <div className="rounded-lg p-3 mb-3" style={{ background: "rgba(16,185,129,0.04)", border: `1px solid rgba(16,185,129,0.2)` }}>
+                  <p className="font-semibold mb-1 text-xs" style={{ color: EMERALD }}>Help Response Message:</p>
+                  <p className="italic" style={{ color: NAVY }}>
+                    For assistance, reply HELP or contact us at Pivotalgcs@gmail.com. Reply STOP to opt out.
+                  </p>
+                </div>
                 <p className="font-semibold" style={{ color: NAVY }}>Direct Contact:</p>
                 <p style={{ color: MUTED }}>Pivotal Gamechangers LLC</p>
+                <p style={{ color: MUTED }}>Texas Automation Systems</p>
                 <p style={{ color: MUTED }}>Email: Pivotalgcs@gmail.com</p>
               </div>
             </section>
