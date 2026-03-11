@@ -39,8 +39,13 @@ interface PlaybookCompany {
   offerDMPhone: string;
   offerDMReason: string;
   gatekeeperName: string;
+  gatekeeperDeflections: string[];
+  gatekeeperStyle: string;
   rankReason: string;
   rankEvidence: string;
+  webIntelTalkingPoints: string[];
+  webIntelSignals: string[];
+  webIntelRecent: string;
   opportunityType: string;
   opportunitySignal: string;
   opportunityScore: number;
@@ -165,6 +170,78 @@ async function fetchCallAnalysisForCompanies(companyNames: string[], clientId?: 
   return map;
 }
 
+function parseWebIntelFromRank(rankReason: string, rankEvidence: string): {
+  webIntelTalkingPoints: string[];
+  webIntelSignals: string[];
+  webIntelRecent: string;
+} {
+  const talkingPoints: string[] = [];
+  const signals: string[] = [];
+  let recent = "";
+
+  const tpMatch = rankReason.match(/Talking [Pp]oints?:\s*(.+?)(?:\n|$)/);
+  if (tpMatch) {
+    talkingPoints.push(...tpMatch[1].split("|").map(s => s.trim()).filter(Boolean));
+  }
+  const tpBullet = rankReason.match(/\u2022 Talking Points?:\s*(.+?)(?:\n|$)/);
+  if (tpBullet) {
+    talkingPoints.push(...tpBullet[1].split("|").map(s => s.trim()).filter(Boolean));
+  }
+
+  const sigMatch = rankReason.match(/\u2022 Signals?:\s*(.+?)(?:\n|$)/);
+  if (sigMatch) {
+    signals.push(...sigMatch[1].split(";").map(s => s.trim()).filter(Boolean));
+  }
+
+  const recentMatch = rankReason.match(/\u2022 Recent:\s*(.+?)(?:\n|$)/);
+  if (recentMatch) {
+    recent = recentMatch[1].trim();
+  }
+
+  const evTpMatch = rankEvidence.match(/Talking [Pp]oints?:\s*(.+?)(?:\n|$)/);
+  if (evTpMatch && talkingPoints.length === 0) {
+    talkingPoints.push(...evTpMatch[1].split("|").map(s => s.trim()).filter(Boolean));
+  }
+
+  return { webIntelTalkingPoints: talkingPoints.slice(0, 5), webIntelSignals: signals.slice(0, 5), webIntelRecent: recent };
+}
+
+async function fetchGatekeeperIntel(clientId?: string): Promise<Map<string, { deflections: string[]; style: string }>> {
+  const map = new Map<string, { deflections: string[]; style: string }>();
+  try {
+    const obsTable = encodeURIComponent("Sales_Learning_Observations");
+    const formula = encodeURIComponent(clientId
+      ? `AND({Gatekeeper_Name}!='',{Client_ID}='${clientId}')`
+      : `{Gatekeeper_Name}!=''`);
+    const fields = ["Company_Name", "Gatekeeper_Name", "Deflection_Phrase", "Objection_Type", "Outcome", "Authority_Redirect_Success"].map(f => `fields[]=${f}`).join("&");
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${obsTable}?filterByFormula=${formula}&${fields}&pageSize=100&sort%5B0%5D%5Bfield%5D=Created_At&sort%5B0%5D%5Bdirection%5D=desc`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` } });
+    if (!res.ok) return map;
+    const data = await res.json();
+    for (const rec of data.records || []) {
+      const f = rec.fields;
+      const companyName = String(f.Company_Name || "").toLowerCase().trim();
+      const gkName = String(f.Gatekeeper_Name || "").trim();
+      if (!companyName || !gkName) continue;
+      const existing = map.get(companyName) || { deflections: [], style: "" };
+      if (f.Deflection_Phrase && !existing.deflections.includes(f.Deflection_Phrase)) {
+        existing.deflections.push(String(f.Deflection_Phrase));
+      }
+      const objType = String(f.Objection_Type || "");
+      const redirectSuccess = f.Authority_Redirect_Success;
+      if (objType && !existing.style) {
+        existing.style = redirectSuccess
+          ? `${gkName} has been redirected successfully before — authority redirect works`
+          : `${gkName} tends to ${objType.replace(/_/g, " ")}`;
+      }
+      map.set(companyName, existing);
+    }
+  } catch (e: any) {
+    logPB(`Gatekeeper intel fetch failed (non-blocking): ${e.message}`);
+  }
+  return map;
+}
+
 async function fetchTodayListCompanies(clientId?: string): Promise<PlaybookCompany[]> {
   const table = encodeURIComponent("Companies");
   const baseFormula = `{Today_Call_List}=TRUE()`;
@@ -194,8 +271,11 @@ async function fetchTodayListCompanies(clientId?: string): Promise<PlaybookCompa
           offerDMPhone: String(f.Offer_DM_Phone || "").trim(),
           offerDMReason: String(f.Offer_DM_Reason || "").trim(),
           gatekeeperName: String(f.Gatekeeper_Name || "").trim(),
+          gatekeeperDeflections: [],
+          gatekeeperStyle: "",
           rankReason: String(f.Rank_Reason || "").trim(),
           rankEvidence: String(f.Rank_Evidence || "").trim(),
+          ...parseWebIntelFromRank(String(f.Rank_Reason || ""), String(f.Rank_Evidence || "")),
           opportunityType: String(f.Opportunity_Type || "").trim(),
           opportunitySignal: String(f.Opportunity_Signal || "").trim(),
           opportunityScore: parseInt(f.Opportunity_Score || "0", 10) || 0,
@@ -254,9 +334,16 @@ function buildPrompt(c: PlaybookCompany, cfg: IndustryConfig): string {
     ? `Decision maker: ${bestDMName}${bestDMTitle ? ` (${bestDMTitle})` : ""}. Address them by name.${c.offerDMName ? ` (Selected for offer fit: ${c.offerDMReason || "best match for this offer"})` : ""}`
     : `No known decision maker. Ask for the ${cfg.decision_maker_titles_tiers.tier1[0] || "owner"} by title.`;
 
-  const gkSection = c.gatekeeperName
+  let gkSection = c.gatekeeperName
     ? `Gatekeeper known: ${c.gatekeeperName}. Reference them naturally (e.g. "Hey ${c.gatekeeperName}, can you connect me with…").`
     : "No known gatekeeper.";
+
+  if (c.gatekeeperDeflections.length > 0) {
+    gkSection += `\nKNOWN GATEKEEPER TACTICS (from past calls): ${c.gatekeeperDeflections.join("; ")}. The gatekeeper script MUST have a counter for each of these deflections.`;
+  }
+  if (c.gatekeeperStyle) {
+    gkSection += `\nGatekeeper profile: ${c.gatekeeperStyle}.`;
+  }
 
   let bucketGuidance = "";
   if (c.bucket === "Hot Follow-up") {
@@ -282,6 +369,21 @@ function buildPrompt(c: PlaybookCompany, cfg: IndustryConfig): string {
     : "";
 
   const notesSection = c.notes ? `Company notes: ${c.notes}` : "";
+
+  let webIntelSection = "";
+  if (c.webIntelTalkingPoints.length > 0 || c.webIntelSignals.length > 0 || c.webIntelRecent) {
+    webIntelSection = "\nCOMPANY RESEARCH (use this in the DM conversation — reference their real business):";
+    if (c.webIntelTalkingPoints.length > 0) {
+      webIntelSection += `\nTalking points: ${c.webIntelTalkingPoints.join(" | ")}`;
+    }
+    if (c.webIntelSignals.length > 0) {
+      webIntelSection += `\nBusiness signals: ${c.webIntelSignals.join("; ")}`;
+    }
+    if (c.webIntelRecent) {
+      webIntelSection += `\nRecent activity: ${c.webIntelRecent}`;
+    }
+    webIntelSection += `\nCRITICAL: When writing the CALL_OPENER and QUALIFYING QUESTIONS, weave in at least one specific talking point or signal from above. This makes the call feel researched and personal, not generic. For example, reference a specific project, service, or recent activity to build credibility with the decision maker.`;
+  }
 
   let callAnalysisSection = "";
   if (c.lastCallAnalysis) {
@@ -316,7 +418,7 @@ ${gkSection}
 ${bucketGuidance}
 ${evidenceSection}
 ${opportunitySection}
-${notesSection}${callAnalysisSection}${evolutionSection}
+${notesSection}${webIntelSection}${callAnalysisSection}${evolutionSection}
 Engagement score: ${c.engagementScore}. Times called: ${c.timesCalled}.
 
 TONE: Confident, concise, operator voice. Industry-specific language for ${cfg.name}.
@@ -491,6 +593,25 @@ export async function generatePlaybooksForTodayList(options: {
     } catch (e: any) {
       logPB(`Script evolution context failed (non-blocking): ${e.message}`);
     }
+  }
+
+  try {
+    const gkIntel = await fetchGatekeeperIntel(effectiveClientId);
+    let gkMatched = 0;
+    for (const c of companies) {
+      const key = c.companyName.trim().toLowerCase();
+      const gk = gkIntel.get(key);
+      if (gk) {
+        c.gatekeeperDeflections = gk.deflections;
+        c.gatekeeperStyle = gk.style;
+        gkMatched++;
+      }
+    }
+    if (gkMatched > 0) {
+      logPB(`Gatekeeper intel loaded for ${gkMatched} companies`);
+    }
+  } catch (e: any) {
+    logPB(`Gatekeeper intel failed (non-blocking): ${e.message}`);
   }
 
   const result: PlaybookResult = {
