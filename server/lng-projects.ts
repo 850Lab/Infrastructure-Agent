@@ -139,24 +139,12 @@ Extract and return a JSON object with three arrays:
 
 1. "projects" - LNG projects found (each with: projectName, operator, location, state, status, capacity, estimatedValue, description, contractors, timeline, source, sourceUrl)
 
-2. "contacts" - Key people/decision makers at LNG-related companies. PRIORITY ORDER for contact discovery:
-   A) PROCUREMENT & SUPPLY CHAIN (highest priority):
-      - Procurement Managers/Directors, Purchasing Agents, Supply Chain Managers
-      - Vendor Management, Supplier Relations, Strategic Sourcing
-      - Contract Administrators, Bid/Proposal Coordinators
-      - Materials Managers, Warehouse/Logistics Managers
-      - Anyone who evaluates vendors, approves purchase orders, or manages contractor relationships
-   B) OPERATIONS & FACILITIES:
-      - Operations Managers/Directors, Facility Managers, Plant Managers
-      - Maintenance Managers/Supervisors, Turnaround Managers
-      - Safety Directors/Managers, HSE Managers
-      - Anyone who requests services, files work orders, or manages site contractors
-   C) PROJECT & ENGINEERING:
-      - Project Managers, Construction Managers, Project Engineers
-      - Engineering Managers, QA/QC Managers
-   D) EXECUTIVE (lower priority — already have many of these):
-      - VP of Operations, COO, General Manager
-      - Include but don't prioritize CEO/President unless small company
+2. "contacts" - Key people/decision makers at LNG-related companies. Find ALL of these roles:
+   - EXECUTIVES: CEO, President, COO, VP of Operations, General Manager, CFO, VP Engineering
+   - PROCUREMENT & SUPPLY CHAIN: Procurement Managers/Directors, Purchasing Agents, Supply Chain Managers, Vendor Management, Supplier Relations, Strategic Sourcing, Contract Administrators, Bid/Proposal Coordinators, Materials Managers
+   - OPERATIONS & FACILITIES: Operations Managers/Directors, Facility Managers, Plant Managers, Maintenance Managers/Supervisors, Turnaround Managers, Safety Directors/Managers, HSE Managers
+   - PROJECT & ENGINEERING: Project Managers, Construction Managers, Project Engineers, Engineering Managers, QA/QC Managers
+   Include ALL levels — executives AND procurement AND operations. Do not exclude any tier.
 
    For each contact include:
    - Core fields: fullName, title, company, email, phone, linkedin, projectName, source
@@ -177,7 +165,12 @@ Extract and return a JSON object with three arrays:
    - Professional association chapter meetings: API, ISOA, ISN, ASME, local engineering societies
    - Any event where procurement or operations people from LNG companies will be present
 
-Be extremely thorough. The user sells services to these companies — they need to know WHO makes purchasing decisions (not just who runs the company) and WHERE they can naturally run into those people to build genuine relationships. Think like a business development strategist: find the procurement gatekeepers and the places where real relationships get built (golf courses, charity events, industry dinners, association meetings).
+Be extremely thorough. The user sells services to these companies — they need to know WHO makes purchasing decisions and WHERE they can naturally run into those people to build genuine relationships.
+
+CRITICAL RULES:
+- ONLY include contacts whose names actually appear in the source material. NEVER invent or fabricate names. If you cannot find a real person's name, do not create a placeholder like "John Doe" or "Procurement Manager". Leave the contacts array empty rather than making up people.
+- Every contact must have a real full name found in the search results or web content.
+- It is better to return 0 contacts than to return 1 fake contact.
 
 Return ONLY valid JSON, no markdown formatting.`;
 

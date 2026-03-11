@@ -102,9 +102,6 @@ export default function LngProjectsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [resultTab, setResultTab] = useState<"projects" | "contacts" | "intel">("projects");
-  const [expandedProject, setExpandedProject] = useState<number | null>(null);
-  const [expandedContact, setExpandedContact] = useState<number | null>(null);
-  const [expandedSavedContact, setExpandedSavedContact] = useState<number | null>(null);
   const [expandedSaved, setExpandedSaved] = useState<number | null>(null);
   const [noteText, setNoteText] = useState<Record<number, string>>({});
 
@@ -366,40 +363,27 @@ export default function LngProjectsPage() {
                                 {project.timeline && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{project.timeline}</span>}
                               </div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => saveProjectMutation.mutate(project)}
-                                disabled={saveProjectMutation.isPending}
-                                className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                                style={{ color: EMERALD }}
-                                data-testid={`save-project-${i}`}
-                              >
-                                <Bookmark className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setExpandedProject(expandedProject === i ? null : i)}
-                                className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                                style={{ color: MUTED }}
-                              >
-                                {expandedProject === i ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => saveProjectMutation.mutate(project)}
+                              disabled={saveProjectMutation.isPending}
+                              className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                              style={{ color: EMERALD }}
+                              data-testid={`save-project-${i}`}
+                            >
+                              <Bookmark className="w-4 h-4" />
+                            </button>
                           </div>
-                          {expandedProject === i && (
-                            <div className="mt-3 pt-3 space-y-2" style={{ borderTop: `1px solid ${BORDER}` }}>
-                              {project.description && <p className="text-xs" style={{ color: TEXT }}>{project.description}</p>}
-                              {project.contractors && (
-                                <div className="text-xs">
-                                  <span className="font-semibold" style={{ color: TEXT }}>Contractors: </span>
-                                  <span style={{ color: MUTED }}>{project.contractors}</span>
-                                </div>
-                              )}
-                              {project.sourceUrl && (
-                                <a href={project.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: EMERALD }}>
-                                  <ExternalLink className="w-3 h-3" />Source: {project.source || project.sourceUrl}
-                                </a>
-                              )}
+                          {project.description && <p className="text-xs mt-2" style={{ color: TEXT }}>{project.description}</p>}
+                          {project.contractors && (
+                            <div className="text-xs mt-1">
+                              <span className="font-semibold" style={{ color: TEXT }}>Contractors: </span>
+                              <span style={{ color: MUTED }}>{project.contractors}</span>
                             </div>
+                          )}
+                          {project.sourceUrl && (
+                            <a href={project.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium mt-1" style={{ color: EMERALD }}>
+                              <ExternalLink className="w-3 h-3" />Source: {project.source || project.sourceUrl}
+                            </a>
                           )}
                         </div>
                       ))}
@@ -414,7 +398,6 @@ export default function LngProjectsPage() {
                         </div>
                       ) : searchResults.contacts.map((contact, i) => {
                         const hasPersonalIntel = contact.communityInvolvement || contact.upcomingEvents || contact.interests || contact.socialMedia || contact.personalNotes;
-                        const isExpanded = expandedContact === i;
                         return (
                           <div key={i} className="rounded-xl p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
                             <div className="flex items-center justify-between">
@@ -440,28 +423,17 @@ export default function LngProjectsPage() {
                                   {contact.projectName && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{contact.projectName}</span>}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1">
-                                {hasPersonalIntel && (
-                                  <button
-                                    onClick={() => setExpandedContact(isExpanded ? null : i)}
-                                    className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                                    style={{ color: MUTED }}
-                                  >
-                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => saveContactMutation.mutate(contact)}
-                                  disabled={saveContactMutation.isPending}
-                                  className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                                  style={{ color: EMERALD }}
-                                  data-testid={`save-contact-${i}`}
-                                >
-                                  <Bookmark className="w-4 h-4" />
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => saveContactMutation.mutate(contact)}
+                                disabled={saveContactMutation.isPending}
+                                className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                                style={{ color: EMERALD }}
+                                data-testid={`save-contact-${i}`}
+                              >
+                                <Bookmark className="w-4 h-4" />
+                              </button>
                             </div>
-                            {isExpanded && hasPersonalIntel && (
+                            {hasPersonalIntel && (
                               <div className="mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
                                 {contact.communityInvolvement && (
                                   <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
@@ -670,7 +642,6 @@ export default function LngProjectsPage() {
               )}
               {savedContactsQuery.data?.map((contact: any) => {
                 const hasPersonalIntel = contact.communityInvolvement || contact.upcomingEvents || contact.interests || contact.socialMedia || contact.personalNotes;
-                const isExpanded = expandedSavedContact === contact.id;
                 return (
                   <div key={contact.id} className="rounded-xl p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
                     <div className="flex items-center justify-between">
@@ -695,27 +666,16 @@ export default function LngProjectsPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {hasPersonalIntel && (
-                          <button
-                            onClick={() => setExpandedSavedContact(isExpanded ? null : contact.id)}
-                            className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                            style={{ color: MUTED }}
-                          >
-                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => deleteContactMutation.mutate(contact.id)}
-                          className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                          style={{ color: "#EF4444" }}
-                          data-testid={`delete-contact-${contact.id}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => deleteContactMutation.mutate(contact.id)}
+                        className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                        style={{ color: "#EF4444" }}
+                        data-testid={`delete-contact-${contact.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    {isExpanded && hasPersonalIntel && (
+                    {hasPersonalIntel && (
                       <div className="mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
                         {contact.communityInvolvement && (
                           <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
