@@ -379,6 +379,11 @@ export const lngContacts = pgTable("lng_contacts", {
   linkedin: text("linkedin"),
   source: text("source"),
   notes: text("notes"),
+  communityInvolvement: text("community_involvement"),
+  upcomingEvents: text("upcoming_events"),
+  interests: text("interests"),
+  socialMedia: text("social_media"),
+  personalNotes: text("personal_notes"),
   savedAt: timestamp("saved_at").defaultNow().notNull(),
 });
 

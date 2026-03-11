@@ -92,6 +92,11 @@ interface LngSearchResult {
     linkedin: string;
     projectName: string;
     source: string;
+    communityInvolvement: string;
+    upcomingEvents: string;
+    interests: string;
+    socialMedia: string;
+    personalNotes: string;
   }>;
   intel: Array<{
     category: string;
@@ -133,15 +138,25 @@ ${pageContents.slice(0, 30000)}
 Extract and return a JSON object with three arrays:
 
 1. "projects" - LNG projects found (each with: projectName, operator, location, state, status, capacity, estimatedValue, description, contractors, timeline, source, sourceUrl)
-2. "contacts" - Key people/decision makers at LNG-related companies (each with: fullName, title, company, email, phone, linkedin, projectName, source)
-   - Include executives, project managers, engineers, operations directors, procurement heads
+
+2. "contacts" - Key people/decision makers at LNG-related companies. For each contact include:
+   - Core fields: fullName, title, company, email, phone, linkedin, projectName, source
+   - RELATIONSHIP INTEL (critical — dig deep for these):
+     - "communityInvolvement": Any charity work, nonprofit boards, volunteer activities, community organizations, church/religious groups, youth coaching, local government roles, alumni associations, mentorship programs, environmental initiatives. Be specific with organization names.
+     - "upcomingEvents": Industry conferences, trade shows, panel speaking engagements, webinars, charity galas, golf tournaments, chamber of commerce events, university events, awards ceremonies they might attend or speak at. Include dates if found.
+     - "interests": Hobbies, sports (teams they follow, sports they play), outdoor activities, hunting, fishing, boating, golf memberships, car enthusiasm, aviation, collections, music, family activities. Look in social media bios, interviews, "about me" sections.
+     - "socialMedia": Twitter/X handle, Facebook profile, Instagram, personal blog, YouTube channel, podcast appearances. Include actual URLs or handles when found.
+     - "personalNotes": Alma mater/university, military service, hometown, years in industry, career path highlights, awards won, articles they've written, interviews they've given, family mentions (e.g. "family man", "father of 3"), any conversation starters or rapport-building facts.
+   - Include executives, project managers, engineers, operations directors, procurement heads, safety directors
    - Look for anyone who makes decisions about contractor services, equipment, cooling, safety
+
 3. "intel" - Relevant intelligence items (each with: category, title, summary, url, date, projectName)
-   - Categories: "hiring" (job postings), "press_release", "event", "regulatory", "construction_update", "social_media", "contract_award", "partnership"
+   - Categories: "hiring" (job postings), "press_release", "event", "regulatory", "construction_update", "social_media", "contract_award", "partnership", "community" (local community engagement by LNG companies)
    - Include industry events, conferences, and trade shows where LNG people gather
    - Include events by associated organizations (not just LNG companies directly)
+   - Include local community events, sponsorships, and philanthropic activities by LNG companies
 
-Be thorough. Extract every project, person, and intelligence item you can find. For contacts, aggressively look for names and titles from company websites, LinkedIn mentions, press releases, and news articles.
+Be extremely thorough. Extract every project, person, and intelligence item you can find. For contacts, aggressively look for personal details from LinkedIn bios, company "about" pages, press releases, news articles, conference speaker bios, social media profiles, and interview transcripts. The goal is to find rapport-building intel that helps a salesperson connect on a human level.
 
 Return ONLY valid JSON, no markdown formatting.`;
 
@@ -150,7 +165,7 @@ Return ONLY valid JSON, no markdown formatting.`;
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
-      max_tokens: 4000,
+      max_tokens: 6000,
       response_format: { type: "json_object" },
     });
 
@@ -182,6 +197,8 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
         `${query} hiring jobs careers`,
         `${query} press release news 2025 2026`,
         `${query} conference event trade show`,
+        `${query} community involvement charity volunteer board member`,
+        `${query} leadership LinkedIn speaker biography background`,
       ];
 
       const allResults: LngSearchResult = { projects: [], contacts: [], intel: [] };
@@ -268,6 +285,11 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
         linkedin: contact.linkedin || null,
         source: contact.source || null,
         notes: contact.notes || null,
+        communityInvolvement: contact.communityInvolvement || null,
+        upcomingEvents: contact.upcomingEvents || null,
+        interests: contact.interests || null,
+        socialMedia: contact.socialMedia || null,
+        personalNotes: contact.personalNotes || null,
       }).returning();
 
       log(`Saved contact: ${contact.fullName} (id=${saved.id})`);

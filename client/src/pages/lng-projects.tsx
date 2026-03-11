@@ -26,6 +26,7 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string; icon: any 
   social_media: { label: "Social", color: "#EC4899", icon: Globe },
   contract_award: { label: "Contract", color: "#14B8A6", icon: DollarSign },
   partnership: { label: "Partnership", color: "#6366F1", icon: UserCheck },
+  community: { label: "Community", color: "#8B5CF6", icon: Users },
   general: { label: "General", color: MUTED, icon: Newspaper },
 };
 
@@ -68,6 +69,11 @@ interface SearchContact {
   linkedin: string;
   projectName: string;
   source: string;
+  communityInvolvement: string;
+  upcomingEvents: string;
+  interests: string;
+  socialMedia: string;
+  personalNotes: string;
 }
 
 interface SearchIntelItem {
@@ -93,6 +99,8 @@ export default function LngProjectsPage() {
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [resultTab, setResultTab] = useState<"projects" | "contacts" | "intel">("projects");
   const [expandedProject, setExpandedProject] = useState<number | null>(null);
+  const [expandedContact, setExpandedContact] = useState<number | null>(null);
+  const [expandedSavedContact, setExpandedSavedContact] = useState<number | null>(null);
   const [expandedSaved, setExpandedSaved] = useState<number | null>(null);
   const [noteText, setNoteText] = useState<Record<number, string>>({});
 
@@ -400,34 +408,102 @@ export default function LngProjectsPage() {
                         <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
                           <p className="text-sm" style={{ color: MUTED }}>No decision makers found. Try searching for specific companies.</p>
                         </div>
-                      ) : searchResults.contacts.map((contact, i) => (
-                        <div key={i} className="rounded-xl p-3 flex items-center justify-between" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                          <div className="flex-1">
-                            <p className="text-sm font-bold" style={{ color: TEXT }}>{contact.fullName}</p>
-                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
-                              {contact.title && <span>{contact.title}</span>}
-                              {contact.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{contact.company}</span>}
-                              {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
-                              {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{contact.phone}</span>}
-                              {contact.linkedin && (
-                                <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1" style={{ color: EMERALD }}>
-                                  <Linkedin className="w-3 h-3" />LinkedIn
-                                </a>
-                              )}
-                              {contact.projectName && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{contact.projectName}</span>}
+                      ) : searchResults.contacts.map((contact, i) => {
+                        const hasPersonalIntel = contact.communityInvolvement || contact.upcomingEvents || contact.interests || contact.socialMedia || contact.personalNotes;
+                        const isExpanded = expandedContact === i;
+                        return (
+                          <div key={i} className="rounded-xl p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-bold" style={{ color: TEXT }}>{contact.fullName}</p>
+                                  {hasPersonalIntel && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
+                                      Personal Intel
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
+                                  {contact.title && <span>{contact.title}</span>}
+                                  {contact.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{contact.company}</span>}
+                                  {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
+                                  {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{contact.phone}</span>}
+                                  {contact.linkedin && (
+                                    <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1" style={{ color: EMERALD }}>
+                                      <Linkedin className="w-3 h-3" />LinkedIn
+                                    </a>
+                                  )}
+                                  {contact.projectName && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{contact.projectName}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {hasPersonalIntel && (
+                                  <button
+                                    onClick={() => setExpandedContact(isExpanded ? null : i)}
+                                    className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                                    style={{ color: MUTED }}
+                                  >
+                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => saveContactMutation.mutate(contact)}
+                                  disabled={saveContactMutation.isPending}
+                                  className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                                  style={{ color: EMERALD }}
+                                  data-testid={`save-contact-${i}`}
+                                >
+                                  <Bookmark className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
+                            {isExpanded && hasPersonalIntel && (
+                              <div className="mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                                {contact.communityInvolvement && (
+                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#8B5CF6" }}>
+                                      <Users className="w-3 h-3" />Community
+                                    </p>
+                                    <p className="text-xs" style={{ color: TEXT }}>{contact.communityInvolvement}</p>
+                                  </div>
+                                )}
+                                {contact.upcomingEvents && (
+                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#F59E0B" }}>
+                                      <Calendar className="w-3 h-3" />Events
+                                    </p>
+                                    <p className="text-xs" style={{ color: TEXT }}>{contact.upcomingEvents}</p>
+                                  </div>
+                                )}
+                                {contact.interests && (
+                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#10B981" }}>
+                                      <Globe className="w-3 h-3" />Interests
+                                    </p>
+                                    <p className="text-xs" style={{ color: TEXT }}>{contact.interests}</p>
+                                  </div>
+                                )}
+                                {contact.socialMedia && (
+                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#EC4899" }}>
+                                      <Globe className="w-3 h-3" />Social
+                                    </p>
+                                    <p className="text-xs" style={{ color: TEXT }}>{contact.socialMedia}</p>
+                                  </div>
+                                )}
+                                {contact.personalNotes && (
+                                  <div className="rounded-lg p-2.5 sm:col-span-2" style={{ background: SUBTLE }}>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#3B82F6" }}>
+                                      <StickyNote className="w-3 h-3" />Background
+                                    </p>
+                                    <p className="text-xs" style={{ color: TEXT }}>{contact.personalNotes}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <button
-                            onClick={() => saveContactMutation.mutate(contact)}
-                            disabled={saveContactMutation.isPending}
-                            className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                            style={{ color: EMERALD }}
-                            data-testid={`save-contact-${i}`}
-                          >
-                            <Bookmark className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -588,32 +664,100 @@ export default function LngProjectsPage() {
                   <p className="text-xs mt-1" style={{ color: MUTED }}>Search for LNG projects and save key decision makers</p>
                 </div>
               )}
-              {savedContactsQuery.data?.map((contact: any) => (
-                <div key={contact.id} className="rounded-xl p-3 flex items-center justify-between" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold" style={{ color: TEXT }}>{contact.fullName}</p>
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
-                      {contact.title && <span>{contact.title}</span>}
-                      {contact.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{contact.company}</span>}
-                      {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
-                      {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{contact.phone}</span>}
-                      {contact.linkedin && (
-                        <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1" style={{ color: EMERALD }}>
-                          <Linkedin className="w-3 h-3" />LinkedIn
-                        </a>
-                      )}
+              {savedContactsQuery.data?.map((contact: any) => {
+                const hasPersonalIntel = contact.communityInvolvement || contact.upcomingEvents || contact.interests || contact.socialMedia || contact.personalNotes;
+                const isExpanded = expandedSavedContact === contact.id;
+                return (
+                  <div key={contact.id} className="rounded-xl p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold" style={{ color: TEXT }}>{contact.fullName}</p>
+                          {hasPersonalIntel && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
+                              Personal Intel
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
+                          {contact.title && <span>{contact.title}</span>}
+                          {contact.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{contact.company}</span>}
+                          {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
+                          {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{contact.phone}</span>}
+                          {contact.linkedin && (
+                            <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1" style={{ color: EMERALD }}>
+                              <Linkedin className="w-3 h-3" />LinkedIn
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {hasPersonalIntel && (
+                          <button
+                            onClick={() => setExpandedSavedContact(isExpanded ? null : contact.id)}
+                            className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                            style={{ color: MUTED }}
+                          >
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteContactMutation.mutate(contact.id)}
+                          className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                          style={{ color: "#EF4444" }}
+                          data-testid={`delete-contact-${contact.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
+                    {isExpanded && hasPersonalIntel && (
+                      <div className="mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                        {contact.communityInvolvement && (
+                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#8B5CF6" }}>
+                              <Users className="w-3 h-3" />Community
+                            </p>
+                            <p className="text-xs" style={{ color: TEXT }}>{contact.communityInvolvement}</p>
+                          </div>
+                        )}
+                        {contact.upcomingEvents && (
+                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#F59E0B" }}>
+                              <Calendar className="w-3 h-3" />Events
+                            </p>
+                            <p className="text-xs" style={{ color: TEXT }}>{contact.upcomingEvents}</p>
+                          </div>
+                        )}
+                        {contact.interests && (
+                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#10B981" }}>
+                              <Globe className="w-3 h-3" />Interests
+                            </p>
+                            <p className="text-xs" style={{ color: TEXT }}>{contact.interests}</p>
+                          </div>
+                        )}
+                        {contact.socialMedia && (
+                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#EC4899" }}>
+                              <Globe className="w-3 h-3" />Social
+                            </p>
+                            <p className="text-xs" style={{ color: TEXT }}>{contact.socialMedia}</p>
+                          </div>
+                        )}
+                        {contact.personalNotes && (
+                          <div className="rounded-lg p-2.5 sm:col-span-2" style={{ background: SUBTLE }}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#3B82F6" }}>
+                              <StickyNote className="w-3 h-3" />Background
+                            </p>
+                            <p className="text-xs" style={{ color: TEXT }}>{contact.personalNotes}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => deleteContactMutation.mutate(contact.id)}
-                    className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                    style={{ color: "#EF4444" }}
-                    data-testid={`delete-contact-${contact.id}`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
