@@ -34,7 +34,7 @@ async function getCredentials(): Promise<TwilioCredentials> {
     throw new Error("Twilio: X-Replit-Token not found");
   }
 
-  const connectionSettings = await fetch(
+  const allConnections = await fetch(
     "https://" + hostname + "/api/v2/connection?include_secrets=true&connector_names=twilio",
     {
       headers: {
@@ -44,7 +44,11 @@ async function getCredentials(): Promise<TwilioCredentials> {
     }
   )
     .then((res) => res.json())
-    .then((data) => data.items?.[0]);
+    .then((data) => data.items || []);
+
+  const connectionSettings = allConnections.find(
+    (c: any) => c.settings?.account_sid?.startsWith("AC")
+  ) || allConnections[allConnections.length - 1];
 
   if (
     !connectionSettings ||
