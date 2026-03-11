@@ -42,6 +42,7 @@ import {
   MailCheck,
   ChevronDown,
   ChevronUp,
+  Radio,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -279,6 +280,9 @@ function FocusCompanyCard({
   onShowGkPrompt,
   onShowQualPrompt,
   onShowCbPrompt,
+  onTwilioCall,
+  twilioCallPending,
+  twilioCallActive,
 }: {
   company: TodayCompany;
   outreachItem: OutreachItem | null;
@@ -292,6 +296,9 @@ function FocusCompanyCard({
   onShowGkPrompt: (companyName: string, gkName: string) => void;
   onShowQualPrompt: (companyName: string) => void;
   onShowCbPrompt: (companyName: string) => void;
+  onTwilioCall?: (phone: string, companyName: string, contactName: string) => void;
+  twilioCallPending?: boolean;
+  twilioCallActive?: boolean;
 }) {
   const { getToken } = useAuth();
   const token = getToken();
@@ -477,9 +484,27 @@ function FocusCompanyCard({
                 </span>
               </div>
               {callPhone && (
-                <a href={`tel:${callPhone.replace(/\s/g, "")}`} className="flex items-center gap-2 text-sm font-bold" style={{ color: EMERALD }} data-testid={`focus-phone-link-${index}`}>
-                  <Phone className="w-4 h-4" /> {callPhone}
-                </a>
+                <div className="flex items-center gap-3">
+                  <a href={`tel:${callPhone.replace(/\s/g, "")}`} className="flex items-center gap-2 text-sm font-bold" style={{ color: EMERALD }} data-testid={`focus-phone-link-${index}`}>
+                    <Phone className="w-4 h-4" /> {callPhone}
+                  </a>
+                  {onTwilioCall && (
+                    <button
+                      onClick={() => onTwilioCall(callPhone, company.company_name, company.offer_dm_name || "")}
+                      disabled={twilioCallPending || twilioCallActive}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                      style={{
+                        background: twilioCallActive ? `${ERROR}15` : EMERALD,
+                        color: twilioCallActive ? ERROR : "#FFF",
+                        border: twilioCallActive ? `1px solid ${ERROR}30` : "none",
+                      }}
+                      data-testid={`focus-twilio-call-${index}`}
+                    >
+                      {twilioCallPending ? <Loader2 className="w-3 h-3 animate-spin" /> : twilioCallActive ? <Radio className="w-3 h-3 animate-pulse" /> : <PhoneCall className="w-3 h-3" />}
+                      {twilioCallActive ? "Live" : "Twilio Call"}
+                    </button>
+                  )}
+                </div>
               )}
               {company.offer_dm_email && (
                 <a href={`mailto:${company.offer_dm_email}`} className="flex items-center gap-2 text-xs" style={{ color: BLUE }}>
@@ -875,6 +900,60 @@ export default function FocusModePage() {
     enabled: !!token,
   });
 
+  const { data: twilioStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/twilio/status"],
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const [twilioCallActive, setTwilioCallActive] = useState(false);
+  const [coachingAlerts, setCoachingAlerts] = useState<Array<{ type: string; text: string; ts: number }>>([]);
+  const [coachingTranscript, setCoachingTranscript] = useState<string[]>([]);
+  const [coachingConnected, setCoachingConnected] = useState(false);
+
+  const startCoachingSSE = useCallback((callSid: string) => {
+    setCoachingAlerts([]);
+    setCoachingTranscript([]);
+    setCoachingConnected(false);
+    const es = new EventSource(`/api/twilio/coaching/${callSid}?token=${token}`);
+    let failures = 0;
+    es.onopen = () => { setCoachingConnected(true); failures = 0; };
+    es.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        if (d.type === "alert") setCoachingAlerts(prev => [...prev.slice(-19), { type: d.alertType || "info", text: d.text, ts: Date.now() }]);
+        if (d.type === "transcript") setCoachingTranscript(prev => [...prev.slice(-49), d.text]);
+        if (d.type === "end") { es.close(); setTwilioCallActive(false); setCoachingConnected(false); }
+      } catch {}
+    };
+    es.onerror = () => {
+      failures++;
+      if (failures > 5) { es.close(); setTwilioCallActive(false); setCoachingConnected(false); }
+    };
+    return () => es.close();
+  }, [token]);
+
+  const twilioCallMutation = useMutation({
+    mutationFn: async ({ to, companyName, contactName }: { to: string; companyName: string; contactName: string }) => {
+      const res = await apiRequest("POST", "/api/twilio/call", { to, companyName, contactName });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data?.sid) {
+        setTwilioCallActive(true);
+        startCoachingSSE(data.sid);
+      }
+      toast({ title: "Call initiated", description: "Your phone will ring shortly." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Call failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleTwilioCall = useCallback((phone: string, companyName: string, contactName: string) => {
+    twilioCallMutation.mutate({ to: phone, companyName, contactName });
+  }, [twilioCallMutation]);
+
   const logCallForPrompt = useMutation({
     mutationFn: async (data: { company_name: string; outcome: string; notes?: string; gatekeeper_name?: string }) => {
       const res = await apiRequest("POST", "/api/calls/log", data);
@@ -1068,10 +1147,57 @@ export default function FocusModePage() {
               onShowGkPrompt={(company, gk) => { setGkCompany(company); setGkName(gk); setShowGkPrompt(true); }}
               onShowQualPrompt={(company) => { setQualCompany(company); setShowQualPrompt(true); }}
               onShowCbPrompt={(company) => { setCbCompany(company); setShowCbPrompt(true); }}
+              onTwilioCall={twilioStatus?.connected ? handleTwilioCall : undefined}
+              twilioCallPending={twilioCallMutation.isPending}
+              twilioCallActive={twilioCallActive}
             />
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {twilioCallActive && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="mx-6 mb-4 rounded-xl overflow-hidden"
+            style={{ background: "#0F172A", border: `1px solid ${EMERALD}30` }}
+            data-testid="focus-live-coach"
+          >
+            <div className="px-4 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid rgba(255,255,255,0.1)` }}>
+              <div className="flex items-center gap-2">
+                <Radio className="w-3.5 h-3.5 animate-pulse" style={{ color: ERROR }} />
+                <span className="text-xs font-bold text-white">Live Coach</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: coachingConnected ? `${EMERALD}30` : `${AMBER}30`, color: coachingConnected ? EMERALD : AMBER }}>
+                  {coachingConnected ? "Connected" : "Connecting..."}
+                </span>
+              </div>
+            </div>
+            <div className="px-4 py-3 max-h-40 overflow-y-auto space-y-1.5">
+              {coachingAlerts.length === 0 && coachingTranscript.length === 0 && (
+                <p className="text-xs text-center" style={{ color: MUTED }}>Waiting for call audio...</p>
+              )}
+              {coachingAlerts.map((a, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs rounded-lg px-2.5 py-1.5" style={{
+                  background: a.type === "warning" ? `${AMBER}15` : a.type === "positive" ? `${EMERALD}15` : "rgba(255,255,255,0.05)",
+                  color: a.type === "warning" ? AMBER : a.type === "positive" ? EMERALD : "#CBD5E1",
+                }}>
+                  <Zap className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <span>{a.text}</span>
+                </div>
+              ))}
+              {coachingTranscript.length > 0 && (
+                <div className="mt-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                  {coachingTranscript.slice(-5).map((t, i) => (
+                    <p key={i} className="text-[11px] leading-relaxed" style={{ color: "#94A3B8" }}>{t}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showGkPrompt && (
