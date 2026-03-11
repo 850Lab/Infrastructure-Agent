@@ -214,8 +214,8 @@ async function fetchGatekeeperIntel(clientId?: string): Promise<Map<string, { de
       ? `AND({Gatekeeper_Name}!='',{Client_ID}='${clientId}')`
       : `{Gatekeeper_Name}!=''`);
     const fields = ["Company_Name", "Gatekeeper_Name", "Deflection_Phrase", "Objection_Type", "Outcome", "Authority_Redirect_Success"].map(f => `fields[]=${f}`).join("&");
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${obsTable}?filterByFormula=${formula}&${fields}&pageSize=100&sort%5B0%5D%5Bfield%5D=Created_At&sort%5B0%5D%5Bdirection%5D=desc`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY()}` } });
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${obsTable}?filterByFormula=${formula}&${fields}&pageSize=100&sort%5B0%5D%5Bfield%5D=Created_At&sort%5B0%5D%5Bdirection%5D=desc`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` } });
     if (!res.ok) return map;
     const data = await res.json();
     for (const rec of data.records || []) {

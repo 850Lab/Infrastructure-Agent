@@ -3,7 +3,7 @@ import { log } from "./logger";
 import { scopedFormula, getClientAirtableConfig } from "./airtable-scoped";
 import { getDMAuthorityAdjustments, type DMAuthorityAdjustment } from "./dm-authority-learning";
 import { getPlatformDMBoost } from "./platform-insights";
-const FIT_THRESHOLD = 45;
+const FIT_THRESHOLD = 25;
 
 interface FitCompany {
   id: string;
@@ -84,14 +84,23 @@ export function scoreDMFit(title: string, email: string, phone: string, departme
   } else if (/project\s*manager|turnaround\s*manager|shutdown\s*manager/.test(titleLower)) {
     fitScore += 30;
     reasons.push(`Project/turnaround title (+30)`);
-  } else if (/operations\s*manager|maintenance\s*manager/.test(titleLower)) {
-    fitScore += 25;
-    reasons.push(`Operations/maintenance title (+25)`);
+  } else if (/operations\s*manager|maintenance\s*manager|general\s*manager|branch\s*manager|fleet\s*manager|equipment\s*manager/.test(titleLower)) {
+    fitScore += 30;
+    reasons.push(`Operations/management title (+30)`);
+  } else if (/\b(vp|vice\s*president|director)\b/.test(titleLower) && /operations|safety|maintenance|construction|field|industrial/.test(titleLower)) {
+    fitScore += 35;
+    reasons.push(`VP/Director in relevant area (+35)`);
+  } else if (/\b(manager|supervisor|coordinator|lead|foreman)\b/.test(titleLower)) {
+    fitScore += 20;
+    reasons.push(`General management title (+20)`);
+  } else if (/\b(owner|president|ceo|founder)\b/.test(titleLower)) {
+    fitScore += 30;
+    reasons.push(`Owner/principal — decision maker (+30)`);
   }
 
-  if (/\b(ceo|cfo|coo|president|founder|owner|chairman)\b/.test(titleLower)) {
-    fitScore -= 25;
-    reasons.push(`Executive title penalty (-25)`);
+  if (/\b(cfo|coo|chairman)\b/.test(titleLower) && !/operations/.test(titleLower)) {
+    fitScore -= 15;
+    reasons.push(`Non-operational executive (-15)`);
   }
   if (/\b(hr|recruiting|talent|marketing|accounting)\b/.test(titleLower)) {
     fitScore -= 15;
