@@ -22,7 +22,7 @@ export interface RunEntry {
 export function useLatestRun() {
   const query = useQuery<RunEntry[]>({
     queryKey: ["/api/run-history"],
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const latestRun = query.data && query.data.length > 0 ? query.data[0] : null;

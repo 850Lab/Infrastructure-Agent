@@ -41,7 +41,7 @@ export default function AdminDashboard() {
     nextRunEstimate: number | null;
   }>({
     queryKey: ["/api/admin/scheduler"],
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   interface CampaignOverviewItem {

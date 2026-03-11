@@ -300,7 +300,7 @@ export default function TodayPage() {
   const { data: todayData, isFetching } = useQuery<{ companies: TodayCompany[]; count: number }>({
     queryKey: ["/api/today-list"],
     enabled: !!token,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
     placeholderData: (prev) => prev,
   });
 

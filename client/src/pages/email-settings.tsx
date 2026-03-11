@@ -125,7 +125,7 @@ export default function EmailSettingsPage() {
   const { data: quota } = useQuery<QuotaStatus | null>({
     queryKey: ["/api/email/quota"],
     enabled: !!token,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: deferredSends } = useQuery<DeferredSend[]>({

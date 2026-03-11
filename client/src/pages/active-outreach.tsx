@@ -1388,7 +1388,7 @@ export default function ActiveOutreachPage() {
   const { data, isLoading } = useQuery<OutreachResponse>({
     queryKey: ["/api/outreach/pipeline"],
     enabled: !!token,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: todayData } = useQuery<{ companies: TodayCompany[]; count: number }>({
@@ -1412,7 +1412,7 @@ export default function ActiveOutreachPage() {
   } | null>({
     queryKey: ["/api/email/quota"],
     enabled: !!token,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const runMutation = useMutation({

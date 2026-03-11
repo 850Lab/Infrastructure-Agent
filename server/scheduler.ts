@@ -4,7 +4,7 @@ import { storage } from "./storage";
 
 const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MIN_INTERVAL_MS = 60 * 60 * 1000;
-const STARTUP_DELAY_MS = 30 * 1000;
+const STARTUP_DELAY_MS = 5 * 60 * 1000;
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 let isSchedulerRunning = false;

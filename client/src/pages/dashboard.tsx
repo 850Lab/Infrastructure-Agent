@@ -126,7 +126,7 @@ export default function DashboardPage() {
 
   const { data: polledRunStatus } = useQuery<{ is_running: boolean; current_run_id: string | null; current_step: string | null }>({
     queryKey: ["/api/run-status"],
-    refetchInterval: sseRunStatus === "running" ? 5000 : 15000,
+    refetchInterval: sseRunStatus === "running" ? 15000 : 30000,
     enabled: !!token,
   });
 
@@ -205,7 +205,7 @@ export default function DashboardPage() {
   }>>({
     queryKey: ["/api/run-history"],
     enabled: !!token,
-    refetchInterval: runStatus === "running" ? 5000 : 30000,
+    refetchInterval: runStatus === "running" ? 15000 : 60000,
   });
 
   const { data: confidenceData } = useQuery<{
@@ -306,7 +306,7 @@ export default function DashboardPage() {
   }>({
     queryKey: ["/api/run-latest-diff"],
     enabled: !!token,
-    refetchInterval: runStatus === "running" ? 5000 : 60000,
+    refetchInterval: runStatus === "running" ? 15000 : 60000,
   });
 
   useEffect(() => {
