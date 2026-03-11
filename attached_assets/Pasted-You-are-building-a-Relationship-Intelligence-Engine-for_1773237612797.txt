@@ -1,0 +1,519 @@
+You are building a Relationship Intelligence Engine for Texas Cool Down Trailers.
+
+Your mission is NOT to find private personal details, private routines, family information, spouse information, favorite restaurants, gyms, or other personal-life interception data.
+
+Your mission IS to identify PUBLIC, PROFESSIONAL, LAWFUL relationship paths that help us get warm introductions and booked presentations with contractor decision-makers involved in LNG, refinery, petrochemical, turnaround, shutdown, and industrial maintenance work across the Gulf Coast.
+
+PRIMARY BUSINESS OBJECTIVE:
+Help us find the best professional “rooms” to be in, the best connectors to meet, and the best path to a warm introduction for cooling trailer presentations.
+
+==================================================
+CORE OUTCOME
+==================================================
+
+For each target company, the system must output:
+
+1. Priority target employees
+2. What those employees likely do professionally
+3. Public professional environments they are likely to appear in
+4. Likely connector types who can introduce us
+5. Best Next Room
+6. Best Connector
+7. Best Action
+8. Confidence score
+9. Reasoning summary
+10. Follow-up strategy
+
+The system should think in this sequence:
+
+COMPANY
+→ PEOPLE
+→ ROLES
+→ PROFESSIONAL ENVIRONMENTS
+→ CONNECTORS
+→ BEST ROOM
+→ INTRODUCTION PATH
+→ PRESENTATION OPPORTUNITY
+
+==================================================
+IMPORTANT ETHICAL / SAFETY RULES
+==================================================
+
+Never collect, infer, store, recommend, or prioritize:
+- spouse details
+- children or family details
+- private social routines
+- favorite restaurants
+- gyms
+- churches
+- private clubs
+- home address
+- private hangouts
+- stalking/interception logic
+- anything that relies on private-life targeting
+
+Only use:
+- public professional profiles
+- public company websites
+- public association memberships
+- public conference pages
+- public trade event listings
+- public speaker rosters
+- public sponsor lists
+- public training organizations
+- public vendor events
+- public business networking environments
+- public business directories
+- public industry calendars
+
+This engine is for lawful B2B relationship-building only.
+
+==================================================
+TARGET INDUSTRY
+==================================================
+
+Focus on:
+- LNG
+- refinery
+- petrochemical
+- industrial maintenance
+- turnaround / shutdown
+- scaffolding
+- insulation
+- coatings
+- industrial cleaning
+- tank cleaning
+- industrial construction
+- mechanical contractors
+- safety / field operations
+
+Geographic focus:
+- Houston
+- Pasadena
+- Baytown
+- Texas City
+- Freeport
+- Beaumont
+- Port Arthur
+- Lake Charles
+- broader Gulf Coast
+
+==================================================
+TARGET DECISION-MAKER / INFLUENCER TITLES
+==================================================
+
+Prioritize finding employees with titles such as:
+- Operations Manager
+- Field Operations Manager
+- Construction Manager
+- Maintenance Manager
+- Turnaround Manager
+- Site Superintendent
+- Superintendent
+- General Superintendent
+- Project Manager
+- HSE Manager
+- Safety Manager
+- Procurement Manager
+- Branch Manager
+- Regional Manager
+- Business Development Manager
+- Area Manager
+- Division Manager
+- Plant Services Manager
+- Crew Support / Workforce Support related roles
+
+Secondary targets:
+- coordinators
+- field engineers
+- planners
+- estimators
+- vendor managers
+- operations support
+- business development staff who can redirect us internally
+
+Deprioritize:
+- CEOs unless company is very small
+- generic HR roles
+- unrelated admins
+- low-relevance office roles
+
+==================================================
+WHAT THE ENGINE MUST DETERMINE
+==================================================
+
+For each company, determine:
+
+A. WHO matters most
+- Which employees are most likely to influence or approve cooling trailer conversations?
+- Score each person by likely relevance to field heat, crew support, safety, mobilization, or site operations.
+
+B. WHAT they likely care about professionally
+Examples:
+- worker heat exposure
+- crew performance
+- mobilization logistics
+- field uptime
+- safety compliance
+- turnaround support
+- contractor productivity
+- morale and rest conditions
+- operational continuity
+
+C. WHERE they are most likely to appear professionally
+This means public business environments such as:
+- trade associations
+- contractor networking events
+- safety councils
+- industrial training centers
+- vendor demo days
+- conferences
+- expos
+- sponsor-hosted customer events
+- chambers / industry breakfasts
+- public speaking panels
+- committee meetings
+- workforce / craft recruiting events tied to industrial contractors
+
+D. WHO can introduce us
+Look for connector types such as:
+- equipment rental reps
+- safety product reps
+- staffing reps
+- association organizers
+- event organizers
+- sponsor reps
+- subcontractor PMs
+- account reps serving industrial contractors
+- training center contacts
+- public-facing vendor sales reps
+- mutual business connections shown publicly
+
+E. WHAT is the best next move
+Example outcomes:
+- Attend XYZ association lunch
+- Connect with XYZ rental rep
+- Message XYZ organizer
+- Register for XYZ contractor breakfast
+- Follow up with XYZ speaker after panel
+- Use connector A to reach target B
+
+==================================================
+DATA MODEL TO CREATE
+==================================================
+
+Create or improve the following Airtable-style entities / tables:
+
+1. Companies
+Fields:
+- Company Name
+- Industry Type
+- Region
+- LNG / Refinery Relevance
+- Turnaround Relevance
+- Heat Exposure Relevance
+- Confidence Score
+- Status
+- Notes
+
+2. People
+Fields:
+- Company
+- Full Name
+- Title
+- Department / Function
+- City / Region
+- Professional Relevance Score
+- Decision Influence Score
+- Role Category
+- Public Source URL
+- Summary of Why They Matter
+
+3. Professional_Environments
+Fields:
+- Company
+- Related Person
+- Environment Name
+- Environment Type
+- Organizer
+- Location
+- Date
+- Public URL
+- Relevance Score
+- Confidence Score
+- Why This Environment Matters
+
+4. Connectors
+Fields:
+- Target Person
+- Connector Name
+- Connector Type
+- Organization
+- Public Relationship Context
+- Warm Introduction Potential
+- Confidence Score
+- Public Source URL
+- Notes
+
+5. Opportunity_Paths
+Fields:
+- Company
+- Priority Person
+- Best Room
+- Best Connector
+- Best Action
+- Why This Path Makes Sense
+- Confidence Score
+- Stage
+- Follow-Up Plan
+
+6. Operator_Cards
+Fields:
+- Company
+- Priority Contact
+- Role
+- Best Next Room
+- Best Connector
+- Action This Week
+- Backup Action
+- Talking Angle
+- Confidence
+- Status
+
+==================================================
+SCORING LOGIC
+==================================================
+
+Create scoring logic for people, environments, and connectors.
+
+PEOPLE SCORING EXAMPLE:
+- Operations Manager: 95
+- Site Superintendent: 92
+- Construction Manager: 90
+- Maintenance Manager: 88
+- Turnaround Manager: 88
+- HSE Manager: 78
+- Procurement Manager: 72
+- Business Development Manager: 58
+- Generic Admin: 20
+
+ENVIRONMENT SCORING FACTORS:
+- public/professional only
+- concentration of relevant contractor roles
+- likelihood of target company presence
+- likelihood of introductions
+- timing relevance
+- Gulf Coast proximity
+- industrial specificity
+- repeatability
+
+CONNECTOR SCORING FACTORS:
+- close to operations/supervision
+- already serves target company type
+- public/professional credibility
+- likely willing to introduce
+- repeated exposure to our target audience
+
+FINAL PATH SCORE =
+Person Relevance
++ Environment Relevance
++ Connector Strength
++ Timing Relevance
++ Introduction Probability
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+For each company, produce a structured result in this format:
+
+COMPANY: [name]
+
+PRIORITY PEOPLE:
+1. [Name] — [Title] — [Score]
+2. [Name] — [Title] — [Score]
+3. [Name] — [Title] — [Score]
+
+WHAT THEY LIKELY CARE ABOUT:
+- [concise bullets]
+
+LIKELY PROFESSIONAL ENVIRONMENTS:
+1. [Environment Name] — [Type] — [Score]
+2. [Environment Name] — [Type] — [Score]
+3. [Environment Name] — [Type] — [Score]
+
+BEST CONNECTORS:
+1. [Connector Type / Name if public] — [Reason]
+2. [Connector Type / Name if public] — [Reason]
+
+BEST NEXT ROOM:
+[Single best environment]
+
+BEST CONNECTOR:
+[Single best connector]
+
+BEST ACTION:
+[Specific actionable recommendation]
+
+BACKUP ACTION:
+[Secondary move]
+
+TALKING ANGLE:
+[1-2 sentence positioning statement focused on cooling trailers, crew support, heat, uptime, and field conditions]
+
+WHY THIS PATH MAKES SENSE:
+[short explanation]
+
+CONFIDENCE:
+[0-100]
+
+==================================================
+SEARCH / RESEARCH LOGIC
+==================================================
+
+For each company, the engine should perform this process:
+
+STEP 1:
+Identify the company’s industrial category and likely project type.
+
+STEP 2:
+Find public professional employees with relevant titles.
+
+STEP 3:
+Classify each employee into:
+- decision maker
+- influencer
+- connector target
+- low priority
+
+STEP 4:
+Search public professional environments tied to:
+- the company
+- those job titles
+- the region
+- the contractor’s industry segment
+
+STEP 5:
+Search for connector organizations and connector roles.
+
+STEP 6:
+Score all results.
+
+STEP 7:
+Select the best path.
+
+STEP 8:
+Generate one clear operator recommendation.
+
+==================================================
+EVENT / ENVIRONMENT TYPES TO SEARCH
+==================================================
+
+Search for public professional environments such as:
+- Associated Builders and Contractors chapter events
+- Houston/Gulf Coast industrial networking events
+- safety council public events
+- industrial expos
+- LNG conferences
+- downstream conferences
+- sponsor lists
+- exhibitor lists
+- customer appreciation events from industrial vendors
+- public training calendars
+- trade breakfasts
+- contractor luncheons
+- public committee events
+- Gulf Coast workforce or craft-industry events
+- rental equipment open houses
+- industrial safety conferences
+
+==================================================
+TALKING ANGLE GUIDANCE
+==================================================
+
+Every recommendation should align with this type of positioning:
+
+“We help industrial contractors support crews during extreme heat with mobile cooling trailer solutions that improve field conditions, recovery, morale, and uptime during turnarounds and maintenance work.”
+
+Do not oversell.
+Do not sound generic.
+Do not sound like mass marketing.
+Sound practical, field-aware, and operations-aware.
+
+==================================================
+EXAMPLE OF WHAT GOOD OUTPUT LOOKS LIKE
+==================================================
+
+Example:
+
+COMPANY: ABC Industrial Services
+
+PRIORITY PEOPLE:
+1. Mark Evans — Operations Manager — 95
+2. Robert Kane — Site Superintendent — 92
+3. Tina Lopez — HSE Manager — 78
+
+WHAT THEY LIKELY CARE ABOUT:
+- heat exposure on crews
+- shift productivity
+- field recovery conditions
+- safe rest/support infrastructure
+- turnaround execution
+
+LIKELY PROFESSIONAL ENVIRONMENTS:
+1. ABC Houston Contractor Luncheon — Trade Association Event — 91
+2. Pasadena Safety Council Public Training Event — Safety/Training — 85
+3. United Rentals Industrial Customer Event — Vendor Event — 83
+
+BEST CONNECTORS:
+1. United Rentals industrial account rep — already close to field operations leaders
+2. Trade association organizer — can facilitate warm introductions
+
+BEST NEXT ROOM:
+ABC Houston Contractor Luncheon
+
+BEST CONNECTOR:
+United Rentals industrial account rep
+
+BEST ACTION:
+Attend luncheon, meet organizer and industrial rental rep, ask who is handling field operations and crew support for active Gulf Coast work.
+
+BACKUP ACTION:
+Register for Pasadena public industrial safety event and network with contractor supervisors.
+
+TALKING ANGLE:
+We deploy cooling trailers that help contractors support crews during high-heat work and maintain better field conditions during demanding projects.
+
+WHY THIS PATH MAKES SENSE:
+This combines a high-relevance operations target, a public professional environment with likely contractor overlap, and a connector already trusted in the ecosystem.
+
+CONFIDENCE:
+87
+
+==================================================
+IMPORTANT BEHAVIOR RULES
+==================================================
+
+- Never invent private facts.
+- Never guess personal habits.
+- If data is weak, say confidence is low.
+- Prefer fewer high-quality recommendations over many weak ones.
+- Output actionable next steps, not vague strategy.
+- Always reduce to: Best Room, Best Connector, Best Action.
+- Focus on warm introductions and presentation booking paths.
+- Think like a Gulf Coast industrial relationship strategist.
+- Think in terms of “how do we get into the right professional room with the right bridge person?”
+
+==================================================
+FINAL INSTRUCTION
+==================================================
+
+Build this as a reusable relationship-intelligence workflow that can run repeatedly across our target contractor list and produce operator-ready recommendations for field networking, introductions, and presentation booking.
+
+The final value of this engine is not “finding people.”
+The final value is:
+- finding the right room
+- finding the right bridge
+- finding the right next move
+- increasing the odds of warm introductions and booked presentations
+for Texas Cool Down Trailers.

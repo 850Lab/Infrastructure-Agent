@@ -407,3 +407,24 @@ export const lngIntel = pgTable("lng_intel", {
 export const insertLngIntelSchema = createInsertSchema(lngIntel).omit({ id: true, savedAt: true });
 export type InsertLngIntel = z.infer<typeof insertLngIntelSchema>;
 export type LngIntel = typeof lngIntel.$inferSelect;
+
+export const lngOperatorCards = pgTable("lng_operator_cards", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyName: text("company_name").notNull(),
+  industryType: text("industry_type"),
+  region: text("region"),
+  cardData: text("card_data").notNull(),
+  confidence: integer("confidence"),
+  bestNextRoom: text("best_next_room"),
+  bestConnector: text("best_connector"),
+  bestAction: text("best_action"),
+  status: text("status").default("active"),
+  notes: text("notes"),
+  savedAt: timestamp("saved_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertLngOperatorCardSchema = createInsertSchema(lngOperatorCards).omit({ id: true, savedAt: true, updatedAt: true });
+export type InsertLngOperatorCard = z.infer<typeof insertLngOperatorCardSchema>;
+export type LngOperatorCard = typeof lngOperatorCards.$inferSelect;

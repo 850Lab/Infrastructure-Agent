@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import OpenAI from "openai";
 import { db } from "./db";
-import { lngProjects, lngContacts, lngIntel } from "@shared/schema";
+import { lngProjects, lngContacts, lngIntel, lngOperatorCards } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -45,13 +45,25 @@ async function searchGoogle(query: string): Promise<Array<{ title: string; link:
   }
 }
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.endsWith(".local") || host.endsWith(".internal")) return false;
+    return true;
+  } catch { return false; }
+}
+
 async function fetchPage(url: string): Promise<string> {
+  if (!isSafeUrl(url)) return "";
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; IntelBot/1.0)" },
+      redirect: "manual",
     });
     clearTimeout(timeout);
     if (!res.ok) return "";
@@ -68,132 +80,206 @@ async function fetchPage(url: string): Promise<string> {
   }
 }
 
-interface LngSearchResult {
-  projects: Array<{
-    projectName: string;
-    operator: string;
+interface OperatorCard {
+  companyName: string;
+  industryType: string;
+  region: string;
+  priorityPeople: Array<{
+    name: string;
+    title: string;
+    score: number;
+    roleCategory: string;
+    whyTheyMatter: string;
+    publicSourceUrl: string;
+  }>;
+  whatTheyCareAbout: string[];
+  professionalEnvironments: Array<{
+    name: string;
+    type: string;
+    organizer: string;
     location: string;
-    state: string;
-    status: string;
-    capacity: string;
-    estimatedValue: string;
-    description: string;
-    contractors: string;
-    timeline: string;
-    source: string;
-    sourceUrl: string;
-  }>;
-  contacts: Array<{
-    fullName: string;
-    title: string;
-    company: string;
-    email: string;
-    phone: string;
-    linkedin: string;
-    projectName: string;
-    source: string;
-    communityInvolvement: string;
-    upcomingEvents: string;
-    interests: string;
-    socialMedia: string;
-    personalNotes: string;
-  }>;
-  intel: Array<{
-    category: string;
-    title: string;
-    summary: string;
-    url: string;
     date: string;
-    projectName: string;
+    score: number;
+    publicUrl: string;
+    whyItMatters: string;
   }>;
+  bestConnectors: Array<{
+    type: string;
+    name: string;
+    organization: string;
+    reason: string;
+    score: number;
+  }>;
+  bestNextRoom: string;
+  bestConnector: string;
+  bestAction: string;
+  backupAction: string;
+  talkingAngle: string;
+  whyThisPathMakesSense: string;
+  confidence: number;
 }
 
-async function searchAndAnalyzeLng(query: string): Promise<LngSearchResult> {
-  log(`Searching: ${query}`);
-
+async function gatherIntel(query: string): Promise<{ searchContext: string; pageContents: string }> {
   const googleResults = await searchGoogle(query);
-  log(`Found ${googleResults.length} Google results`);
+  log(`  "${query}" → ${googleResults.length} results`);
 
-  let pageContents = "";
   const crawlPromises = googleResults.slice(0, 5).map(async (r) => {
     if (!r.link) return "";
     const content = await fetchPage(r.link);
     return content ? `\n--- Source: ${r.title} (${r.link}) ---\n${content.slice(0, 5000)}\n` : "";
   });
   const crawled = await Promise.all(crawlPromises);
-  pageContents = crawled.join("");
 
-  const searchContext = googleResults.map(r => `- ${r.title}: ${r.snippet} (${r.link})`).join("\n");
+  return {
+    searchContext: googleResults.map(r => `- ${r.title}: ${r.snippet} (${r.link})`).join("\n"),
+    pageContents: crawled.join(""),
+  };
+}
 
-  const prompt = `You are an LNG (Liquefied Natural Gas) industry intelligence analyst specializing in finding PROCUREMENT decision makers and RELATIONSHIP-BUILDING opportunities. Analyze the following search results and web content.
+async function buildOperatorCards(query: string): Promise<OperatorCard[]> {
+  log(`Building operator cards for: "${query}"`);
+
+  const searchAngles = [
+    query,
+    `${query} operations manager maintenance superintendent site supervisor`,
+    `${query} procurement manager vendor contractor supply chain`,
+    `${query} safety council trade association contractor networking Gulf Coast`,
+    `${query} conference expo trade show industrial 2025 2026`,
+    `${query} contractor luncheon breakfast networking mixer industrial`,
+  ];
+
+  let allSearchContext = "";
+  let allPageContents = "";
+
+  for (const angle of searchAngles) {
+    const { searchContext, pageContents } = await gatherIntel(angle);
+    allSearchContext += searchContext + "\n";
+    allPageContents += pageContents;
+  }
+
+  const prompt = `You are a Relationship Intelligence Engine for Texas Cool Down Trailers, a company that provides mobile cooling trailer solutions to industrial contractors during extreme heat work.
+
+Your mission is to identify PUBLIC, PROFESSIONAL, LAWFUL relationship paths that help get warm introductions and booked presentations with contractor decision-makers involved in LNG, refinery, petrochemical, turnaround, shutdown, and industrial maintenance work across the Gulf Coast.
 
 SEARCH QUERY: "${query}"
 
 SEARCH RESULTS:
-${searchContext}
+${allSearchContext}
 
 WEB PAGE CONTENT:
-${pageContents.slice(0, 30000)}
+${allPageContents.slice(0, 30000)}
 
-Extract and return a JSON object with three arrays:
+ETHICAL RULES:
+- ONLY use public professional information (company websites, public profiles, association memberships, conference pages, trade event listings, speaker rosters, sponsor lists, vendor events, business directories, industry calendars)
+- NEVER collect, infer, or include: spouse/family details, private social routines, private clubs, home addresses, churches, gyms, restaurants, or any private-life targeting
+- ONLY include real people whose names actually appear in the source material — NEVER fabricate names
+- If data is weak, say confidence is low. Prefer fewer high-quality recommendations over many weak ones.
 
-1. "projects" - LNG projects found (each with: projectName, operator, location, state, status, capacity, estimatedValue, description, contractors, timeline, source, sourceUrl)
+TARGET TITLES TO FIND (priority order):
+- Operations Manager, Field Operations Manager, Construction Manager, Maintenance Manager, Turnaround Manager
+- Site Superintendent, General Superintendent, Project Manager
+- HSE Manager, Safety Manager, Procurement Manager
+- Branch Manager, Regional Manager, Area Manager, Division Manager
+- Plant Services Manager, Business Development Manager
+- Coordinators, field engineers, planners, estimators, vendor managers
+- CEOs only if very small company
 
-2. "contacts" - Key people/decision makers at LNG-related companies. Find ALL of these roles:
-   - EXECUTIVES: CEO, President, COO, VP of Operations, General Manager, CFO, VP Engineering
-   - PROCUREMENT & SUPPLY CHAIN: Procurement Managers/Directors, Purchasing Agents, Supply Chain Managers, Vendor Management, Supplier Relations, Strategic Sourcing, Contract Administrators, Bid/Proposal Coordinators, Materials Managers
-   - OPERATIONS & FACILITIES: Operations Managers/Directors, Facility Managers, Plant Managers, Maintenance Managers/Supervisors, Turnaround Managers, Safety Directors/Managers, HSE Managers
-   - PROJECT & ENGINEERING: Project Managers, Construction Managers, Project Engineers, Engineering Managers, QA/QC Managers
-   Include ALL levels — executives AND procurement AND operations. Do not exclude any tier.
+WHAT EACH PERSON LIKELY CARES ABOUT PROFESSIONALLY:
+Worker heat exposure, crew performance, mobilization logistics, field uptime, safety compliance, turnaround support, contractor productivity, morale/rest conditions, operational continuity
 
-   For each contact include:
-   - Core fields: fullName, title, company, email, phone, linkedin, projectName, source
-   - RELATIONSHIP INTEL (critical — dig deep for these):
-     - "communityInvolvement": Any charity work, nonprofit boards, volunteer activities, community organizations, church/religious groups, youth coaching, local government roles, alumni associations, mentorship programs, environmental initiatives, Rotary/Lions/Kiwanis, industry association committees (ISNetworld, ISOA, API chapters). Be specific with organization names and roles.
-     - "upcomingEvents": Industry conferences, trade shows, panel speaking engagements, webinars, charity galas, golf tournaments, chamber of commerce events, university events, awards ceremonies, ISN events, safety forums, procurement roundtables, supplier diversity fairs they might attend or speak at. Include dates and locations if found.
-     - "interests": Hobbies, sports (teams they follow, sports they play), outdoor activities, hunting, fishing, boating, golf memberships, car enthusiasm, aviation, collections, music, family activities. Look in social media bios, interviews, "about me" sections.
-     - "socialMedia": Twitter/X handle, Facebook profile, Instagram, personal blog, YouTube channel, podcast appearances. Include actual URLs or handles when found.
-     - "personalNotes": Alma mater/university, military service, hometown, years in industry, career path highlights, awards won, articles they've written, interviews they've given, family mentions, any conversation starters. Note procurement preferences if found (e.g. "prefers local vendors", "values safety record", "sits on supplier diversity committee").
+PROFESSIONAL ENVIRONMENTS TO FIND:
+- Associated Builders and Contractors chapter events
+- Safety council public events
+- Industrial expos, LNG/downstream conferences
+- Sponsor lists, exhibitor lists
+- Customer appreciation events from industrial vendors (e.g. United Rentals, Sunbelt)
+- Trade breakfasts, contractor luncheons
+- Gulf Coast workforce/craft-industry events
+- Rental equipment open houses, industrial safety conferences
 
-3. "intel" - Relevant intelligence items (each with: category, title, summary, url, date, projectName)
-   Categories: "hiring", "press_release", "event", "regulatory", "construction_update", "social_media", "contract_award", "partnership", "community", "procurement" (RFPs, vendor fairs, prequalification deadlines, approved vendor list openings), "networking" (industry mixers, golf outings, crawfish boils, charity runs, association chapter meetings — any gathering where you can meet these people face-to-face)
-   PRIORITIZE "networking" and "procurement" categories — the goal is finding WHERE to show up and WHO to meet there.
-   Include:
-   - Industry events, conferences, and trade shows where LNG/energy people gather (CERAWeek, Gastech, LNG conferences, OTC, AFPM)
-   - Local Gulf Coast events: chamber of commerce mixers, Rotary meetings, charity golf tournaments, crawfish boils, fishing tournaments, United Way events
-   - Supplier/vendor events: prequalification deadlines, supplier diversity fairs, vendor days, safety orientations
-   - Professional association chapter meetings: API, ISOA, ISN, ASME, local engineering societies
-   - Any event where procurement or operations people from LNG companies will be present
+CONNECTOR TYPES TO IDENTIFY:
+- Equipment rental reps (United Rentals, Sunbelt, etc.)
+- Safety product reps
+- Staffing reps serving industrial contractors
+- Association organizers
+- Subcontractor PMs
+- Training center contacts
+- Mutual business connections shown publicly
 
-Be extremely thorough. The user sells services to these companies — they need to know WHO makes purchasing decisions and WHERE they can naturally run into those people to build genuine relationships.
+For each company found in the search results, produce a structured operator card. Return a JSON object with a "cards" array. Each card must have:
 
-CRITICAL RULES:
-- ONLY include contacts whose names actually appear in the source material. NEVER invent or fabricate names. If you cannot find a real person's name, do not create a placeholder like "John Doe" or "Procurement Manager". Leave the contacts array empty rather than making up people.
-- Every contact must have a real full name found in the search results or web content.
-- It is better to return 0 contacts than to return 1 fake contact.
+{
+  "companyName": "string",
+  "industryType": "string (LNG/refinery/petrochemical/industrial maintenance/etc)",
+  "region": "string (city/area)",
+  "priorityPeople": [
+    {
+      "name": "string (REAL name from sources only)",
+      "title": "string",
+      "score": number (0-100 based on relevance to field operations/heat/crew support),
+      "roleCategory": "string (decision_maker/influencer/connector)",
+      "whyTheyMatter": "string (1 sentence)",
+      "publicSourceUrl": "string (URL where found)"
+    }
+  ],
+  "whatTheyCareAbout": ["string array of professional concerns"],
+  "professionalEnvironments": [
+    {
+      "name": "string",
+      "type": "string (trade_association/safety_council/conference/vendor_event/networking/training)",
+      "organizer": "string",
+      "location": "string",
+      "date": "string (if known)",
+      "score": number (0-100),
+      "publicUrl": "string",
+      "whyItMatters": "string (1 sentence)"
+    }
+  ],
+  "bestConnectors": [
+    {
+      "type": "string (rental_rep/safety_rep/staffing_rep/association_organizer/subcontractor_pm/vendor_rep)",
+      "name": "string (if public, otherwise generic type)",
+      "organization": "string",
+      "reason": "string (why this connector helps)",
+      "score": number (0-100)
+    }
+  ],
+  "bestNextRoom": "string (single best professional environment to show up at)",
+  "bestConnector": "string (single best connector to pursue)",
+  "bestAction": "string (specific, actionable recommendation)",
+  "backupAction": "string (secondary move)",
+  "talkingAngle": "string (1-2 sentences positioning cooling trailers for this specific company's work)",
+  "whyThisPathMakesSense": "string (short explanation)",
+  "confidence": number (0-100)
+}
 
-Return ONLY valid JSON, no markdown formatting.`;
+SCORING GUIDANCE:
+- Operations Manager: 95, Site Superintendent: 92, Construction Manager: 90
+- Maintenance Manager: 88, Turnaround Manager: 88, HSE Manager: 78
+- Procurement Manager: 72, Business Development Manager: 58
+- Environment score: weight by concentration of relevant roles, likelihood of target company presence, Gulf Coast proximity, industrial specificity
+- Connector score: weight by closeness to operations/supervision, already serves target company type, public credibility
+
+Return ONLY valid JSON with a "cards" array. No markdown formatting. If no companies are found, return {"cards": []}.`;
 
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
-      max_tokens: 6000,
+      max_tokens: 8000,
       response_format: { type: "json_object" },
     });
 
     const content = completion.choices[0]?.message?.content || "{}";
     const parsed = JSON.parse(content);
+    const cards: OperatorCard[] = parsed.cards || [];
 
-    return {
-      projects: parsed.projects || [],
-      contacts: parsed.contacts || [],
-      intel: parsed.intel || [],
-    };
+    log(`Operator cards built: ${cards.length} companies`);
+    return cards;
   } catch (err: any) {
     log(`OpenAI analysis error: ${err.message}`);
-    return { projects: [], contacts: [], intel: [] };
+    return [];
   }
 }
 
@@ -201,52 +287,88 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
   app.post("/api/lng/search", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { query } = req.body;
-      if (!query) return res.status(400).json({ error: "Search query required" });
+      if (!query || typeof query !== "string") return res.status(400).json({ error: "Search query required" });
+      const trimmedQuery = query.trim().slice(0, 200);
+      if (!trimmedQuery) return res.status(400).json({ error: "Search query required" });
 
-      log(`Search request: "${query}"`);
+      log(`Search request: "${trimmedQuery}"`);
+      const cards = await buildOperatorCards(trimmedQuery);
+      log(`Search complete: ${cards.length} operator cards`);
 
-      const predefinedQueries = [
-        query,
-        `${query} procurement manager purchasing supply chain vendor management`,
-        `${query} operations manager maintenance supervisor facility manager`,
-        `${query} hiring jobs careers procurement supply chain`,
-        `${query} press release news contract award 2025 2026`,
-        `${query} conference event trade show networking mixer Gulf Coast`,
-        `${query} community involvement charity volunteer board member Rotary chamber of commerce`,
-        `${query} leadership LinkedIn speaker biography background`,
-        `${query} supplier vendor prequalification RFP approved vendor list`,
-        `${query} golf tournament charity gala crawfish boil fundraiser industry dinner`,
-      ];
-
-      const allResults: LngSearchResult = { projects: [], contacts: [], intel: [] };
-
-      for (const q of predefinedQueries) {
-        const result = await searchAndAnalyzeLng(q);
-        allResults.projects.push(...result.projects);
-        allResults.contacts.push(...result.contacts);
-        allResults.intel.push(...result.intel);
-      }
-
-      const uniqueProjects = allResults.projects.filter((p, i, arr) =>
-        arr.findIndex(x => x.projectName.toLowerCase() === p.projectName.toLowerCase()) === i
-      );
-      const uniqueContacts = allResults.contacts.filter((c, i, arr) =>
-        arr.findIndex(x => x.fullName.toLowerCase() === c.fullName.toLowerCase() && x.company?.toLowerCase() === c.company?.toLowerCase()) === i
-      );
-      const uniqueIntel = allResults.intel.filter((item, i, arr) =>
-        arr.findIndex(x => x.title.toLowerCase() === item.title.toLowerCase()) === i
-      );
-
-      log(`Search complete: ${uniqueProjects.length} projects, ${uniqueContacts.length} contacts, ${uniqueIntel.length} intel items`);
-
-      res.json({
-        projects: uniqueProjects,
-        contacts: uniqueContacts,
-        intel: uniqueIntel,
-        query,
-      });
+      res.json({ cards, query });
     } catch (err: any) {
       log(`Search error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/lng/cards/save", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(401).json({ error: "No client context" });
+
+      const { card } = req.body;
+      if (!card?.companyName) return res.status(400).json({ error: "Company name required" });
+
+      const [saved] = await db.insert(lngOperatorCards).values({
+        clientId,
+        companyName: card.companyName,
+        industryType: card.industryType || null,
+        region: card.region || null,
+        cardData: JSON.stringify(card),
+        confidence: card.confidence || null,
+        bestNextRoom: card.bestNextRoom || null,
+        bestConnector: card.bestConnector || null,
+        bestAction: card.bestAction || null,
+      }).returning();
+
+      log(`Saved operator card: ${card.companyName} (id=${saved.id})`);
+      res.json({ ok: true, card: saved });
+    } catch (err: any) {
+      log(`Save card error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lng/cards", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(401).json({ error: "No client context" });
+
+      const cards = await db.select().from(lngOperatorCards)
+        .where(eq(lngOperatorCards.clientId, clientId))
+        .orderBy(desc(lngOperatorCards.savedAt));
+
+      res.json(cards);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/lng/cards/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const id = Number(req.params.id);
+      await db.delete(lngOperatorCards).where(and(eq(lngOperatorCards.id, id), eq(lngOperatorCards.clientId, clientId)));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/lng/cards/:id/notes", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const id = Number(req.params.id);
+      const { notes } = req.body;
+
+      const [updated] = await db.update(lngOperatorCards)
+        .set({ notes, updatedAt: new Date() })
+        .where(and(eq(lngOperatorCards.id, id), eq(lngOperatorCards.clientId, clientId)))
+        .returning();
+
+      res.json({ ok: true, card: updated });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -255,154 +377,26 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
     try {
       const clientId = (req as any).user?.clientId;
       if (!clientId) return res.status(401).json({ error: "No client context" });
-
       const { project } = req.body;
       if (!project?.projectName) return res.status(400).json({ error: "Project name required" });
-
       const [saved] = await db.insert(lngProjects).values({
-        clientId,
-        projectName: project.projectName,
-        operator: project.operator || null,
-        location: project.location || null,
-        state: project.state || null,
-        status: project.status || null,
-        capacity: project.capacity || null,
-        estimatedValue: project.estimatedValue || null,
-        description: project.description || null,
-        contractors: project.contractors || null,
-        timeline: project.timeline || null,
-        source: project.source || null,
-        sourceUrl: project.sourceUrl || null,
+        clientId, projectName: project.projectName, operator: project.operator || null,
+        location: project.location || null, state: project.state || null, status: project.status || null,
+        capacity: project.capacity || null, estimatedValue: project.estimatedValue || null,
+        description: project.description || null, contractors: project.contractors || null,
+        timeline: project.timeline || null, source: project.source || null, sourceUrl: project.sourceUrl || null,
       }).returning();
-
-      log(`Saved project: ${project.projectName} (id=${saved.id})`);
       res.json({ ok: true, project: saved });
-    } catch (err: any) {
-      log(`Save project error: ${err.message}`);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/lng/contacts/save", authMiddleware, async (req: Request, res: Response) => {
-    try {
-      const clientId = (req as any).user?.clientId;
-      if (!clientId) return res.status(401).json({ error: "No client context" });
-
-      const { contact } = req.body;
-      if (!contact?.fullName) return res.status(400).json({ error: "Contact name required" });
-
-      const [saved] = await db.insert(lngContacts).values({
-        clientId,
-        projectId: contact.projectId || null,
-        fullName: contact.fullName,
-        title: contact.title || null,
-        company: contact.company || null,
-        email: contact.email || null,
-        phone: contact.phone || null,
-        linkedin: contact.linkedin || null,
-        source: contact.source || null,
-        notes: contact.notes || null,
-        communityInvolvement: contact.communityInvolvement || null,
-        upcomingEvents: contact.upcomingEvents || null,
-        interests: contact.interests || null,
-        socialMedia: contact.socialMedia || null,
-        personalNotes: contact.personalNotes || null,
-      }).returning();
-
-      log(`Saved contact: ${contact.fullName} (id=${saved.id})`);
-      res.json({ ok: true, contact: saved });
-    } catch (err: any) {
-      log(`Save contact error: ${err.message}`);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/lng/intel/save", authMiddleware, async (req: Request, res: Response) => {
-    try {
-      const clientId = (req as any).user?.clientId;
-      if (!clientId) return res.status(401).json({ error: "No client context" });
-
-      const { item } = req.body;
-      if (!item?.title) return res.status(400).json({ error: "Intel title required" });
-
-      const [saved] = await db.insert(lngIntel).values({
-        clientId,
-        projectId: item.projectId || null,
-        category: item.category || "general",
-        title: item.title,
-        summary: item.summary || null,
-        url: item.url || null,
-        date: item.date || null,
-      }).returning();
-
-      log(`Saved intel: ${item.title} (id=${saved.id})`);
-      res.json({ ok: true, item: saved });
-    } catch (err: any) {
-      log(`Save intel error: ${err.message}`);
-      res.status(500).json({ error: err.message });
-    }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   app.get("/api/lng/projects", authMiddleware, async (req: Request, res: Response) => {
     try {
       const clientId = (req as any).user?.clientId;
       if (!clientId) return res.status(401).json({ error: "No client context" });
-
-      const projects = await db.select().from(lngProjects)
-        .where(eq(lngProjects.clientId, clientId))
-        .orderBy(desc(lngProjects.savedAt));
-
+      const projects = await db.select().from(lngProjects).where(eq(lngProjects.clientId, clientId)).orderBy(desc(lngProjects.savedAt));
       res.json(projects);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get("/api/lng/contacts", authMiddleware, async (req: Request, res: Response) => {
-    try {
-      const clientId = (req as any).user?.clientId;
-      if (!clientId) return res.status(401).json({ error: "No client context" });
-
-      const projectId = req.query.projectId ? Number(req.query.projectId) : null;
-
-      let contacts;
-      if (projectId) {
-        contacts = await db.select().from(lngContacts)
-          .where(and(eq(lngContacts.clientId, clientId), eq(lngContacts.projectId, projectId)))
-          .orderBy(desc(lngContacts.savedAt));
-      } else {
-        contacts = await db.select().from(lngContacts)
-          .where(eq(lngContacts.clientId, clientId))
-          .orderBy(desc(lngContacts.savedAt));
-      }
-
-      res.json(contacts);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get("/api/lng/intel", authMiddleware, async (req: Request, res: Response) => {
-    try {
-      const clientId = (req as any).user?.clientId;
-      if (!clientId) return res.status(401).json({ error: "No client context" });
-
-      const projectId = req.query.projectId ? Number(req.query.projectId) : null;
-      const category = req.query.category as string | undefined;
-
-      let items;
-      const conditions = [eq(lngIntel.clientId, clientId)];
-      if (projectId) conditions.push(eq(lngIntel.projectId, projectId));
-      if (category) conditions.push(eq(lngIntel.category, category));
-
-      items = await db.select().from(lngIntel)
-        .where(and(...conditions))
-        .orderBy(desc(lngIntel.savedAt));
-
-      res.json(items);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   app.delete("/api/lng/projects/:id", authMiddleware, async (req: Request, res: Response) => {
@@ -410,12 +404,43 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
       const clientId = (req as any).user?.clientId;
       const id = Number(req.params.id);
       await db.delete(lngProjects).where(and(eq(lngProjects.id, id), eq(lngProjects.clientId, clientId)));
-      await db.delete(lngContacts).where(and(eq(lngContacts.projectId, id), eq(lngContacts.clientId, clientId)));
-      await db.delete(lngIntel).where(and(eq(lngIntel.projectId, id), eq(lngIntel.clientId, clientId)));
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/lng/projects/:id/notes", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const id = Number(req.params.id);
+      const { notes } = req.body;
+      const [updated] = await db.update(lngProjects).set({ notes, updatedAt: new Date() })
+        .where(and(eq(lngProjects.id, id), eq(lngProjects.clientId, clientId))).returning();
+      res.json({ ok: true, project: updated });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/lng/contacts/save", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(401).json({ error: "No client context" });
+      const { contact } = req.body;
+      if (!contact?.fullName) return res.status(400).json({ error: "Contact name required" });
+      const [saved] = await db.insert(lngContacts).values({
+        clientId, fullName: contact.fullName, title: contact.title || null,
+        company: contact.company || null, email: contact.email || null, phone: contact.phone || null,
+        linkedin: contact.linkedin || null, source: contact.source || null,
+      }).returning();
+      res.json({ ok: true, contact: saved });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/lng/contacts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(401).json({ error: "No client context" });
+      const contacts = await db.select().from(lngContacts).where(eq(lngContacts.clientId, clientId)).orderBy(desc(lngContacts.savedAt));
+      res.json(contacts);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   app.delete("/api/lng/contacts/:id", authMiddleware, async (req: Request, res: Response) => {
@@ -424,9 +449,30 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
       const id = Number(req.params.id);
       await db.delete(lngContacts).where(and(eq(lngContacts.id, id), eq(lngContacts.clientId, clientId)));
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/lng/intel", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(401).json({ error: "No client context" });
+      const items = await db.select().from(lngIntel).where(eq(lngIntel.clientId, clientId)).orderBy(desc(lngIntel.savedAt));
+      res.json(items);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/lng/intel/save", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(401).json({ error: "No client context" });
+      const { item } = req.body;
+      if (!item?.title) return res.status(400).json({ error: "Intel title required" });
+      const [saved] = await db.insert(lngIntel).values({
+        clientId, category: item.category || "general", title: item.title,
+        summary: item.summary || null, url: item.url || null, date: item.date || null,
+      }).returning();
+      res.json({ ok: true, item: saved });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   app.delete("/api/lng/intel/:id", authMiddleware, async (req: Request, res: Response) => {
@@ -435,27 +481,8 @@ export function registerLngRoutes(app: Express, authMiddleware: any) {
       const id = Number(req.params.id);
       await db.delete(lngIntel).where(and(eq(lngIntel.id, id), eq(lngIntel.clientId, clientId)));
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
-  app.put("/api/lng/projects/:id/notes", authMiddleware, async (req: Request, res: Response) => {
-    try {
-      const clientId = (req as any).user?.clientId;
-      const id = Number(req.params.id);
-      const { notes } = req.body;
-
-      const [updated] = await db.update(lngProjects)
-        .set({ notes, updatedAt: new Date() })
-        .where(and(eq(lngProjects.id, id), eq(lngProjects.clientId, clientId)))
-        .returning();
-
-      res.json({ ok: true, project: updated });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  log("LNG Projects routes registered");
+  log("LNG Relationship Intelligence Engine routes registered");
 }

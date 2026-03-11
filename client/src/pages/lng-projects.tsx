@@ -1,784 +1,677 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import AppLayout from "@/components/app-layout";
 import {
-  Search, Loader2, Building2, Users, Newspaper, MapPin, Calendar,
-  Bookmark, BookmarkCheck, Trash2, ChevronDown, ChevronUp, ExternalLink,
-  Briefcase, Globe, Phone, Mail, Linkedin, StickyNote, Filter,
-  Flame, HardHat, DollarSign, Clock, FileText, Megaphone, UserCheck
+  Search, Loader2, Bookmark, Trash2, Building2,
+  Users, MapPin, Target, Zap, MessageSquare,
+  Star, ArrowRight, Shield, Calendar, Globe,
+  Flame, ExternalLink, StickyNote, ChevronDown, ChevronUp,
 } from "lucide-react";
 
+const BG = "#FFFFFF";
 const TEXT = "#0F172A";
 const MUTED = "#94A3B8";
 const BORDER = "#E2E8F0";
-const EMERALD = "#10B981";
-const BG = "#FFFFFF";
 const SUBTLE = "#F8FAFC";
+const EMERALD = "#10B981";
 
-const CATEGORY_LABELS: Record<string, { label: string; color: string; icon: any }> = {
-  hiring: { label: "Hiring", color: "#8B5CF6", icon: Briefcase },
-  press_release: { label: "Press Release", color: "#3B82F6", icon: Megaphone },
-  event: { label: "Event", color: "#F59E0B", icon: Calendar },
-  regulatory: { label: "Regulatory", color: "#EF4444", icon: FileText },
-  construction_update: { label: "Construction", color: "#10B981", icon: HardHat },
-  social_media: { label: "Social", color: "#EC4899", icon: Globe },
-  contract_award: { label: "Contract", color: "#14B8A6", icon: DollarSign },
-  partnership: { label: "Partnership", color: "#6366F1", icon: UserCheck },
-  community: { label: "Community", color: "#8B5CF6", icon: Users },
-  procurement: { label: "Procurement", color: "#F97316", icon: DollarSign },
-  networking: { label: "Networking", color: "#06B6D4", icon: Users },
-  general: { label: "General", color: MUTED, icon: Newspaper },
+const ROLE_COLORS: Record<string, string> = {
+  decision_maker: "#EF4444",
+  influencer: "#F59E0B",
+  connector: "#8B5CF6",
+};
+
+const ENV_COLORS: Record<string, string> = {
+  trade_association: "#3B82F6",
+  safety_council: "#EF4444",
+  conference: "#8B5CF6",
+  vendor_event: "#F97316",
+  networking: "#10B981",
+  training: "#06B6D4",
 };
 
 const QUICK_SEARCHES = [
-  "LNG projects Gulf Coast Texas Louisiana 2025 2026",
-  "Golden Pass LNG Port Arthur procurement supply chain",
-  "Driftwood LNG Lake Charles vendor contractor",
-  "Rio Grande LNG Brownsville operations maintenance",
-  "Sabine Pass LNG Cheniere procurement purchasing manager",
-  "Plaquemines LNG Venture Global supplier prequalification",
-  "LNG terminal procurement manager vendor management Gulf Coast",
-  "LNG facility operations maintenance supervisor plant manager",
-  "CERAWeek Gastech OTC LNG conference networking 2026",
-  "Gulf Coast energy industry golf tournament charity gala mixer",
-  "Lake Charles Port Arthur chamber of commerce Rotary energy",
-  "LNG supplier diversity vendor fair prequalification RFP 2026",
+  "LNG contractors Gulf Coast Texas Louisiana",
+  "Golden Pass LNG Port Arthur industrial contractors",
+  "Driftwood LNG Lake Charles maintenance turnaround",
+  "Sabine Pass Cheniere operations procurement",
+  "Refinery turnaround contractors Houston Beaumont",
+  "Industrial maintenance contractors Gulf Coast safety",
+  "Petrochemical plant shutdown contractors Texas",
+  "Gulf Coast industrial contractor networking events 2026",
+  "ABC Associated Builders Contractors Gulf Coast chapter",
+  "Industrial safety council Houston Beaumont Lake Charles",
 ];
 
-type TabView = "search" | "saved_projects" | "saved_contacts" | "saved_intel";
+type TabView = "search" | "saved_cards" | "saved_projects";
 
-interface SearchProject {
-  projectName: string;
-  operator: string;
-  location: string;
-  state: string;
-  status: string;
-  capacity: string;
-  estimatedValue: string;
-  description: string;
-  contractors: string;
-  timeline: string;
-  source: string;
-  sourceUrl: string;
+interface OperatorCard {
+  companyName: string;
+  industryType: string;
+  region: string;
+  priorityPeople: Array<{
+    name: string;
+    title: string;
+    score: number;
+    roleCategory: string;
+    whyTheyMatter: string;
+    publicSourceUrl: string;
+  }>;
+  whatTheyCareAbout: string[];
+  professionalEnvironments: Array<{
+    name: string;
+    type: string;
+    organizer: string;
+    location: string;
+    date: string;
+    score: number;
+    publicUrl: string;
+    whyItMatters: string;
+  }>;
+  bestConnectors: Array<{
+    type: string;
+    name: string;
+    organization: string;
+    reason: string;
+    score: number;
+  }>;
+  bestNextRoom: string;
+  bestConnector: string;
+  bestAction: string;
+  backupAction: string;
+  talkingAngle: string;
+  whyThisPathMakesSense: string;
+  confidence: number;
 }
 
-interface SearchContact {
-  fullName: string;
-  title: string;
-  company: string;
-  email: string;
-  phone: string;
-  linkedin: string;
-  projectName: string;
-  source: string;
-  communityInvolvement: string;
-  upcomingEvents: string;
-  interests: string;
-  socialMedia: string;
-  personalNotes: string;
+function ConfidenceBadge({ score }: { score: number }) {
+  const color = score >= 75 ? "#10B981" : score >= 50 ? "#F59E0B" : "#EF4444";
+  return (
+    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `${color}15`, color }}>
+      {score}% confidence
+    </span>
+  );
 }
 
-interface SearchIntelItem {
-  category: string;
-  title: string;
-  summary: string;
-  url: string;
-  date: string;
-  projectName: string;
+function ScoreDot({ score }: { score: number }) {
+  const color = score >= 85 ? "#10B981" : score >= 70 ? "#F59E0B" : "#94A3B8";
+  return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color }}>{score}</span>;
 }
 
-interface SearchResults {
-  projects: SearchProject[];
-  contacts: SearchContact[];
-  intel: SearchIntelItem[];
-  query: string;
+function OperatorCardView({ card, onSave, saving }: { card: OperatorCard; onSave: () => void; saving: boolean }) {
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+      <div className="p-4" style={{ background: `${EMERALD}08`, borderBottom: `1px solid ${BORDER}` }}>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-base font-bold" style={{ color: TEXT }}>{card.companyName}</h3>
+              <ConfidenceBadge score={card.confidence} />
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
+              {card.industryType && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{card.industryType}</span>}
+              {card.region && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{card.region}</span>}
+            </div>
+          </div>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="p-2 rounded-lg transition-colors hover:opacity-80 flex-shrink-0"
+            style={{ color: EMERALD }}
+            data-testid={`save-card-${card.companyName.replace(/\s+/g, '-').toLowerCase()}`}
+          >
+            <Bookmark className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-lg p-3" style={{ background: `${EMERALD}08`, border: `1px solid ${EMERALD}20` }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: EMERALD }}>
+              <Target className="w-3 h-3" />Best Next Room
+            </p>
+            <p className="text-xs font-semibold" style={{ color: TEXT }}>{card.bestNextRoom || "Research needed"}</p>
+          </div>
+          <div className="rounded-lg p-3" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.2)" }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: "#8B5CF6" }}>
+              <Users className="w-3 h-3" />Best Connector
+            </p>
+            <p className="text-xs font-semibold" style={{ color: TEXT }}>{card.bestConnector || "Research needed"}</p>
+          </div>
+          <div className="rounded-lg p-3" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)" }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: "#3B82F6" }}>
+              <Zap className="w-3 h-3" />Best Action
+            </p>
+            <p className="text-xs font-semibold" style={{ color: TEXT }}>{card.bestAction || "Research needed"}</p>
+          </div>
+        </div>
+
+        {card.backupAction && (
+          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: MUTED }}>
+              <ArrowRight className="w-3 h-3" />Backup Action
+            </p>
+            <p className="text-xs" style={{ color: TEXT }}>{card.backupAction}</p>
+          </div>
+        )}
+
+        {card.talkingAngle && (
+          <div className="rounded-lg p-2.5" style={{ background: "rgba(16,185,129,0.05)", border: `1px dashed ${EMERALD}40` }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: EMERALD }}>
+              <MessageSquare className="w-3 h-3" />Talking Angle
+            </p>
+            <p className="text-xs italic" style={{ color: TEXT }}>{card.talkingAngle}</p>
+          </div>
+        )}
+
+        {card.priorityPeople.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1" style={{ color: TEXT }}>
+              <Users className="w-3 h-3" />Priority People ({card.priorityPeople.length})
+            </p>
+            <div className="space-y-1.5">
+              {card.priorityPeople.map((person, j) => (
+                <div key={j} className="flex items-center gap-2 rounded-lg p-2" style={{ background: SUBTLE }}>
+                  <ScoreDot score={person.score} />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-bold" style={{ color: TEXT }}>{person.name}</span>
+                    <span className="text-xs mx-1.5" style={{ color: MUTED }}>{person.title}</span>
+                    {person.roleCategory && (
+                      <span className="px-1 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: `${ROLE_COLORS[person.roleCategory] || MUTED}15`, color: ROLE_COLORS[person.roleCategory] || MUTED }}>
+                        {person.roleCategory.replace("_", " ")}
+                      </span>
+                    )}
+                  </div>
+                  {person.publicSourceUrl && (
+                    <a href={person.publicSourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: EMERALD }}>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {card.whatTheyCareAbout.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1" style={{ color: TEXT }}>
+              <Shield className="w-3 h-3" />What They Care About
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {card.whatTheyCareAbout.map((concern, j) => (
+                <span key={j} className="px-2 py-1 rounded-full text-[10px] font-medium" style={{ background: SUBTLE, color: TEXT, border: `1px solid ${BORDER}` }}>
+                  {concern}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {card.professionalEnvironments.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1" style={{ color: TEXT }}>
+              <Calendar className="w-3 h-3" />Professional Environments ({card.professionalEnvironments.length})
+            </p>
+            <div className="space-y-1.5">
+              {card.professionalEnvironments.map((env, j) => (
+                <div key={j} className="flex items-center gap-2 rounded-lg p-2" style={{ background: SUBTLE }}>
+                  <ScoreDot score={env.score} />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-bold" style={{ color: TEXT }}>{env.name}</span>
+                    {env.type && (
+                      <span className="ml-1.5 px-1 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: `${ENV_COLORS[env.type] || MUTED}15`, color: ENV_COLORS[env.type] || MUTED }}>
+                        {env.type.replace("_", " ")}
+                      </span>
+                    )}
+                    {env.location && <span className="text-xs ml-1.5" style={{ color: MUTED }}>{env.location}</span>}
+                    {env.date && <span className="text-xs ml-1" style={{ color: MUTED }}>({env.date})</span>}
+                  </div>
+                  {env.publicUrl && (
+                    <a href={env.publicUrl} target="_blank" rel="noopener noreferrer" style={{ color: EMERALD }}>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {card.bestConnectors.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1" style={{ color: TEXT }}>
+              <Star className="w-3 h-3" />Connectors ({card.bestConnectors.length})
+            </p>
+            <div className="space-y-1.5">
+              {card.bestConnectors.map((conn, j) => (
+                <div key={j} className="flex items-start gap-2 rounded-lg p-2" style={{ background: SUBTLE }}>
+                  <ScoreDot score={conn.score} />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-bold" style={{ color: TEXT }}>{conn.name || conn.type}</span>
+                    {conn.organization && <span className="text-xs ml-1.5" style={{ color: MUTED }}>{conn.organization}</span>}
+                    {conn.reason && <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>{conn.reason}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {card.whyThisPathMakesSense && (
+          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: MUTED }}>Why This Path Makes Sense</p>
+            <p className="text-xs" style={{ color: TEXT }}>{card.whyThisPathMakesSense}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function LngProjectsPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabView>("search");
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
-  const [resultTab, setResultTab] = useState<"projects" | "contacts" | "intel">("projects");
-  const [expandedSaved, setExpandedSaved] = useState<number | null>(null);
+  const [searchResults, setSearchResults] = useState<OperatorCard[] | null>(null);
   const [noteText, setNoteText] = useState<Record<number, string>>({});
+  const [expandedSaved, setExpandedSaved] = useState<number | null>(null);
+
+  const savedCardsQuery = useQuery<any[]>({
+    queryKey: ["/api/lng/cards"],
+    enabled: activeTab === "saved_cards",
+  });
 
   const savedProjectsQuery = useQuery<any[]>({
     queryKey: ["/api/lng/projects"],
     enabled: activeTab === "saved_projects",
   });
 
-  const savedContactsQuery = useQuery<any[]>({
-    queryKey: ["/api/lng/contacts"],
-    enabled: activeTab === "saved_contacts",
-  });
-
-  const savedIntelQuery = useQuery<any[]>({
-    queryKey: ["/api/lng/intel"],
-    enabled: activeTab === "saved_intel",
-  });
-
   const searchMutation = useMutation({
     mutationFn: async (query: string) => {
-      const res = await apiRequest("POST", "/api/lng/search", { query });
-      return res.json();
+      const resp = await apiRequest("POST", "/api/lng/search", { query });
+      return resp.json();
     },
-    onSuccess: (data: SearchResults) => {
-      setSearchResults(data);
-      toast({ title: "Search complete", description: `Found ${data.projects.length} projects, ${data.contacts.length} contacts, ${data.intel.length} intel items` });
+    onSuccess: (data) => {
+      const normalized = (data.cards || []).map((c: any) => ({
+        ...c,
+        priorityPeople: c.priorityPeople || [],
+        whatTheyCareAbout: c.whatTheyCareAbout || [],
+        professionalEnvironments: c.professionalEnvironments || [],
+        bestConnectors: c.bestConnectors || [],
+        confidence: c.confidence || 0,
+      }));
+      setSearchResults(normalized);
+      toast({ title: `Found ${normalized.length} operator cards` });
     },
     onError: (err: any) => {
       toast({ title: "Search failed", description: err.message, variant: "destructive" });
     },
   });
 
+  const saveCardMutation = useMutation({
+    mutationFn: async (card: OperatorCard) => {
+      const resp = await apiRequest("POST", "/api/lng/cards/save", { card });
+      return resp.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lng/cards"] });
+      toast({ title: "Operator card saved" });
+    },
+    onError: (err: any) => { toast({ title: "Save failed", description: err.message, variant: "destructive" }); },
+  });
+
+  const deleteCardMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const resp = await apiRequest("DELETE", `/api/lng/cards/${id}`);
+      return resp.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lng/cards"] });
+      toast({ title: "Card removed" });
+    },
+    onError: (err: any) => { toast({ title: "Delete failed", description: err.message, variant: "destructive" }); },
+  });
+
   const saveProjectMutation = useMutation({
-    mutationFn: async (project: SearchProject) => {
-      const res = await apiRequest("POST", "/api/lng/projects/save", { project });
-      return res.json();
+    mutationFn: async (project: any) => {
+      const resp = await apiRequest("POST", "/api/lng/projects/save", { project });
+      return resp.json();
     },
     onSuccess: () => {
-      toast({ title: "Project saved" });
       queryClient.invalidateQueries({ queryKey: ["/api/lng/projects"] });
+      toast({ title: "Project saved" });
     },
-  });
-
-  const saveContactMutation = useMutation({
-    mutationFn: async (contact: SearchContact) => {
-      const res = await apiRequest("POST", "/api/lng/contacts/save", { contact });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Contact saved" });
-      queryClient.invalidateQueries({ queryKey: ["/api/lng/contacts"] });
-    },
-  });
-
-  const saveIntelMutation = useMutation({
-    mutationFn: async (item: SearchIntelItem) => {
-      const res = await apiRequest("POST", "/api/lng/intel/save", { item });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Intel saved" });
-      queryClient.invalidateQueries({ queryKey: ["/api/lng/intel"] });
-    },
+    onError: (err: any) => { toast({ title: "Save failed", description: err.message, variant: "destructive" }); },
   });
 
   const deleteProjectMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/lng/projects/${id}`);
-      return res.json();
+      const resp = await apiRequest("DELETE", `/api/lng/projects/${id}`);
+      return resp.json();
     },
     onSuccess: () => {
-      toast({ title: "Project removed" });
       queryClient.invalidateQueries({ queryKey: ["/api/lng/projects"] });
+      toast({ title: "Project removed" });
     },
-  });
-
-  const deleteContactMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/lng/contacts/${id}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Contact removed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/lng/contacts"] });
-    },
-  });
-
-  const deleteIntelMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/lng/intel/${id}`);
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Intel removed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/lng/intel"] });
-    },
+    onError: (err: any) => { toast({ title: "Delete failed", description: err.message, variant: "destructive" }); },
   });
 
   const updateNotesMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
-      const res = await apiRequest("PUT", `/api/lng/projects/${id}/notes`, { notes });
-      return res.json();
+      const resp = await apiRequest("PUT", `/api/lng/cards/${id}/notes`, { notes });
+      return resp.json();
     },
     onSuccess: () => {
-      toast({ title: "Notes saved" });
-      queryClient.invalidateQueries({ queryKey: ["/api/lng/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lng/cards"] });
+      toast({ title: "Notes updated" });
     },
+    onError: (err: any) => { toast({ title: "Notes save failed", description: err.message, variant: "destructive" }); },
   });
 
-  const handleSearch = useCallback(() => {
+  const handleSearch = () => {
     if (!searchQuery.trim()) return;
     searchMutation.mutate(searchQuery.trim());
-  }, [searchQuery]);
-
-  const tabs = [
-    { key: "search" as TabView, label: "Search", icon: Search },
-    { key: "saved_projects" as TabView, label: "Saved Projects", icon: Building2 },
-    { key: "saved_contacts" as TabView, label: "Saved Contacts", icon: Users },
-    { key: "saved_intel" as TabView, label: "Saved Intel", icon: Newspaper },
-  ];
+  };
 
   return (
-    <AppLayout>
-      <div className="min-h-screen" style={{ background: SUBTLE }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
-              <Flame className="w-5 h-5" style={{ color: EMERALD }} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold" style={{ color: TEXT }} data-testid="heading-lng">LNG Projects</h1>
-              <p className="text-xs" style={{ color: MUTED }}>Search, track, and monitor LNG projects, decision makers, and intelligence</p>
-            </div>
+    <div className="min-h-screen p-4 md:p-6 max-w-4xl mx-auto" style={{ background: SUBTLE }}>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
+          <Target className="w-5 h-5" style={{ color: EMERALD }} />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold" style={{ color: TEXT }} data-testid="heading-lng">Relationship Intelligence</h1>
+          <p className="text-xs" style={{ color: MUTED }}>Find the best rooms, connectors, and paths to warm introductions</p>
+        </div>
+      </div>
+
+      <div className="flex gap-1 mb-4 p-1 rounded-lg" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+        {[
+          { key: "search" as const, label: "Search", icon: Search },
+          { key: "saved_cards" as const, label: "Saved Cards", icon: Target },
+          { key: "saved_projects" as const, label: "Saved Projects", icon: Building2 },
+        ].map((t) => {
+          const Icon = t.icon;
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex-1 justify-center"
+              style={{ background: active ? TEXT : "transparent", color: active ? "#FFF" : MUTED }}
+              data-testid={`tab-${t.key}`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "search" && (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="Search companies, industries, projects..."
+              className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none"
+              style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }}
+              data-testid="input-lng-search"
+            />
+            <button
+              onClick={handleSearch}
+              disabled={searchMutation.isPending || !searchQuery.trim()}
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
+              style={{ background: EMERALD }}
+              data-testid="button-lng-search"
+            >
+              {searchMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            </button>
           </div>
 
-          <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all flex-1 justify-center"
-                  style={{
-                    background: active ? EMERALD : "transparent",
-                    color: active ? "#FFF" : MUTED,
-                  }}
-                  data-testid={`tab-${tab.key}`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {tab.label}
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap gap-1.5">
+            {QUICK_SEARCHES.map((q) => (
+              <button
+                key={q}
+                onClick={() => { setSearchQuery(q); searchMutation.mutate(q); }}
+                className="px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors hover:opacity-80"
+                style={{ background: BG, color: MUTED, border: `1px solid ${BORDER}` }}
+                data-testid={`quick-search-${q.slice(0, 20)}`}
+              >
+                {q.length > 45 ? q.slice(0, 42) + "..." : q}
+              </button>
+            ))}
           </div>
 
-          {activeTab === "search" && (
-            <div>
-              <div className="rounded-xl p-4 mb-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                <form
-                  onSubmit={(e) => { e.preventDefault(); handleSearch(); }}
-                  className="flex gap-2"
-                >
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search for LNG projects, companies, decision makers, events..."
-                    className="flex-1 px-4 py-2.5 rounded-lg text-sm"
-                    style={{ border: `1px solid ${BORDER}`, color: TEXT }}
-                    data-testid="input-lng-search"
-                  />
-                  <button
-                    type="submit"
-                    disabled={searchMutation.isPending || !searchQuery.trim()}
-                    className="flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
-                    style={{ background: EMERALD, color: "#FFF" }}
-                    data-testid="button-lng-search"
-                  >
-                    {searchMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                    Search
-                  </button>
-                </form>
-
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {QUICK_SEARCHES.map((qs) => (
-                    <button
-                      key={qs}
-                      onClick={() => { setSearchQuery(qs); searchMutation.mutate(qs); }}
-                      className="px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors hover:opacity-80"
-                      style={{ background: `${EMERALD}10`, color: EMERALD, border: `1px solid ${EMERALD}30` }}
-                      data-testid={`quick-search-${qs.slice(0, 20)}`}
-                    >
-                      {qs}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {searchMutation.isPending && (
-                <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" style={{ color: EMERALD }} />
-                  <p className="text-sm font-semibold" style={{ color: TEXT }}>Searching LNG intelligence...</p>
-                  <p className="text-xs mt-1" style={{ color: MUTED }}>Scanning web sources, news, and project databases</p>
-                </div>
-              )}
-
-              {searchResults && !searchMutation.isPending && (
-                <div>
-                  <div className="flex gap-1 mb-4 p-1 rounded-lg" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                    {[
-                      { key: "projects" as const, label: `Projects (${searchResults.projects.length})`, icon: Building2 },
-                      { key: "contacts" as const, label: `Decision Makers (${searchResults.contacts.length})`, icon: Users },
-                      { key: "intel" as const, label: `Intel (${searchResults.intel.length})`, icon: Newspaper },
-                    ].map((t) => {
-                      const Icon = t.icon;
-                      const active = resultTab === t.key;
-                      return (
-                        <button
-                          key={t.key}
-                          onClick={() => setResultTab(t.key)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex-1 justify-center"
-                          style={{
-                            background: active ? TEXT : "transparent",
-                            color: active ? "#FFF" : MUTED,
-                          }}
-                          data-testid={`result-tab-${t.key}`}
-                        >
-                          <Icon className="w-3.5 h-3.5" />
-                          {t.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {resultTab === "projects" && (
-                    <div className="space-y-3">
-                      {searchResults.projects.length === 0 ? (
-                        <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                          <p className="text-sm" style={{ color: MUTED }}>No projects found. Try a different search.</p>
-                        </div>
-                      ) : searchResults.projects.map((project, i) => (
-                        <div key={i} className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="text-sm font-bold" style={{ color: TEXT }}>{project.projectName}</h3>
-                                {project.status && (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: `${EMERALD}15`, color: EMERALD }}>
-                                    {project.status}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: MUTED }}>
-                                {project.operator && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{project.operator}</span>}
-                                {project.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{project.location}{project.state ? `, ${project.state}` : ""}</span>}
-                                {project.capacity && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{project.capacity}</span>}
-                                {project.estimatedValue && <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{project.estimatedValue}</span>}
-                                {project.timeline && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{project.timeline}</span>}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => saveProjectMutation.mutate(project)}
-                              disabled={saveProjectMutation.isPending}
-                              className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                              style={{ color: EMERALD }}
-                              data-testid={`save-project-${i}`}
-                            >
-                              <Bookmark className="w-4 h-4" />
-                            </button>
-                          </div>
-                          {project.description && <p className="text-xs mt-2" style={{ color: TEXT }}>{project.description}</p>}
-                          {project.contractors && (
-                            <div className="text-xs mt-1">
-                              <span className="font-semibold" style={{ color: TEXT }}>Contractors: </span>
-                              <span style={{ color: MUTED }}>{project.contractors}</span>
-                            </div>
-                          )}
-                          {project.sourceUrl && (
-                            <a href={project.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium mt-1" style={{ color: EMERALD }}>
-                              <ExternalLink className="w-3 h-3" />Source: {project.source || project.sourceUrl}
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {resultTab === "contacts" && (
-                    <div className="space-y-2">
-                      {searchResults.contacts.length === 0 ? (
-                        <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                          <p className="text-sm" style={{ color: MUTED }}>No decision makers found. Try searching for specific companies.</p>
-                        </div>
-                      ) : searchResults.contacts.map((contact, i) => {
-                        const hasPersonalIntel = contact.communityInvolvement || contact.upcomingEvents || contact.interests || contact.socialMedia || contact.personalNotes;
-                        return (
-                          <div key={i} className="rounded-xl p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-bold" style={{ color: TEXT }}>{contact.fullName}</p>
-                                  {hasPersonalIntel && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
-                                      Personal Intel
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
-                                  {contact.title && <span>{contact.title}</span>}
-                                  {contact.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{contact.company}</span>}
-                                  {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
-                                  {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{contact.phone}</span>}
-                                  {contact.linkedin && (
-                                    <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1" style={{ color: EMERALD }}>
-                                      <Linkedin className="w-3 h-3" />LinkedIn
-                                    </a>
-                                  )}
-                                  {contact.projectName && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{contact.projectName}</span>}
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => saveContactMutation.mutate(contact)}
-                                disabled={saveContactMutation.isPending}
-                                className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                                style={{ color: EMERALD }}
-                                data-testid={`save-contact-${i}`}
-                              >
-                                <Bookmark className="w-4 h-4" />
-                              </button>
-                            </div>
-                            {hasPersonalIntel && (
-                              <div className="mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-                                {contact.communityInvolvement && (
-                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#8B5CF6" }}>
-                                      <Users className="w-3 h-3" />Community
-                                    </p>
-                                    <p className="text-xs" style={{ color: TEXT }}>{contact.communityInvolvement}</p>
-                                  </div>
-                                )}
-                                {contact.upcomingEvents && (
-                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#F59E0B" }}>
-                                      <Calendar className="w-3 h-3" />Events
-                                    </p>
-                                    <p className="text-xs" style={{ color: TEXT }}>{contact.upcomingEvents}</p>
-                                  </div>
-                                )}
-                                {contact.interests && (
-                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#10B981" }}>
-                                      <Globe className="w-3 h-3" />Interests
-                                    </p>
-                                    <p className="text-xs" style={{ color: TEXT }}>{contact.interests}</p>
-                                  </div>
-                                )}
-                                {contact.socialMedia && (
-                                  <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#EC4899" }}>
-                                      <Globe className="w-3 h-3" />Social
-                                    </p>
-                                    <p className="text-xs" style={{ color: TEXT }}>{contact.socialMedia}</p>
-                                  </div>
-                                )}
-                                {contact.personalNotes && (
-                                  <div className="rounded-lg p-2.5 sm:col-span-2" style={{ background: SUBTLE }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#3B82F6" }}>
-                                      <StickyNote className="w-3 h-3" />Background
-                                    </p>
-                                    <p className="text-xs" style={{ color: TEXT }}>{contact.personalNotes}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {resultTab === "intel" && (
-                    <div className="space-y-2">
-                      {searchResults.intel.length === 0 ? (
-                        <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                          <p className="text-sm" style={{ color: MUTED }}>No intelligence items found.</p>
-                        </div>
-                      ) : searchResults.intel.map((item, i) => {
-                        const cat = CATEGORY_LABELS[item.category] || CATEGORY_LABELS.general;
-                        const CatIcon = cat.icon;
-                        return (
-                          <div key={i} className="rounded-xl p-3 flex items-start justify-between" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                            <div className="flex gap-2.5 flex-1">
-                              <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: `${cat.color}15` }}>
-                                <CatIcon className="w-3.5 h-3.5" style={{ color: cat.color }} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-0.5">
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: `${cat.color}15`, color: cat.color }}>
-                                    {cat.label}
-                                  </span>
-                                  {item.date && <span className="text-[10px]" style={{ color: MUTED }}>{item.date}</span>}
-                                </div>
-                                <p className="text-xs font-semibold" style={{ color: TEXT }}>{item.title}</p>
-                                {item.summary && <p className="text-xs mt-0.5" style={{ color: MUTED }}>{item.summary}</p>}
-                                {item.url && (
-                                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] font-medium mt-1" style={{ color: EMERALD }}>
-                                    <ExternalLink className="w-2.5 h-2.5" />View source
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => saveIntelMutation.mutate(item)}
-                              disabled={saveIntelMutation.isPending}
-                              className="p-1.5 rounded-lg transition-colors hover:opacity-80 flex-shrink-0"
-                              style={{ color: EMERALD }}
-                              data-testid={`save-intel-${i}`}
-                            >
-                              <Bookmark className="w-4 h-4" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+          {searchMutation.isPending && (
+            <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" style={{ color: EMERALD }} />
+              <p className="text-sm font-semibold" style={{ color: TEXT }}>Building relationship intelligence...</p>
+              <p className="text-xs mt-1" style={{ color: MUTED }}>Scanning public sources for companies, people, environments, and connectors</p>
             </div>
           )}
 
-          {activeTab === "saved_projects" && (
-            <div className="space-y-3">
-              {savedProjectsQuery.isLoading && (
-                <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: EMERALD }} />
-                </div>
-              )}
-              {savedProjectsQuery.data?.length === 0 && (
+          {searchResults && !searchMutation.isPending && (
+            <div className="space-y-4">
+              {searchResults.length === 0 ? (
                 <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <BookmarkCheck className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
-                  <p className="text-sm font-semibold" style={{ color: TEXT }}>No saved projects yet</p>
-                  <p className="text-xs mt-1" style={{ color: MUTED }}>Search for LNG projects and save the ones you want to track</p>
+                  <Target className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
+                  <p className="text-sm font-semibold" style={{ color: TEXT }}>No operator cards found</p>
+                  <p className="text-xs mt-1" style={{ color: MUTED }}>Try searching for specific companies or industries</p>
                 </div>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold" style={{ color: MUTED }}>
+                    {searchResults.length} operator card{searchResults.length !== 1 ? "s" : ""} found
+                  </p>
+                  {searchResults.map((card, i) => (
+                    <OperatorCardView
+                      key={i}
+                      card={card}
+                      onSave={() => saveCardMutation.mutate(card)}
+                      saving={saveCardMutation.isPending}
+                    />
+                  ))}
+                </>
               )}
-              {savedProjectsQuery.data?.map((project: any) => (
-                <div key={project.id} className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "saved_cards" && (
+        <div className="space-y-4">
+          {savedCardsQuery.isLoading && (
+            <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: EMERALD }} />
+            </div>
+          )}
+          {savedCardsQuery.data?.length === 0 && (
+            <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <Target className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
+              <p className="text-sm font-semibold" style={{ color: TEXT }}>No saved operator cards yet</p>
+              <p className="text-xs mt-1" style={{ color: MUTED }}>Search for companies and save the best relationship paths</p>
+            </div>
+          )}
+          {savedCardsQuery.data?.map((saved: any) => {
+            let card: OperatorCard;
+            try {
+              card = JSON.parse(saved.cardData);
+              if (!card || !card.companyName) return null;
+              card.priorityPeople = card.priorityPeople || [];
+              card.whatTheyCareAbout = card.whatTheyCareAbout || [];
+              card.professionalEnvironments = card.professionalEnvironments || [];
+              card.bestConnectors = card.bestConnectors || [];
+            } catch { return null; }
+            const isExpanded = expandedSaved === saved.id;
+            return (
+              <div key={saved.id} className="rounded-xl overflow-hidden" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <div className="p-4 cursor-pointer" style={{ background: `${EMERALD}08`, borderBottom: `1px solid ${BORDER}` }}
+                  onClick={() => setExpandedSaved(isExpanded ? null : saved.id)}>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-sm font-bold" style={{ color: TEXT }}>{project.projectName}</h3>
-                        {project.status && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: `${EMERALD}15`, color: EMERALD }}>
-                            {project.status}
-                          </span>
-                        )}
+                        <h3 className="text-base font-bold" style={{ color: TEXT }}>{card.companyName}</h3>
+                        <ConfidenceBadge score={card.confidence} />
+                        {isExpanded ? <ChevronUp className="w-4 h-4" style={{ color: MUTED }} /> : <ChevronDown className="w-4 h-4" style={{ color: MUTED }} />}
                       </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: MUTED }}>
-                        {project.operator && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{project.operator}</span>}
-                        {project.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{project.location}{project.state ? `, ${project.state}` : ""}</span>}
-                        {project.capacity && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{project.capacity}</span>}
-                        {project.estimatedValue && <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{project.estimatedValue}</span>}
-                        {project.timeline && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{project.timeline}</span>}
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
+                        {card.industryType && <span className="flex items-center gap-1"><Flame className="w-3 h-3" />{card.industryType}</span>}
+                        {card.region && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{card.region}</span>}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setExpandedSaved(expandedSaved === project.id ? null : project.id)}
-                        className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                        style={{ color: MUTED }}
-                      >
-                        {expandedSaved === project.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      </button>
-                      <button
-                        onClick={() => deleteProjectMutation.mutate(project.id)}
-                        className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                        style={{ color: "#EF4444" }}
-                        data-testid={`delete-project-${project.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                  {expandedSaved === project.id && (
-                    <div className="mt-3 pt-3 space-y-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-                      {project.description && <p className="text-xs" style={{ color: TEXT }}>{project.description}</p>}
-                      {project.contractors && (
-                        <div className="text-xs">
-                          <span className="font-semibold" style={{ color: TEXT }}>Contractors: </span>
-                          <span style={{ color: MUTED }}>{project.contractors}</span>
-                        </div>
-                      )}
-                      {project.sourceUrl && (
-                        <a href={project.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: EMERALD }}>
-                          <ExternalLink className="w-3 h-3" />Source
-                        </a>
-                      )}
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-wider block mb-1" style={{ color: MUTED }}>Notes</label>
-                        <textarea
-                          value={noteText[project.id] ?? project.notes ?? ""}
-                          onChange={(e) => setNoteText(prev => ({ ...prev, [project.id]: e.target.value }))}
-                          className="w-full px-3 py-2 rounded-lg text-xs resize-none"
-                          style={{ border: `1px solid ${BORDER}`, color: TEXT, minHeight: 60 }}
-                          placeholder="Add notes about this project..."
-                          data-testid={`notes-project-${project.id}`}
-                        />
-                        <button
-                          onClick={() => updateNotesMutation.mutate({ id: project.id, notes: noteText[project.id] ?? project.notes ?? "" })}
-                          disabled={updateNotesMutation.isPending}
-                          className="mt-1 px-3 py-1 rounded-md text-[10px] font-bold transition-opacity hover:opacity-80"
-                          style={{ background: TEXT, color: "#FFF" }}
-                          data-testid={`save-notes-${project.id}`}
-                        >
-                          {updateNotesMutation.isPending ? "Saving..." : "Save Notes"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === "saved_contacts" && (
-            <div className="space-y-2">
-              {savedContactsQuery.isLoading && (
-                <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: EMERALD }} />
-                </div>
-              )}
-              {savedContactsQuery.data?.length === 0 && (
-                <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <Users className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
-                  <p className="text-sm font-semibold" style={{ color: TEXT }}>No saved contacts yet</p>
-                  <p className="text-xs mt-1" style={{ color: MUTED }}>Search for LNG projects and save key decision makers</p>
-                </div>
-              )}
-              {savedContactsQuery.data?.map((contact: any) => {
-                const hasPersonalIntel = contact.communityInvolvement || contact.upcomingEvents || contact.interests || contact.socialMedia || contact.personalNotes;
-                return (
-                  <div key={contact.id} className="rounded-xl p-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold" style={{ color: TEXT }}>{contact.fullName}</p>
-                          {hasPersonalIntel && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
-                              Personal Intel
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" style={{ color: MUTED }}>
-                          {contact.title && <span>{contact.title}</span>}
-                          {contact.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{contact.company}</span>}
-                          {contact.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{contact.email}</span>}
-                          {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{contact.phone}</span>}
-                          {contact.linkedin && (
-                            <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1" style={{ color: EMERALD }}>
-                              <Linkedin className="w-3 h-3" />LinkedIn
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => deleteContactMutation.mutate(contact.id)}
-                        className="p-1.5 rounded-lg transition-colors hover:opacity-80"
-                        style={{ color: "#EF4444" }}
-                        data-testid={`delete-contact-${contact.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {hasPersonalIntel && (
-                      <div className="mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-                        {contact.communityInvolvement && (
-                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#8B5CF6" }}>
-                              <Users className="w-3 h-3" />Community
-                            </p>
-                            <p className="text-xs" style={{ color: TEXT }}>{contact.communityInvolvement}</p>
-                          </div>
-                        )}
-                        {contact.upcomingEvents && (
-                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#F59E0B" }}>
-                              <Calendar className="w-3 h-3" />Events
-                            </p>
-                            <p className="text-xs" style={{ color: TEXT }}>{contact.upcomingEvents}</p>
-                          </div>
-                        )}
-                        {contact.interests && (
-                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#10B981" }}>
-                              <Globe className="w-3 h-3" />Interests
-                            </p>
-                            <p className="text-xs" style={{ color: TEXT }}>{contact.interests}</p>
-                          </div>
-                        )}
-                        {contact.socialMedia && (
-                          <div className="rounded-lg p-2.5" style={{ background: SUBTLE }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#EC4899" }}>
-                              <Globe className="w-3 h-3" />Social
-                            </p>
-                            <p className="text-xs" style={{ color: TEXT }}>{contact.socialMedia}</p>
-                          </div>
-                        )}
-                        {contact.personalNotes && (
-                          <div className="rounded-lg p-2.5 sm:col-span-2" style={{ background: SUBTLE }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: "#3B82F6" }}>
-                              <StickyNote className="w-3 h-3" />Background
-                            </p>
-                            <p className="text-xs" style={{ color: TEXT }}>{contact.personalNotes}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {activeTab === "saved_intel" && (
-            <div className="space-y-2">
-              {savedIntelQuery.isLoading && (
-                <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: EMERALD }} />
-                </div>
-              )}
-              {savedIntelQuery.data?.length === 0 && (
-                <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                  <Newspaper className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
-                  <p className="text-sm font-semibold" style={{ color: TEXT }}>No saved intel yet</p>
-                  <p className="text-xs mt-1" style={{ color: MUTED }}>Search and save hiring posts, events, press releases, and more</p>
-                </div>
-              )}
-              {savedIntelQuery.data?.map((item: any) => {
-                const cat = CATEGORY_LABELS[item.category] || CATEGORY_LABELS.general;
-                const CatIcon = cat.icon;
-                return (
-                  <div key={item.id} className="rounded-xl p-3 flex items-start justify-between" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-                    <div className="flex gap-2.5 flex-1">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: `${cat.color}15` }}>
-                        <CatIcon className="w-3.5 h-3.5" style={{ color: cat.color }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: `${cat.color}15`, color: cat.color }}>
-                            {cat.label}
-                          </span>
-                          {item.date && <span className="text-[10px]" style={{ color: MUTED }}>{item.date}</span>}
-                        </div>
-                        <p className="text-xs font-semibold" style={{ color: TEXT }}>{item.title}</p>
-                        {item.summary && <p className="text-xs mt-0.5" style={{ color: MUTED }}>{item.summary}</p>}
-                        {item.url && (
-                          <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] font-medium mt-1" style={{ color: EMERALD }}>
-                            <ExternalLink className="w-2.5 h-2.5" />View source
-                          </a>
-                        )}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: `${EMERALD}10`, color: EMERALD }}>{card.bestNextRoom || "No room"}</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "rgba(139,92,246,0.1)", color: "#8B5CF6" }}>{card.bestConnector || "No connector"}</span>
                       </div>
                     </div>
                     <button
-                      onClick={() => deleteIntelMutation.mutate(item.id)}
+                      onClick={(e) => { e.stopPropagation(); deleteCardMutation.mutate(saved.id); }}
                       className="p-1.5 rounded-lg transition-colors hover:opacity-80 flex-shrink-0"
                       style={{ color: "#EF4444" }}
-                      data-testid={`delete-intel-${item.id}`}
+                      data-testid={`delete-card-${saved.id}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-                );
-              })}
+                </div>
+
+                {isExpanded && (
+                  <div className="p-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="rounded-lg p-3" style={{ background: `${EMERALD}08`, border: `1px solid ${EMERALD}20` }}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: EMERALD }}>
+                          <Target className="w-3 h-3" />Best Next Room
+                        </p>
+                        <p className="text-xs font-semibold" style={{ color: TEXT }}>{card.bestNextRoom}</p>
+                      </div>
+                      <div className="rounded-lg p-3" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.2)" }}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: "#8B5CF6" }}>
+                          <Users className="w-3 h-3" />Best Connector
+                        </p>
+                        <p className="text-xs font-semibold" style={{ color: TEXT }}>{card.bestConnector}</p>
+                      </div>
+                      <div className="rounded-lg p-3" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)" }}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: "#3B82F6" }}>
+                          <Zap className="w-3 h-3" />Best Action
+                        </p>
+                        <p className="text-xs font-semibold" style={{ color: TEXT }}>{card.bestAction}</p>
+                      </div>
+                    </div>
+
+                    {card.talkingAngle && (
+                      <div className="rounded-lg p-2.5" style={{ background: "rgba(16,185,129,0.05)", border: `1px dashed ${EMERALD}40` }}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1" style={{ color: EMERALD }}>
+                          <MessageSquare className="w-3 h-3" />Talking Angle
+                        </p>
+                        <p className="text-xs italic" style={{ color: TEXT }}>{card.talkingAngle}</p>
+                      </div>
+                    )}
+
+                    {card.priorityPeople.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: TEXT }}>Priority People</p>
+                        <div className="space-y-1.5">
+                          {card.priorityPeople.map((person, j) => (
+                            <div key={j} className="flex items-center gap-2 rounded-lg p-2" style={{ background: SUBTLE }}>
+                              <ScoreDot score={person.score} />
+                              <span className="text-xs font-bold" style={{ color: TEXT }}>{person.name}</span>
+                              <span className="text-xs" style={{ color: MUTED }}>{person.title}</span>
+                              <span className="px-1 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: `${ROLE_COLORS[person.roleCategory] || MUTED}15`, color: ROLE_COLORS[person.roleCategory] || MUTED }}>
+                                {person.roleCategory?.replace("_", " ")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {card.professionalEnvironments.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: TEXT }}>Professional Environments</p>
+                        <div className="space-y-1.5">
+                          {card.professionalEnvironments.map((env, j) => (
+                            <div key={j} className="flex items-center gap-2 rounded-lg p-2" style={{ background: SUBTLE }}>
+                              <ScoreDot score={env.score} />
+                              <span className="text-xs font-bold" style={{ color: TEXT }}>{env.name}</span>
+                              <span className="px-1 py-0.5 rounded text-[9px] font-bold uppercase" style={{ background: `${ENV_COLORS[env.type] || MUTED}15`, color: ENV_COLORS[env.type] || MUTED }}>
+                                {env.type?.replace("_", " ")}
+                              </span>
+                              {env.location && <span className="text-xs" style={{ color: MUTED }}>{env.location}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="rounded-lg p-3" style={{ background: SUBTLE }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1" style={{ color: TEXT }}>
+                        <StickyNote className="w-3 h-3" />Notes
+                      </p>
+                      <textarea
+                        value={noteText[saved.id] ?? saved.notes ?? ""}
+                        onChange={(e) => setNoteText({ ...noteText, [saved.id]: e.target.value })}
+                        onBlur={() => {
+                          const val = noteText[saved.id];
+                          if (val !== undefined && val !== saved.notes) {
+                            updateNotesMutation.mutate({ id: saved.id, notes: val });
+                          }
+                        }}
+                        placeholder="Add your notes..."
+                        className="w-full text-xs p-2 rounded-lg outline-none resize-none"
+                        style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT, minHeight: "60px" }}
+                        data-testid={`notes-${saved.id}`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === "saved_projects" && (
+        <div className="space-y-3">
+          {savedProjectsQuery.isLoading && (
+            <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: EMERALD }} />
             </div>
           )}
+          {savedProjectsQuery.data?.length === 0 && (
+            <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <Building2 className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
+              <p className="text-sm font-semibold" style={{ color: TEXT }}>No saved projects yet</p>
+            </div>
+          )}
+          {savedProjectsQuery.data?.map((project: any) => (
+            <div key={project.id} className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold" style={{ color: TEXT }}>{project.projectName}</h3>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs mt-1" style={{ color: MUTED }}>
+                    {project.operator && <span>{project.operator}</span>}
+                    {project.location && <span>{project.location}</span>}
+                    {project.status && <span>{project.status}</span>}
+                  </div>
+                  {project.description && <p className="text-xs mt-2" style={{ color: TEXT }}>{project.description}</p>}
+                </div>
+                <button
+                  onClick={() => deleteProjectMutation.mutate(project.id)}
+                  className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                  style={{ color: "#EF4444" }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-    </AppLayout>
+      )}
+    </div>
   );
 }
