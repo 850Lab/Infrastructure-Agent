@@ -121,7 +121,8 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
 export async function initiateCall(
   to: string,
   statusCallbackUrl?: string,
-  recordingCallbackUrl?: string
+  recordingCallbackUrl?: string,
+  mediaStreamUrl?: string
 ): Promise<{ success: boolean; sid?: string; error?: string }> {
   try {
     const client = await getTwilioClient();
@@ -135,10 +136,16 @@ export async function initiateCall(
       return { success: false, error: "Invalid phone number" };
     }
 
+    let twiml = `<Response>`;
+    if (mediaStreamUrl) {
+      twiml += `<Start><Stream url="${mediaStreamUrl}" /></Start>`;
+    }
+    twiml += `<Say>Connecting your call.</Say><Dial record="record-from-answer-dual">${normalized}</Dial></Response>`;
+
     const callParams: any = {
       to: normalized,
       from,
-      twiml: `<Response><Say>Connecting your call through Texas Automation Systems.</Say><Dial record="record-from-answer-dual">${normalized}</Dial></Response>`,
+      twiml,
       record: true,
       recordingChannels: "dual",
     };
@@ -156,7 +163,7 @@ export async function initiateCall(
     }
 
     const call = await client.calls.create(callParams);
-    log(`Call initiated to ${normalized} with recording enabled (SID: ${call.sid})`);
+    log(`Call initiated to ${normalized} with recording + media stream (SID: ${call.sid})`);
     return { success: true, sid: call.sid };
   } catch (err: any) {
     log(`Call error: ${err.message}`);

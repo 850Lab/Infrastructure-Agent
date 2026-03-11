@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +10,7 @@ import {
   Phone, Copy, Check, ChevronLeft, ChevronRight, X, Mail, Globe,
   MapPin, User, Shield, FileText, MessageSquare, Loader2, Calendar,
   ArrowLeft, Zap, ClipboardList, Mic, Upload, CheckCircle2, AlertTriangle, Brain,
-  PhoneCall, Send,
+  PhoneCall, Send, Radio, Volume2, Target, Clock,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -114,6 +114,13 @@ export default function CallModePage() {
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [smsBody, setSmsBody] = useState("");
   const [twilioCallActive, setTwilioCallActive] = useState(false);
+  const [activeCallSid, setActiveCallSid] = useState<string | null>(null);
+  const [coachingTranscript, setCoachingTranscript] = useState<{ text: string; timestamp: number }[]>([]);
+  const [coachingAlerts, setCoachingAlerts] = useState<{ type: string; severity: string; message: string; suggestion: string; timestamp: number }[]>([]);
+  const [coachingConnected, setCoachingConnected] = useState(false);
+  const [showCoachingPanel, setShowCoachingPanel] = useState(false);
+  const coachingRef = useRef<EventSource | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
 
   const { data: twilioStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/twilio/status"],
@@ -121,16 +128,85 @@ export default function CallModePage() {
     staleTime: 60000,
   });
 
+  const startCoachingSSE = useCallback((callSid: string) => {
+    if (coachingRef.current) {
+      coachingRef.current.close();
+    }
+    setCoachingTranscript([]);
+    setCoachingAlerts([]);
+    setCoachingConnected(false);
+    setShowCoachingPanel(true);
+
+    const es = new EventSource(`/api/twilio/coaching/${callSid}?token=${token}`);
+
+    es.addEventListener("session_info", (e: MessageEvent) => {
+      setCoachingConnected(true);
+    });
+
+    es.addEventListener("transcript", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        setCoachingTranscript(prev => [...prev, { text: data.text, timestamp: data.timestamp }]);
+      } catch {}
+    });
+
+    es.addEventListener("coaching_alert", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        setCoachingAlerts(prev => [...prev, {
+          type: data.type,
+          severity: data.severity,
+          message: data.message,
+          suggestion: data.suggestion,
+          timestamp: data.timestamp,
+        }]);
+      } catch {}
+    });
+
+    es.addEventListener("call_ended", () => {
+      setTwilioCallActive(false);
+      setActiveCallSid(null);
+      setCoachingConnected(false);
+      es.close();
+      coachingRef.current = null;
+    });
+
+    es.onerror = () => {
+      setCoachingConnected(false);
+    };
+
+    coachingRef.current = es;
+  }, [token]);
+
+  useEffect(() => {
+    return () => {
+      if (coachingRef.current) {
+        coachingRef.current.close();
+        coachingRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (transcriptEndRef.current) {
+      transcriptEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [coachingTranscript]);
+
   const twilioCallMutation = useMutation({
-    mutationFn: async ({ to, companyName, contactName }: { to: string; companyName?: string; contactName?: string }) => {
-      const res = await apiRequest("POST", "/api/twilio/call", { to, companyName, contactName });
+    mutationFn: async ({ to, companyName, contactName, talkingPoints }: { to: string; companyName?: string; contactName?: string; talkingPoints?: string[] }) => {
+      const res = await apiRequest("POST", "/api/twilio/call", { to, companyName, contactName, talkingPoints });
       return res.json();
     },
     onSuccess: (data: any) => {
       setTwilioCallActive(true);
+      if (data.sid) {
+        setActiveCallSid(data.sid);
+        setTimeout(() => startCoachingSSE(data.sid), 1000);
+      }
       toast({
-        title: "Call initiated (recording)",
-        description: "Connected through Twilio. Call is being recorded for AI analysis.",
+        title: "Call initiated with Live Coach",
+        description: "Real-time coaching active. Transcript streaming.",
       });
     },
     onError: (err: Error) => {
@@ -550,14 +626,25 @@ export default function CallModePage() {
                       {twilioStatus?.connected && (
                         <div className="flex gap-2">
                           <button
-                            onClick={() => twilioCallMutation.mutate({ to: callPhone, companyName: company?.company_name, contactName: company?.offer_dm_name })}
+                            onClick={() => {
+                              const points: string[] = [];
+                              if (company?.rank_reason) points.push(company.rank_reason);
+                              if (company?.rank_evidence) points.push(company.rank_evidence);
+                              if (company?.playbook_strategy_notes) points.push(company.playbook_strategy_notes);
+                              twilioCallMutation.mutate({
+                                to: callPhone,
+                                companyName: company?.company_name,
+                                contactName: company?.offer_dm_name,
+                                talkingPoints: points,
+                              });
+                            }}
                             disabled={twilioCallMutation.isPending || twilioCallActive}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
-                            style={{ background: EMERALD, color: "#FFF" }}
+                            style={{ background: twilioCallActive ? ERROR_RED : EMERALD, color: "#FFF" }}
                             data-testid="button-twilio-call"
                           >
-                            {twilioCallMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PhoneCall className="w-3.5 h-3.5" />}
-                            {twilioCallActive ? "Recording..." : "Call via Twilio"}
+                            {twilioCallMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : twilioCallActive ? <Radio className="w-3.5 h-3.5 animate-pulse" /> : <PhoneCall className="w-3.5 h-3.5" />}
+                            {twilioCallActive ? "Live Coach Active" : "Call via Twilio"}
                           </button>
                           <button
                             onClick={() => { setSmsBody(company?.playbook_followup || ""); setShowSmsModal(true); }}
@@ -1208,6 +1295,176 @@ export default function CallModePage() {
                 </Button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCoachingPanel && (
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="fixed top-0 right-0 bottom-0 z-40 flex flex-col"
+            style={{
+              width: "380px",
+              background: "#0B1120",
+              borderLeft: `2px solid ${coachingConnected ? EMERALD : "rgba(255,255,255,0.1)"}`,
+              boxShadow: "-8px 0 32px rgba(0,0,0,0.5)",
+            }}
+            data-testid="coaching-panel"
+          >
+            <div
+              className="flex items-center justify-between px-4 py-3"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{
+                    background: coachingConnected ? EMERALD : ERROR_RED,
+                    boxShadow: coachingConnected ? `0 0 8px ${EMERALD}80` : `0 0 8px ${ERROR_RED}80`,
+                    animation: coachingConnected ? "pulse 2s infinite" : "none",
+                  }}
+                  data-testid="coaching-status-indicator"
+                />
+                <span className="text-xs font-mono font-bold uppercase tracking-widest" style={{ color: coachingConnected ? EMERALD : ERROR_RED }}>
+                  {coachingConnected ? "Live Coach" : twilioCallActive ? "Connecting..." : "Session Ended"}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCoachingPanel(false)}
+                className="p-1 rounded-lg transition-colors"
+                style={{ color: MUTED }}
+                data-testid="button-close-coaching"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {company?.rank_reason && (
+              <div
+                className="px-4 py-3"
+                style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(16,185,129,0.04)" }}
+              >
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Target className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest" style={{ color: EMERALD }}>
+                    Talking Points
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: "#94A3B8" }} data-testid="coaching-talking-points">
+                  {company.rank_reason}
+                </p>
+                {company.playbook_strategy_notes && (
+                  <p className="text-xs leading-relaxed mt-1.5" style={{ color: "#64748B" }}>
+                    {company.playbook_strategy_notes}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <AnimatePresence>
+                {coachingAlerts.length > 0 && (
+                  <motion.div
+                    className="px-4 py-2 space-y-2 max-h-48 overflow-y-auto"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+                  >
+                    {coachingAlerts.slice(-5).map((alert, i) => {
+                      const alertColors = {
+                        red: { bg: `${ERROR_RED}12`, border: `${ERROR_RED}40`, icon: ERROR_RED },
+                        amber: { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.4)", icon: WARN },
+                        blue: { bg: `${BLUE}12`, border: `${BLUE}40`, icon: BLUE },
+                      };
+                      const colors = alertColors[alert.severity as keyof typeof alertColors] || alertColors.amber;
+                      const AlertIcon = alert.type === "containment" ? Shield :
+                                       alert.type === "authority" || alert.type === "no_authority" ? User : Clock;
+                      return (
+                        <motion.div
+                          key={`alert-${alert.timestamp}-${i}`}
+                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          className="rounded-lg p-2.5"
+                          style={{ background: colors.bg, border: `1px solid ${colors.border}` }}
+                          data-testid={`coaching-alert-${alert.type}-${i}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <AlertIcon className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: colors.icon }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold" style={{ color: "#FFF" }}>{alert.message}</p>
+                              <p className="text-[11px] leading-snug mt-1" style={{ color: "#94A3B8" }}>{alert.suggestion}</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="flex-1 overflow-y-auto px-4 py-3" data-testid="coaching-transcript-area">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <Volume2 className="w-3.5 h-3.5" style={{ color: MUTED }} />
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest" style={{ color: MUTED }}>
+                    Live Transcript
+                  </span>
+                  {coachingTranscript.length > 0 && (
+                    <span className="text-[10px] font-mono ml-auto" style={{ color: "rgba(255,255,255,0.2)" }}>
+                      {coachingTranscript.length} segments
+                    </span>
+                  )}
+                </div>
+
+                {coachingTranscript.length === 0 && coachingConnected && (
+                  <div className="flex items-center gap-2 py-6 justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: MUTED }} />
+                    <span className="text-xs font-mono" style={{ color: MUTED }}>Waiting for speech...</span>
+                  </div>
+                )}
+
+                {coachingTranscript.length === 0 && !coachingConnected && !twilioCallActive && (
+                  <div className="flex items-center gap-2 py-6 justify-center">
+                    <span className="text-xs font-mono" style={{ color: MUTED }}>
+                      {coachingAlerts.length > 0 ? "Call ended. Transcript processed." : "No transcript yet."}
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {coachingTranscript.map((chunk, i) => (
+                    <motion.div
+                      key={`t-${i}`}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="text-xs leading-relaxed"
+                      style={{ color: "rgba(255,255,255,0.75)" }}
+                      data-testid={`transcript-chunk-${i}`}
+                    >
+                      <span className="font-mono text-[10px] mr-2" style={{ color: "rgba(255,255,255,0.2)" }}>
+                        {new Date(chunk.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      </span>
+                      {chunk.text}
+                    </motion.div>
+                  ))}
+                  <div ref={transcriptEndRef} />
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="px-4 py-2 flex items-center justify-between"
+              style={{ borderTop: "1px solid rgba(255,255,255,0.08)", background: "rgba(0,0,0,0.3)" }}
+            >
+              <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.2)" }}>
+                {coachingAlerts.length} alert{coachingAlerts.length !== 1 ? "s" : ""} · {coachingTranscript.length} segments
+              </span>
+              <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.15)" }}>
+                Phase 1 · Pattern Detection
+              </span>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

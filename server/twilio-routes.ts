@@ -6,6 +6,8 @@ import { eventBus } from "./events";
 import { db } from "./db";
 import { twilioRecordings } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
+import { registerCoachingSession, subscribeToCoaching, getActiveSessions } from "./realtime-coaching";
+import { validateToken } from "./auth";
 
 const log = (msg: string) => {
   const ts = new Date().toLocaleTimeString();
@@ -186,7 +188,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.post("/api/twilio/call", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { to, companyName, contactName } = req.body;
+      const { to, companyName, contactName, talkingPoints } = req.body;
       if (!to) {
         return res.status(400).json({ error: "Phone number 'to' is required" });
       }
@@ -195,7 +197,11 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       const recordingCallbackUrl = `${baseUrl}/api/twilio/webhook/recording`;
       const clientId = (req as any).user?.clientId || null;
 
-      const result = await initiateCall(to, undefined, recordingCallbackUrl);
+      const wsProtocol = baseUrl.startsWith("https") ? "wss" : "ws";
+      const host = baseUrl.replace(/^https?:\/\//, "");
+      const mediaStreamUrl = `${wsProtocol}://${host}/media-stream`;
+
+      const result = await initiateCall(to, undefined, recordingCallbackUrl, mediaStreamUrl);
       if (!result.success) {
         return res.status(400).json({ error: result.error });
       }
@@ -214,10 +220,17 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         } catch (e: any) {
           log(`Failed to create recording record: ${e.message}`);
         }
+
+        registerCoachingSession(
+          result.sid,
+          companyName || "",
+          contactName || "",
+          Array.isArray(talkingPoints) ? talkingPoints : []
+        );
       }
 
-      log(`Call initiated by user to ${to} (recording enabled, SID: ${result.sid})`);
-      res.json({ ok: true, sid: result.sid, recordingEnabled: true });
+      log(`Call initiated by user to ${to} (recording + live coaching, SID: ${result.sid})`);
+      res.json({ ok: true, sid: result.sid, recordingEnabled: true, coachingEnabled: true });
     } catch (err: any) {
       log(`Call route error: ${err.message}`);
       res.status(500).json({ error: err.message });
@@ -383,5 +396,21 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     }
   });
 
-  log("Twilio routes registered (with recording intelligence pipeline)");
+  app.get("/api/twilio/coaching/:callSid", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!token || !validateToken(token)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { callSid } = req.params;
+    const subscribed = subscribeToCoaching(callSid, res);
+    if (!subscribed) {
+      res.status(404).json({ error: "No active coaching session for this call" });
+    }
+  });
+
+  app.get("/api/twilio/coaching-sessions", authMiddleware, (_req: Request, res: Response) => {
+    res.json(getActiveSessions());
+  });
+
+  log("Twilio routes registered (with recording intelligence pipeline + live coaching)");
 }

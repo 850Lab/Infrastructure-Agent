@@ -68,6 +68,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  const { setupRealtimeCoaching } = await import("./realtime-coaching");
+  setupRealtimeCoaching(httpServer);
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
