@@ -66,7 +66,8 @@ interface ActiveSession {
   talkingPoints: string[];
   transcript: string[];
   alerts: CoachingAlert[];
-  openaiWs: WebSocket | null;
+  openaiWsInbound: WebSocket | null;
+  openaiWsOutbound: WebSocket | null;
   sseClients: Set<any>;
   startedAt: number;
   lastTranscriptPush: number;
@@ -176,7 +177,7 @@ function pushToSSEClients(session: ActiveSession, event: string, data: any) {
   }
 }
 
-function connectToOpenAI(session: ActiveSession) {
+function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead"): WebSocket {
   const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
   const ws = new WebSocket(url, {
     headers: {
@@ -186,7 +187,7 @@ function connectToOpenAI(session: ActiveSession) {
   });
 
   ws.on("open", () => {
-    log(`OpenAI Realtime connected for call ${session.callSid}`);
+    log(`OpenAI Realtime connected for ${speaker} track (call ${session.callSid})`);
     ws.send(JSON.stringify({
       type: "session.update",
       session: {
@@ -197,9 +198,9 @@ function connectToOpenAI(session: ActiveSession) {
         },
         turn_detection: {
           type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
+          threshold: 0.4,
+          prefix_padding_ms: 500,
+          silence_duration_ms: 800,
         },
       },
     }));
@@ -212,10 +213,13 @@ function connectToOpenAI(session: ActiveSession) {
       if (event.type === "conversation.item.input_audio_transcription.completed") {
         const text = event.transcript?.trim();
         if (text && text.length > 0) {
-          session.transcript.push(text);
+          const label = speaker === "agent" ? "You" : (session.contactName || "Them");
+          const labeledText = `${label}: ${text}`;
+          session.transcript.push(labeledText);
           pushToSSEClients(session, "transcript", {
             callSid: session.callSid,
-            text,
+            text: labeledText,
+            speaker,
             timestamp: Date.now(),
             index: session.transcript.length - 1,
           });
@@ -233,23 +237,29 @@ function connectToOpenAI(session: ActiveSession) {
       }
 
       if (event.type === "error") {
-        log(`OpenAI error for ${session.callSid}: ${JSON.stringify(event.error)}`);
+        log(`OpenAI error (${speaker}) for ${session.callSid}: ${JSON.stringify(event.error)}`);
       }
     } catch (e: any) {
-      log(`OpenAI message parse error: ${e.message}`);
+      log(`OpenAI message parse error (${speaker}): ${e.message}`);
     }
   });
 
-  ws.on("close", (code, reason) => {
-    log(`OpenAI Realtime disconnected for ${session.callSid} (code: ${code})`);
-    session.openaiWs = null;
+  ws.on("close", (code) => {
+    log(`OpenAI Realtime disconnected (${speaker}) for ${session.callSid} (code: ${code})`);
+    if (speaker === "inbound") session.openaiWsInbound = null;
+    else session.openaiWsOutbound = null;
   });
 
   ws.on("error", (err) => {
-    log(`OpenAI Realtime error for ${session.callSid}: ${err.message}`);
+    log(`OpenAI Realtime error (${speaker}) for ${session.callSid}: ${err.message}`);
   });
 
-  session.openaiWs = ws;
+  return ws;
+}
+
+function connectToOpenAI(session: ActiveSession) {
+  session.openaiWsInbound = createOpenAIConnection(session, "lead");
+  session.openaiWsOutbound = createOpenAIConnection(session, "agent");
 }
 
 export function setupRealtimeCoaching(httpServer: HTTPServer) {
@@ -286,7 +296,8 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
                 talkingPoints: [],
                 transcript: [],
                 alerts: [],
-                openaiWs: null,
+                openaiWsInbound: null,
+                openaiWsOutbound: null,
                 sseClients: new Set(),
                 startedAt: Date.now(),
                 lastTranscriptPush: 0,
@@ -299,10 +310,14 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
           }
 
           case "media": {
-            if (currentSession?.openaiWs?.readyState === WebSocket.OPEN) {
-              const audioPayload = msg.media?.payload;
-              if (audioPayload) {
-                currentSession.openaiWs.send(JSON.stringify({
+            const audioPayload = msg.media?.payload;
+            const track = msg.media?.track;
+            if (audioPayload && currentSession) {
+              const targetWs = track === "outbound"
+                ? currentSession.openaiWsOutbound
+                : currentSession.openaiWsInbound;
+              if (targetWs?.readyState === WebSocket.OPEN) {
+                targetWs.send(JSON.stringify({
                   type: "input_audio_buffer.append",
                   audio: audioPayload,
                 }));
@@ -343,8 +358,11 @@ function endSession(callSid: string) {
   const session = activeSessions.get(callSid);
   if (!session) return;
 
-  if (session.openaiWs?.readyState === WebSocket.OPEN) {
-    session.openaiWs.close();
+  if (session.openaiWsInbound?.readyState === WebSocket.OPEN) {
+    session.openaiWsInbound.close();
+  }
+  if (session.openaiWsOutbound?.readyState === WebSocket.OPEN) {
+    session.openaiWsOutbound.close();
   }
 
   const fullTranscript = session.transcript.join("\n");
@@ -455,7 +473,8 @@ export function registerCoachingSession(callSid: string, companyName: string, co
       talkingPoints,
       transcript: [],
       alerts: [],
-      openaiWs: null,
+      openaiWsInbound: null,
+      openaiWsOutbound: null,
       sseClients: new Set(),
       startedAt: Date.now(),
       lastTranscriptPush: 0,

@@ -149,7 +149,7 @@ export async function initiateCall(
 
     let twiml = `<Response>`;
     if (mediaStreamUrl) {
-      twiml += `<Start><Stream url="${mediaStreamUrl}" /></Start>`;
+      twiml += `<Start><Stream url="${mediaStreamUrl}" track="both_tracks" /></Start>`;
     }
     twiml += `<Say>Connecting you to ${normalizedLead}.</Say>`;
     twiml += `<Dial record="record-from-answer-dual" callerId="${from}">${normalizedLead}</Dial>`;

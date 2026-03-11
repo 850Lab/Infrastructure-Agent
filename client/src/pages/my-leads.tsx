@@ -541,7 +541,7 @@ export default function MyLeadsPage() {
 
   const [twilioCallActive, setTwilioCallActive] = useState(false);
   const [activeCallSid, setActiveCallSid] = useState<string | null>(null);
-  const [coachingTranscript, setCoachingTranscript] = useState<{ text: string; timestamp: number }[]>([]);
+  const [coachingTranscript, setCoachingTranscript] = useState<{ text: string; speaker?: string; timestamp: number }[]>([]);
   const [coachingAlerts, setCoachingAlerts] = useState<{ type: string; severity: string; message: string; suggestion: string; timestamp: number }[]>([]);
   const [coachingConnected, setCoachingConnected] = useState(false);
   const [showCoachingPanel, setShowCoachingPanel] = useState(false);
@@ -570,7 +570,7 @@ export default function MyLeadsPage() {
     es.addEventListener("transcript", (e: MessageEvent) => {
       try {
         const d = JSON.parse(e.data);
-        setCoachingTranscript(prev => [...prev, { text: d.text, timestamp: d.timestamp }]);
+        setCoachingTranscript(prev => [...prev, { text: d.text, speaker: d.speaker, timestamp: d.timestamp }]);
       } catch {}
     });
     es.addEventListener("coaching_alert", (e: MessageEvent) => {
@@ -953,8 +953,8 @@ export default function MyLeadsPage() {
                 </div>
               )}
               {coachingTranscript.map((t, i) => (
-                <div key={i} className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.04)" }}>
-                  <p className="text-xs text-white/80 leading-relaxed">{t.text}</p>
+                <div key={i} className="rounded-lg p-2.5" style={{ background: t.speaker === "agent" ? "rgba(16,185,129,0.08)" : t.speaker === "lead" ? "rgba(59,130,246,0.08)" : "rgba(255,255,255,0.04)" }}>
+                  <p className="text-xs leading-relaxed" style={{ color: t.speaker === "agent" ? "rgba(16,185,129,0.9)" : t.speaker === "lead" ? "rgba(96,165,250,0.9)" : "rgba(255,255,255,0.8)" }}>{t.text}</p>
                   <p className="text-[9px] text-white/20 mt-1 font-mono">
                     {new Date(t.timestamp).toLocaleTimeString()}
                   </p>

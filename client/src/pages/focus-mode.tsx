@@ -908,7 +908,7 @@ export default function FocusModePage() {
 
   const [twilioCallActive, setTwilioCallActive] = useState(false);
   const [coachingAlerts, setCoachingAlerts] = useState<Array<{ type: string; text: string; ts: number }>>([]);
-  const [coachingTranscript, setCoachingTranscript] = useState<string[]>([]);
+  const [coachingTranscript, setCoachingTranscript] = useState<{ text: string; speaker?: string }[]>([]);
   const [coachingConnected, setCoachingConnected] = useState(false);
 
   const startCoachingSSE = useCallback((callSid: string) => {
@@ -917,15 +917,22 @@ export default function FocusModePage() {
     setCoachingConnected(false);
     const es = new EventSource(`/api/twilio/coaching/${callSid}?token=${token}`);
     let failures = 0;
-    es.onopen = () => { setCoachingConnected(true); failures = 0; };
-    es.onmessage = (ev) => {
+    es.addEventListener("session_info", () => { setCoachingConnected(true); failures = 0; });
+    es.addEventListener("transcript", (e: MessageEvent) => {
       try {
-        const d = JSON.parse(ev.data);
-        if (d.type === "alert") setCoachingAlerts(prev => [...prev.slice(-19), { type: d.alertType || "info", text: d.text, ts: Date.now() }]);
-        if (d.type === "transcript") setCoachingTranscript(prev => [...prev.slice(-49), d.text]);
-        if (d.type === "end") { es.close(); setTwilioCallActive(false); setCoachingConnected(false); }
+        const d = JSON.parse(e.data);
+        setCoachingTranscript(prev => [...prev.slice(-49), { text: d.text, speaker: d.speaker }]);
       } catch {}
-    };
+    });
+    es.addEventListener("coaching_alert", (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        setCoachingAlerts(prev => [...prev.slice(-19), { type: d.severity || "info", text: d.message + (d.suggestion ? ` — ${d.suggestion}` : ""), ts: d.timestamp || Date.now() }]);
+      } catch {}
+    });
+    es.addEventListener("call_ended", () => {
+      es.close(); setTwilioCallActive(false); setCoachingConnected(false);
+    });
     es.onerror = () => {
       failures++;
       if (failures > 5) { es.close(); setTwilioCallActive(false); setCoachingConnected(false); }
@@ -1180,17 +1187,20 @@ export default function FocusModePage() {
               )}
               {coachingAlerts.map((a, i) => (
                 <div key={i} className="flex items-start gap-2 text-xs rounded-lg px-2.5 py-1.5" style={{
-                  background: a.type === "warning" ? `${AMBER}15` : a.type === "positive" ? `${EMERALD}15` : "rgba(255,255,255,0.05)",
-                  color: a.type === "warning" ? AMBER : a.type === "positive" ? EMERALD : "#CBD5E1",
+                  background: a.type === "red" ? `${ERROR_RED}15` : a.type === "amber" ? `${AMBER}15` : a.type === "blue" ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.05)",
+                  color: a.type === "red" ? ERROR_RED : a.type === "amber" ? AMBER : a.type === "blue" ? "#60A5FA" : "#CBD5E1",
                 }}>
                   <Zap className="w-3 h-3 mt-0.5 flex-shrink-0" />
                   <span>{a.text}</span>
                 </div>
               ))}
               {coachingTranscript.length > 0 && (
-                <div className="mt-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                  {coachingTranscript.slice(-5).map((t, i) => (
-                    <p key={i} className="text-[11px] leading-relaxed" style={{ color: "#94A3B8" }}>{t}</p>
+                <div className="mt-2 pt-2 space-y-1" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                  {coachingTranscript.slice(-8).map((t, i) => (
+                    <p key={i} className="text-[11px] leading-relaxed rounded px-1.5 py-0.5" style={{
+                      color: t.speaker === "agent" ? "rgba(16,185,129,0.9)" : t.speaker === "lead" ? "rgba(96,165,250,0.9)" : "#94A3B8",
+                      background: t.speaker === "agent" ? "rgba(16,185,129,0.06)" : t.speaker === "lead" ? "rgba(59,130,246,0.06)" : "transparent",
+                    }}>{t.text}</p>
                   ))}
                 </div>
               )}
