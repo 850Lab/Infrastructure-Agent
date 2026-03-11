@@ -120,7 +120,8 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
 
 export async function initiateCall(
   to: string,
-  statusCallbackUrl?: string
+  statusCallbackUrl?: string,
+  recordingCallbackUrl?: string
 ): Promise<{ success: boolean; sid?: string; error?: string }> {
   try {
     const client = await getTwilioClient();
@@ -137,7 +138,9 @@ export async function initiateCall(
     const callParams: any = {
       to: normalized,
       from,
-      twiml: `<Response><Say>Connecting your call through Texas Automation Systems.</Say><Dial>${normalized}</Dial></Response>`,
+      twiml: `<Response><Say>Connecting your call through Texas Automation Systems.</Say><Dial record="record-from-answer-dual">${normalized}</Dial></Response>`,
+      record: true,
+      recordingChannels: "dual",
     };
 
     if (statusCallbackUrl) {
@@ -146,8 +149,14 @@ export async function initiateCall(
       callParams.statusCallbackMethod = "POST";
     }
 
+    if (recordingCallbackUrl) {
+      callParams.recordingStatusCallback = recordingCallbackUrl;
+      callParams.recordingStatusCallbackMethod = "POST";
+      callParams.recordingStatusCallbackEvent = ["completed"];
+    }
+
     const call = await client.calls.create(callParams);
-    log(`Call initiated to ${normalized} (SID: ${call.sid})`);
+    log(`Call initiated to ${normalized} with recording enabled (SID: ${call.sid})`);
     return { success: true, sid: call.sid };
   } catch (err: any) {
     log(`Call error: ${err.message}`);
@@ -210,6 +219,52 @@ export async function listRecentMessages(limit: number = 20): Promise<any[]> {
     }));
   } catch (err: any) {
     log(`List messages error: ${err.message}`);
+    return [];
+  }
+}
+
+export async function downloadRecording(recordingSid: string): Promise<{ buffer: Buffer; duration: number } | null> {
+  try {
+    const client = await getTwilioClient();
+    const recording = await client.recordings(recordingSid).fetch();
+    const duration = parseInt(recording.duration || "0", 10);
+
+    const creds = await getCredentials();
+    const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${creds.accountSid}/Recordings/${recordingSid}.mp3`;
+
+    const authHeader = "Basic " + Buffer.from(`${creds.apiKey}:${creds.apiKeySecret}`).toString("base64");
+    const response = await fetch(recordingUrl, {
+      headers: { Authorization: authHeader },
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      log(`Recording download failed: ${response.status}`);
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    log(`Recording ${recordingSid} downloaded: ${(buffer.length / 1024).toFixed(0)}KB, ${duration}s`);
+    return { buffer, duration };
+  } catch (err: any) {
+    log(`Download recording error: ${err.message}`);
+    return null;
+  }
+}
+
+export async function getRecordingsForCall(callSid: string): Promise<any[]> {
+  try {
+    const client = await getTwilioClient();
+    const recordings = await client.recordings.list({ callSid, limit: 5 });
+    return recordings.map(r => ({
+      sid: r.sid,
+      duration: r.duration,
+      status: r.status,
+      dateCreated: r.dateCreated,
+    }));
+  } catch (err: any) {
+    log(`List recordings error: ${err.message}`);
     return [];
   }
 }

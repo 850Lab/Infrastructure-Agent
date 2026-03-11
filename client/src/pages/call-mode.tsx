@@ -122,13 +122,16 @@ export default function CallModePage() {
   });
 
   const twilioCallMutation = useMutation({
-    mutationFn: async (to: string) => {
-      const res = await apiRequest("POST", "/api/twilio/call", { to });
+    mutationFn: async ({ to, companyName, contactName }: { to: string; companyName?: string; contactName?: string }) => {
+      const res = await apiRequest("POST", "/api/twilio/call", { to, companyName, contactName });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       setTwilioCallActive(true);
-      toast({ title: "Call initiated", description: "Connecting through Twilio..." });
+      toast({
+        title: "Call initiated (recording)",
+        description: "Connected through Twilio. Call is being recorded for AI analysis.",
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Call failed", description: err.message, variant: "destructive" });
@@ -547,14 +550,14 @@ export default function CallModePage() {
                       {twilioStatus?.connected && (
                         <div className="flex gap-2">
                           <button
-                            onClick={() => twilioCallMutation.mutate(callPhone)}
+                            onClick={() => twilioCallMutation.mutate({ to: callPhone, companyName: company?.company_name, contactName: company?.offer_dm_name })}
                             disabled={twilioCallMutation.isPending || twilioCallActive}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
                             style={{ background: EMERALD, color: "#FFF" }}
                             data-testid="button-twilio-call"
                           >
                             {twilioCallMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PhoneCall className="w-3.5 h-3.5" />}
-                            {twilioCallActive ? "Call Active" : "Call via Twilio"}
+                            {twilioCallActive ? "Recording..." : "Call via Twilio"}
                           </button>
                           <button
                             onClick={() => { setSmsBody(company?.playbook_followup || ""); setShowSmsModal(true); }}

@@ -428,3 +428,33 @@ export const lngOperatorCards = pgTable("lng_operator_cards", {
 export const insertLngOperatorCardSchema = createInsertSchema(lngOperatorCards).omit({ id: true, savedAt: true, updatedAt: true });
 export type InsertLngOperatorCard = z.infer<typeof insertLngOperatorCardSchema>;
 export type LngOperatorCard = typeof lngOperatorCards.$inferSelect;
+
+export const twilioRecordings = pgTable("twilio_recordings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  callSid: text("call_sid").notNull(),
+  recordingSid: text("recording_sid").notNull().unique(),
+  clientId: varchar("client_id"),
+  toNumber: text("to_number"),
+  fromNumber: text("from_number"),
+  duration: integer("duration").default(0),
+  transcription: text("transcription"),
+  analysis: text("analysis"),
+  analysisJson: text("analysis_json"),
+  problemDetected: text("problem_detected"),
+  proposedPatchType: text("proposed_patch_type"),
+  analysisConfidence: text("analysis_confidence"),
+  noAuthority: boolean("no_authority").default(false),
+  authorityReason: text("authority_reason"),
+  suggestedRole: text("suggested_role"),
+  followupDate: text("followup_date"),
+  followupSource: text("followup_source"),
+  companyName: text("company_name"),
+  contactName: text("contact_name"),
+  status: text("status").default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+});
+
+export const insertTwilioRecordingSchema = createInsertSchema(twilioRecordings).omit({ id: true, createdAt: true, processedAt: true });
+export type InsertTwilioRecording = z.infer<typeof insertTwilioRecordingSchema>;
+export type TwilioRecording = typeof twilioRecordings.$inferSelect;
