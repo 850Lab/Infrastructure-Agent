@@ -19,6 +19,7 @@ import { registerSalesLearningRoutes } from "./sales-learning/sales-learning-rou
 import { registerEmailRoutes } from "./email-routes";
 import { registerHubspotRoutes } from "./hubspot";
 import { registerLngRoutes } from "./lng-projects";
+import { registerTwilioRoutes } from "./twilio-routes";
 import { authMiddleware } from "./auth";
 import { log } from "./index";
 
@@ -186,6 +187,7 @@ export async function registerRoutes(
   registerEmailRoutes(app);
   registerHubspotRoutes(app);
   registerLngRoutes(app, authMiddleware);
+  registerTwilioRoutes(app, authMiddleware);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);

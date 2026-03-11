@@ -10,6 +10,7 @@ import {
   Phone, Copy, Check, ChevronLeft, ChevronRight, X, Mail, Globe,
   MapPin, User, Shield, FileText, MessageSquare, Loader2, Calendar,
   ArrowLeft, Zap, ClipboardList, Mic, Upload, CheckCircle2, AlertTriangle, Brain,
+  PhoneCall, Send,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -110,6 +111,44 @@ export default function CallModePage() {
     confidence: string | null;
   }>>(new Map());
   const [showAnalysis, setShowAnalysis] = useState<string | null>(null);
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsBody, setSmsBody] = useState("");
+  const [twilioCallActive, setTwilioCallActive] = useState(false);
+
+  const { data: twilioStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/twilio/status"],
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const twilioCallMutation = useMutation({
+    mutationFn: async (to: string) => {
+      const res = await apiRequest("POST", "/api/twilio/call", { to });
+      return res.json();
+    },
+    onSuccess: () => {
+      setTwilioCallActive(true);
+      toast({ title: "Call initiated", description: "Connecting through Twilio..." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Call failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const twilioSmsMutation = useMutation({
+    mutationFn: async ({ to, body }: { to: string; body: string }) => {
+      const res = await apiRequest("POST", "/api/twilio/sms", { to, body });
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowSmsModal(false);
+      setSmsBody("");
+      toast({ title: "SMS sent successfully" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "SMS failed", description: err.message, variant: "destructive" });
+    },
+  });
 
   const { data: todayData, isLoading } = useQuery<{ companies: TodayCompany[]; count: number }>({
     queryKey: ["/api/today-list"],
@@ -496,14 +535,39 @@ export default function CallModePage() {
                   </div>
 
                   {callPhone && (
-                    <a
-                      href={`tel:${callPhone.replace(/\s/g, "")}`}
-                      className="flex items-center gap-2 text-lg font-bold"
-                      style={{ color: EMERALD }}
-                      data-testid="link-call-phone"
-                    >
-                      <Phone className="w-5 h-5" /> {callPhone}
-                    </a>
+                    <div className="space-y-2">
+                      <a
+                        href={`tel:${callPhone.replace(/\s/g, "")}`}
+                        className="flex items-center gap-2 text-lg font-bold"
+                        style={{ color: EMERALD }}
+                        data-testid="link-call-phone"
+                      >
+                        <Phone className="w-5 h-5" /> {callPhone}
+                      </a>
+                      {twilioStatus?.connected && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => twilioCallMutation.mutate(callPhone)}
+                            disabled={twilioCallMutation.isPending || twilioCallActive}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
+                            style={{ background: EMERALD, color: "#FFF" }}
+                            data-testid="button-twilio-call"
+                          >
+                            {twilioCallMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PhoneCall className="w-3.5 h-3.5" />}
+                            {twilioCallActive ? "Call Active" : "Call via Twilio"}
+                          </button>
+                          <button
+                            onClick={() => { setSmsBody(company?.playbook_followup || ""); setShowSmsModal(true); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                            style={{ background: "rgba(59,130,246,0.15)", color: BLUE }}
+                            data-testid="button-twilio-sms"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            Send SMS
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {company.offer_dm_email && (
@@ -1083,6 +1147,61 @@ export default function CallModePage() {
                   data-testid="button-cb-submit"
                 >
                   Log Callback
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSmsModal && callPhone && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.7)" }}
+            onClick={() => setShowSmsModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl p-6 w-96"
+              style={{ background: "#1E293B", border: "1px solid rgba(255,255,255,0.1)" }}
+              data-testid="modal-sms"
+            >
+              <p className="text-sm font-bold mb-1" style={{ color: "#FFF" }}>Send SMS via Twilio</p>
+              <p className="text-xs mb-3" style={{ color: MUTED }}>To: {callPhone}</p>
+              <textarea
+                value={smsBody}
+                onChange={(e) => setSmsBody(e.target.value)}
+                placeholder="Type your message..."
+                rows={4}
+                maxLength={1600}
+                className="w-full px-3 py-2 rounded-lg text-sm mb-1 resize-none"
+                style={{ background: "rgba(255,255,255,0.06)", color: "#FFF", border: "1px solid rgba(255,255,255,0.1)" }}
+                data-testid="input-sms-body"
+              />
+              <p className="text-[10px] mb-3 text-right" style={{ color: MUTED }}>{smsBody.length}/1600</p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => { setShowSmsModal(false); setSmsBody(""); }}
+                  className="flex-1 text-sm" style={{ background: "rgba(255,255,255,0.06)", color: MUTED }}
+                  data-testid="button-sms-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => twilioSmsMutation.mutate({ to: callPhone, body: smsBody })}
+                  disabled={!smsBody.trim() || twilioSmsMutation.isPending}
+                  className="flex-1 text-sm font-bold" style={{ background: BLUE, color: "#FFF" }}
+                  data-testid="button-sms-send"
+                >
+                  {twilioSmsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Send className="w-4 h-4 mr-1.5" />}
+                  Send
                 </Button>
               </div>
             </motion.div>
