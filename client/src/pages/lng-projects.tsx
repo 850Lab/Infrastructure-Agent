@@ -7,6 +7,7 @@ import {
   Users, MapPin, Target, Zap, MessageSquare,
   Star, ArrowRight, Shield, Calendar, Globe,
   Flame, ExternalLink, StickyNote, ChevronDown, ChevronUp,
+  UserPlus, TrendingUp, Phone,
 } from "lucide-react";
 
 const BG = "#FFFFFF";
@@ -44,7 +45,7 @@ const QUICK_SEARCHES = [
   "Industrial safety council Houston Beaumont Lake Charles",
 ];
 
-type TabView = "search" | "saved_cards" | "saved_projects";
+type TabView = "search" | "saved_cards" | "saved_projects" | "pipeline";
 
 interface OperatorCard {
   companyName: string;
@@ -99,7 +100,13 @@ function ScoreDot({ score }: { score: number }) {
   return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color }}>{score}</span>;
 }
 
-function OperatorCardView({ card, onSave, saving }: { card: OperatorCard; onSave: () => void; saving: boolean }) {
+function OperatorCardView({ card, onSave, saving, onAddToLeads, addingToLeads }: {
+  card: OperatorCard;
+  onSave: () => void;
+  saving: boolean;
+  onAddToLeads?: (card: OperatorCard) => void;
+  addingToLeads?: boolean;
+}) {
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: BG, border: `1px solid ${BORDER}` }}>
       <div className="p-4" style={{ background: `${EMERALD}08`, borderBottom: `1px solid ${BORDER}` }}>
@@ -114,15 +121,28 @@ function OperatorCardView({ card, onSave, saving }: { card: OperatorCard; onSave
               {card.region && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{card.region}</span>}
             </div>
           </div>
-          <button
-            onClick={onSave}
-            disabled={saving}
-            className="p-2 rounded-lg transition-colors hover:opacity-80 flex-shrink-0"
-            style={{ color: EMERALD }}
-            data-testid={`save-card-${card.companyName.replace(/\s+/g, '-').toLowerCase()}`}
-          >
-            <Bookmark className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {onAddToLeads && (
+              <button
+                onClick={() => onAddToLeads(card)}
+                disabled={addingToLeads}
+                className="p-2 rounded-lg transition-colors hover:opacity-80"
+                style={{ color: "#3B82F6" }}
+                data-testid={`add-to-leads-${card.companyName.replace(/\s+/g, '-').toLowerCase()}`}
+              >
+                {addingToLeads ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserPlus className="w-5 h-5" />}
+              </button>
+            )}
+            <button
+              onClick={onSave}
+              disabled={saving}
+              className="p-2 rounded-lg transition-colors hover:opacity-80"
+              style={{ color: EMERALD }}
+              data-testid={`save-card-${card.companyName.replace(/\s+/g, '-').toLowerCase()}`}
+            >
+              <Bookmark className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -278,10 +298,11 @@ export default function LngProjectsPage() {
   const [searchResults, setSearchResults] = useState<OperatorCard[] | null>(null);
   const [noteText, setNoteText] = useState<Record<number, string>>({});
   const [expandedSaved, setExpandedSaved] = useState<number | null>(null);
+  const [addingToLeadsCompany, setAddingToLeadsCompany] = useState<string | null>(null);
 
   const savedCardsQuery = useQuery<any[]>({
     queryKey: ["/api/lng/cards"],
-    enabled: activeTab === "saved_cards",
+    enabled: activeTab === "saved_cards" || activeTab === "pipeline",
   });
 
   const savedProjectsQuery = useQuery<any[]>({
@@ -371,10 +392,85 @@ export default function LngProjectsPage() {
     onError: (err: any) => { toast({ title: "Notes save failed", description: err.message, variant: "destructive" }); },
   });
 
+  const addToLeadsMutation = useMutation({
+    mutationFn: async (card: OperatorCard) => {
+      setAddingToLeadsCompany(card.companyName);
+      const dm = card.priorityPeople?.find((p) => p.roleCategory === "decision_maker") || card.priorityPeople?.[0];
+      const resp = await apiRequest("POST", "/api/companies/add", {
+        companyName: card.companyName,
+        website: "",
+        phone: "",
+        city: card.region || "",
+        state: "",
+        source: "lng_intelligence",
+        lngIntel: {
+          industryType: card.industryType,
+          bestNextRoom: card.bestNextRoom,
+          bestConnector: card.bestConnector,
+          bestAction: card.bestAction,
+          talkingAngle: card.talkingAngle,
+          confidence: card.confidence,
+          dmName: dm?.name || "",
+          dmTitle: dm?.title || "",
+        },
+      });
+      return resp.json();
+    },
+    onSuccess: (_, card) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies/manual"] });
+      toast({ title: "Added to My Leads", description: `${card.companyName} is now in your call pipeline.` });
+      setAddingToLeadsCompany(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add lead", description: err.message, variant: "destructive" });
+      setAddingToLeadsCompany(null);
+    },
+  });
+
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
     searchMutation.mutate(searchQuery.trim());
   };
+
+  const parsedSavedCards = (savedCardsQuery.data || []).map((saved: any) => {
+    try {
+      const card = JSON.parse(saved.cardData);
+      if (!card || !card.companyName) return null;
+      return {
+        ...card,
+        priorityPeople: card.priorityPeople || [],
+        whatTheyCareAbout: card.whatTheyCareAbout || [],
+        professionalEnvironments: card.professionalEnvironments || [],
+        bestConnectors: card.bestConnectors || [],
+        confidence: card.confidence || 0,
+        savedId: saved.id,
+        notes: saved.notes,
+      };
+    } catch { return null; }
+  }).filter(Boolean) as (OperatorCard & { savedId: number; notes?: string })[];
+
+  const crossCompanyPatterns = (() => {
+    if (parsedSavedCards.length < 2) return null;
+    const allPeople = parsedSavedCards.flatMap(c => (c.priorityPeople || []).map(p => ({ ...p, company: c.companyName })));
+    const allEnvs = parsedSavedCards.flatMap(c => (c.professionalEnvironments || []).map(e => ({ ...e, company: c.companyName })));
+    const allConnectors = parsedSavedCards.flatMap(c => (c.bestConnectors || []).map(cn => ({ ...cn, company: c.companyName })));
+    const envCounts: Record<string, string[]> = {};
+    allEnvs.forEach(e => {
+      const key = e.name?.toLowerCase().trim();
+      if (key) { envCounts[key] = envCounts[key] || []; if (!envCounts[key].includes(e.company)) envCounts[key].push(e.company); }
+    });
+    const sharedEnvs = Object.entries(envCounts).filter(([, companies]) => companies.length > 1).map(([env, companies]) => ({ env, companies }));
+    const connectorCounts: Record<string, string[]> = {};
+    allConnectors.forEach(cn => {
+      const key = cn.name?.toLowerCase().trim() || cn.type?.toLowerCase().trim();
+      if (key) { connectorCounts[key] = connectorCounts[key] || []; if (!connectorCounts[key].includes(cn.company)) connectorCounts[key].push(cn.company); }
+    });
+    const sharedConnectors = Object.entries(connectorCounts).filter(([, companies]) => companies.length > 1).map(([connector, companies]) => ({ connector, companies }));
+    const industryCounts: Record<string, number> = {};
+    parsedSavedCards.forEach(c => { if (c.industryType) industryCounts[c.industryType] = (industryCounts[c.industryType] || 0) + 1; });
+    const topIndustries = Object.entries(industryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return { sharedEnvs, sharedConnectors, topIndustries, totalPeople: allPeople.length, totalEnvs: allEnvs.length };
+  })();
 
   return (
     <div className="min-h-screen p-4 md:p-6 max-w-4xl mx-auto" style={{ background: SUBTLE }}>
@@ -391,6 +487,7 @@ export default function LngProjectsPage() {
       <div className="flex gap-1 mb-4 p-1 rounded-lg" style={{ background: BG, border: `1px solid ${BORDER}` }}>
         {[
           { key: "search" as const, label: "Search", icon: Search },
+          { key: "pipeline" as const, label: "Pipeline", icon: TrendingUp },
           { key: "saved_cards" as const, label: "Saved Cards", icon: Target },
           { key: "saved_projects" as const, label: "Saved Projects", icon: Building2 },
         ].map((t) => {
@@ -475,6 +572,8 @@ export default function LngProjectsPage() {
                       card={card}
                       onSave={() => saveCardMutation.mutate(card)}
                       saving={saveCardMutation.isPending}
+                      onAddToLeads={(c) => addToLeadsMutation.mutate(c)}
+                      addingToLeads={addToLeadsMutation.isPending && addingToLeadsCompany === card.companyName}
                     />
                   ))}
                 </>
@@ -529,14 +628,25 @@ export default function LngProjectsPage() {
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "rgba(139,92,246,0.1)", color: "#8B5CF6" }}>{card.bestConnector || "No connector"}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteCardMutation.mutate(saved.id); }}
-                      className="p-1.5 rounded-lg transition-colors hover:opacity-80 flex-shrink-0"
-                      style={{ color: "#EF4444" }}
-                      data-testid={`delete-card-${saved.id}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToLeadsMutation.mutate(card); }}
+                        disabled={addToLeadsMutation.isPending && addingToLeadsCompany === card.companyName}
+                        className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                        style={{ color: "#3B82F6" }}
+                        data-testid={`saved-add-leads-${saved.id}`}
+                      >
+                        {addToLeadsMutation.isPending && addingToLeadsCompany === card.companyName ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteCardMutation.mutate(saved.id); }}
+                        className="p-1.5 rounded-lg transition-colors hover:opacity-80"
+                        style={{ color: "#EF4444" }}
+                        data-testid={`delete-card-${saved.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -670,6 +780,141 @@ export default function LngProjectsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {activeTab === "pipeline" && (
+        <div className="space-y-4">
+          {savedCardsQuery.isLoading && (
+            <div className="rounded-xl p-8 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: EMERALD }} />
+            </div>
+          )}
+
+          {parsedSavedCards.length === 0 && !savedCardsQuery.isLoading && (
+            <div className="rounded-xl p-12 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <TrendingUp className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
+              <p className="text-sm font-semibold" style={{ color: TEXT }}>No pipeline data yet</p>
+              <p className="text-xs mt-1" style={{ color: MUTED }}>Save operator cards from Search to build your pipeline and surface cross-company patterns</p>
+            </div>
+          )}
+
+          {parsedSavedCards.length > 0 && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-xl p-4 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-2xl font-bold font-mono" style={{ color: EMERALD }} data-testid="pipeline-total">{parsedSavedCards.length}</p>
+                  <p className="text-xs" style={{ color: MUTED }}>Companies Tracked</p>
+                </div>
+                <div className="rounded-xl p-4 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-2xl font-bold font-mono" style={{ color: "#8B5CF6" }}>{crossCompanyPatterns?.totalPeople || 0}</p>
+                  <p className="text-xs" style={{ color: MUTED }}>Priority People</p>
+                </div>
+                <div className="rounded-xl p-4 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-2xl font-bold font-mono" style={{ color: "#3B82F6" }}>{crossCompanyPatterns?.totalEnvs || 0}</p>
+                  <p className="text-xs" style={{ color: MUTED }}>Environments</p>
+                </div>
+                <div className="rounded-xl p-4 text-center" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-2xl font-bold font-mono" style={{ color: "#F59E0B" }}>{crossCompanyPatterns?.sharedEnvs?.length || 0}</p>
+                  <p className="text-xs" style={{ color: MUTED }}>Shared Environments</p>
+                </div>
+              </div>
+
+              {crossCompanyPatterns && crossCompanyPatterns.sharedEnvs.length > 0 && (
+                <div className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: EMERALD }}>
+                    <Globe className="w-3 h-3" /> Cross-Company Environments
+                  </p>
+                  <p className="text-xs mb-3" style={{ color: MUTED }}>These environments appear across multiple companies — high-value rooms for warm introductions</p>
+                  <div className="space-y-2">
+                    {crossCompanyPatterns.sharedEnvs.map((e, i) => (
+                      <div key={i} className="rounded-lg p-3 flex items-start justify-between" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15` }}>
+                        <div>
+                          <p className="text-sm font-semibold capitalize" style={{ color: TEXT }}>{e.env}</p>
+                          <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>Shared by: {e.companies.join(", ")}</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `${EMERALD}15`, color: EMERALD }}>
+                          {e.companies.length} companies
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {crossCompanyPatterns && crossCompanyPatterns.sharedConnectors.length > 0 && (
+                <div className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: "#8B5CF6" }}>
+                    <Users className="w-3 h-3" /> Shared Connectors
+                  </p>
+                  <p className="text-xs mb-3" style={{ color: MUTED }}>People or organizations that can introduce you to multiple target companies</p>
+                  <div className="space-y-2">
+                    {crossCompanyPatterns.sharedConnectors.map((c, i) => (
+                      <div key={i} className="rounded-lg p-3" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.15)" }}>
+                        <p className="text-sm font-semibold capitalize" style={{ color: TEXT }}>{c.connector}</p>
+                        <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>Links to: {c.companies.join(", ")}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {crossCompanyPatterns && crossCompanyPatterns.topIndustries.length > 0 && (
+                <div className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                  <p className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: "#3B82F6" }}>
+                    <Flame className="w-3 h-3" /> Industry Breakdown
+                  </p>
+                  <div className="space-y-1.5">
+                    {crossCompanyPatterns.topIndustries.map(([industry, count], i) => (
+                      <div key={i} className="flex items-center justify-between rounded-lg p-2.5" style={{ background: SUBTLE }}>
+                        <span className="text-xs font-medium" style={{ color: TEXT }}>{industry}</span>
+                        <span className="text-xs font-mono font-bold" style={{ color: "#3B82F6" }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-xl p-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <p className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: TEXT }}>
+                  <Target className="w-3 h-3" /> Quick Actions
+                </p>
+                <div className="space-y-2">
+                  {parsedSavedCards.map((card, i) => {
+                    const dm = card.priorityPeople?.find(p => p.roleCategory === "decision_maker") || card.priorityPeople?.[0];
+                    return (
+                      <div key={i} className="rounded-lg p-3 flex items-center justify-between" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold truncate" style={{ color: TEXT }}>{card.companyName}</span>
+                            <ConfidenceBadge score={card.confidence} />
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {card.bestAction && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(59,130,246,0.08)", color: "#3B82F6" }}>{card.bestAction}</span>}
+                            {dm && <span className="text-[10px]" style={{ color: MUTED }}>DM: {dm.name}</span>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => addToLeadsMutation.mutate(card)}
+                          disabled={addToLeadsMutation.isPending && addingToLeadsCompany === card.companyName}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+                          style={{ background: `${EMERALD}12`, color: EMERALD, border: `1px solid ${EMERALD}25` }}
+                          data-testid={`pipeline-add-${i}`}
+                        >
+                          {addToLeadsMutation.isPending && addingToLeadsCompany === card.companyName ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <UserPlus className="w-3 h-3" />
+                          )}
+                          Add to My Leads
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

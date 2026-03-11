@@ -1043,7 +1043,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
   app.post("/api/companies/add", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { companyName, website, phone, city, state, contactName, contactTitle, contactEmail, contactPhone } = req.body;
+      const { companyName, website, phone, city, state, contactName, contactTitle, contactEmail, contactPhone, source, lngIntel } = req.body;
       if (!companyName) return res.status(400).json({ ok: false, error: "Company name is required" });
 
       const table = encodeURIComponent("Companies");
@@ -1053,6 +1053,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       if (city) fields.city = city;
       if (state) fields.state = state;
       fields.Lead_Status = "New";
+      if (source === "lng_intelligence") fields.lead_source = "LNG Intelligence";
 
       const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID()}/${table}`;
       const resp = await fetch(url, {
@@ -1069,16 +1070,18 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       }
       const record = await resp.json();
 
-      if (contactName) {
+      const dmName = contactName || (lngIntel?.dmName);
+      const dmTitle = contactTitle || (lngIntel?.dmTitle);
+      if (dmName) {
         try {
           const dmTable = encodeURIComponent("Decision_Makers");
           const dmFields: Record<string, any> = {
-            full_name: contactName,
+            full_name: dmName,
             company_name_text: companyName,
-            source: "manual",
+            source: source === "lng_intelligence" ? "lng_intelligence" : "manual",
             enriched_at: new Date().toISOString(),
           };
-          if (contactTitle) dmFields.title = contactTitle;
+          if (dmTitle) dmFields.title = dmTitle;
           if (contactEmail) dmFields.email = contactEmail;
           if (contactPhone) dmFields.phone = contactPhone;
 
@@ -1092,7 +1095,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
             body: JSON.stringify({ fields: dmFields }),
           });
           if (dmResp.ok) {
-            log(`Created DM "${contactName}" for ${companyName}`, "contacts");
+            log(`Created DM "${dmName}" for ${companyName}`, "contacts");
           } else {
             const dmErr = await dmResp.text();
             log(`DM creation warning: ${dmErr}`, "contacts");
