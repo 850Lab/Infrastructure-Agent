@@ -25,6 +25,7 @@ import LngProjectsPage from "@/pages/lng-projects";
 import LandingPage from "@/pages/landing";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
+import SmsConsentPage from "@/pages/sms-consent";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -86,7 +87,7 @@ function OnboardingGate({ children }: { children: ReactNode }) {
 
     if (role === "platform_admin") return;
 
-    const skipPaths = ["/login", "/site", "/privacy", "/terms", "/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
+    const skipPaths = ["/login", "/site", "/privacy", "/terms", "/sms-consent", "/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
     const onProtectedPage = !skipPaths.includes(location);
 
     if (me.needsOnboarding && onProtectedPage) {
@@ -122,6 +123,7 @@ function Router() {
         <Route path="/site" component={LandingPage} />
         <Route path="/privacy" component={PrivacyPage} />
         <Route path="/terms" component={TermsPage} />
+        <Route path="/sms-consent" component={SmsConsentPage} />
         <Route path="/login" component={LoginPage} />
 
         <Route path="/admin/dashboard"><AdminRoute><AdminDashboard /></AdminRoute></Route>

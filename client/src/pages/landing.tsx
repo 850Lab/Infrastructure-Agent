@@ -621,6 +621,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-4 text-xs" style={{ color: MUTED }}>
             <a href="/privacy" className="hover:underline" data-testid="link-privacy">Privacy Policy</a>
             <a href="/terms" className="hover:underline" data-testid="link-terms">Terms & Conditions</a>
+            <a href="/sms-consent" className="hover:underline" data-testid="link-sms-consent">SMS Consent</a>
           </div>
           <div className="text-xs" style={{ color: MUTED }}>
             A product by Pivotal Gamechangers LLC
