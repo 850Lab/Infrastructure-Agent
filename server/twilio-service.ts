@@ -118,6 +118,8 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
   }
 }
 
+const AGENT_PHONE = process.env.AGENT_PHONE || "+14093387109";
+
 export async function initiateCall(
   to: string,
   statusCallbackUrl?: string,
@@ -131,19 +133,26 @@ export async function initiateCall(
       return { success: false, error: "No Twilio phone number configured" };
     }
 
-    const normalized = normalizePhone(to);
-    if (!normalized) {
+    const normalizedLead = normalizePhone(to);
+    if (!normalizedLead) {
       return { success: false, error: "Invalid phone number" };
+    }
+
+    const normalizedAgent = normalizePhone(AGENT_PHONE);
+    if (!normalizedAgent) {
+      return { success: false, error: "Agent phone number not configured" };
     }
 
     let twiml = `<Response>`;
     if (mediaStreamUrl) {
       twiml += `<Start><Stream url="${mediaStreamUrl}" /></Start>`;
     }
-    twiml += `<Say>Connecting your call.</Say><Dial record="record-from-answer-dual">${normalized}</Dial></Response>`;
+    twiml += `<Say>Connecting you to ${normalizedLead}.</Say>`;
+    twiml += `<Dial record="record-from-answer-dual" callerId="${from}">${normalizedLead}</Dial>`;
+    twiml += `</Response>`;
 
     const callParams: any = {
-      to: normalized,
+      to: normalizedAgent,
       from,
       twiml,
       record: true,
@@ -163,7 +172,7 @@ export async function initiateCall(
     }
 
     const call = await client.calls.create(callParams);
-    log(`Call initiated to ${normalized} with recording + media stream (SID: ${call.sid})`);
+    log(`Call initiated: agent ${normalizedAgent} -> lead ${normalizedLead} (SID: ${call.sid})`);
     return { success: true, sid: call.sid };
   } catch (err: any) {
     log(`Call error: ${err.message}`);
