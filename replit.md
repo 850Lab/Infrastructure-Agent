@@ -66,6 +66,13 @@ Audit performed across all 8 phases. Key fixes applied:
 
 Key files: `focus-mode.tsx` (UI), `flow-engine.ts` (computeNextAction + handleDqQueryFeedback), `airtable-writeback.ts` (mapOutcomeToLeadStatus)
 
+## Live Post-Analysis Updates (Next Action + AI Notes)
+After a call recording is transcribed and analyzed, the Explanation Screen updates live:
+- **Next Action card**: If the AI extracts a follow-up date from the transcript, the Next Action card transitions from green to purple with a "LIVE" badge and shows the AI-updated recommendation. The flow's `callbackAt` and `nextAction` are also updated in the database.
+- **AI Notes section**: A new card appears below the recording section showing AI-extracted insights (follow-up dates, authority issues, detected problems) parsed from the transcript analysis.
+- **Backend**: `processRecording` in `twilio-routes.ts` now updates the active `companyFlows` record and `actionQueue` entry after analysis completes. The `recording-by-callsid` endpoint returns `updatedFlowAction`, `updatedFlowNotes`, and `updatedFlowDueAt` alongside recording data.
+- The polling mechanism (every 5s until `processedAt` is set) naturally picks up these updates when analysis completes.
+
 ## Coaching Toggle
 Per-client setting to enable/disable live AI coaching during calls. When disabled, calls still get recorded and transcribed post-call (cheaper). Toggle available in Machine Settings under "Call Settings" card.
 - Schema: `clients.coaching_enabled` (boolean, default true)

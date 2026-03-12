@@ -4,8 +4,8 @@ import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, e
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { twilioRecordings, clients } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { twilioRecordings, clients, companyFlows, actionQueue } from "@shared/schema";
+import { eq, and, desc } from "drizzle-orm";
 import { registerCoachingSession, subscribeToCoaching, getActiveSessions } from "./realtime-coaching";
 import { validateToken } from "./auth";
 
@@ -140,6 +140,70 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       }
     } catch (airtableErr: any) {
       log(`Airtable writeback failed (non-blocking): ${airtableErr.message}`);
+    }
+
+    try {
+      const recData2 = await db.select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.recordingSid, recordingSid))
+        .limit(1);
+      const rec = recData2[0];
+      if (rec?.companyName && rec?.clientId) {
+        const aiNotes: string[] = [];
+        const flowUpdates: Record<string, any> = { updatedAt: new Date() };
+
+        if (extractedFollowupDate) {
+          const fuDate = new Date(extractedFollowupDate);
+          if (fuDate > new Date()) {
+            flowUpdates.callbackAt = fuDate;
+            flowUpdates.nextAction = `Follow up on ${fuDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`;
+            aiNotes.push(`Follow-up date extracted: ${fuDate.toLocaleDateString()}`);
+          }
+        }
+
+        if (authorityDetected) {
+          aiNotes.push(`No decision authority detected${authorityResult.reason ? ` — ${authorityResult.reason}` : ""}`);
+          if (authorityResult.suggestedRole) {
+            aiNotes.push(`Suggested target role: ${authorityResult.suggestedRole}`);
+          }
+        }
+
+        if (deterministicResult.problem_detected) {
+          aiNotes.push(`Issue detected: ${deterministicResult.problem_detected}`);
+        }
+
+        if (aiNotes.length > 0) {
+          flowUpdates.notes = aiNotes.join(" | ");
+        }
+
+        const [activeFlow] = await db.select()
+          .from(companyFlows)
+          .where(and(
+            eq(companyFlows.clientId, rec.clientId),
+            eq(companyFlows.companyName, rec.companyName),
+            eq(companyFlows.status, "active"),
+          ))
+          .orderBy(desc(companyFlows.updatedAt))
+          .limit(1);
+
+        if (activeFlow) {
+          await db.update(companyFlows).set(flowUpdates).where(eq(companyFlows.id, activeFlow.id));
+
+          if (extractedFollowupDate && flowUpdates.nextAction) {
+            await db.update(actionQueue).set({
+              taskType: flowUpdates.nextAction,
+              dueAt: new Date(extractedFollowupDate),
+            }).where(and(
+              eq(actionQueue.flowId, activeFlow.id),
+              eq(actionQueue.status, "pending"),
+            ));
+          }
+
+          log(`Post-analysis flow update for ${rec.companyName}: ${aiNotes.join("; ")}`);
+        }
+      }
+    } catch (flowErr: any) {
+      log(`Post-analysis flow update failed (non-blocking): ${flowErr.message}`);
     }
 
     log(`Recording ${recordingSid} fully analyzed — transcription: ${transcription.length} chars, authority: ${authorityDetected ? "NO AUTHORITY" : "ok"}, problem: ${deterministicResult.problem_detected || "none"}`);
@@ -542,6 +606,26 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         return res.status(403).json({ error: "Forbidden" });
       }
 
+      let updatedFlowAction: string | null = null;
+      let updatedFlowNotes: string | null = null;
+      let updatedFlowDueAt: string | null = null;
+
+      if (recording.processedAt && recording.companyName && recording.clientId) {
+        const [flow] = await db.select()
+          .from(companyFlows)
+          .where(and(
+            eq(companyFlows.clientId, recording.clientId),
+            eq(companyFlows.companyName, recording.companyName),
+          ))
+          .orderBy(desc(companyFlows.updatedAt))
+          .limit(1);
+        if (flow) {
+          updatedFlowAction = flow.nextAction;
+          updatedFlowNotes = flow.notes;
+          updatedFlowDueAt = flow.callbackAt ? flow.callbackAt.toISOString() : null;
+        }
+      }
+
       res.json({
         id: recording.id,
         callSid: recording.callSid,
@@ -559,6 +643,9 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         status: recording.status,
         createdAt: recording.createdAt,
         processedAt: recording.processedAt,
+        updatedFlowAction,
+        updatedFlowNotes,
+        updatedFlowDueAt,
       });
     } catch (err: any) {
       log(`Recording by callSid error: ${err.message}`);

@@ -372,6 +372,13 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
   const hasTranscript = recording?.transcription && recording.transcription.length > 0;
   const hasAnalysis = recording?.analysis && recording.analysis.length > 0;
 
+  const liveNextAction = recording?.processedAt && recording?.updatedFlowAction && recording.updatedFlowAction !== data.nextAction
+    ? recording.updatedFlowAction : null;
+  const liveDueStr = recording?.processedAt && recording?.updatedFlowDueAt
+    ? new Date(recording.updatedFlowDueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : null;
+  const liveNotes = recording?.processedAt && recording?.updatedFlowNotes ? recording.updatedFlowNotes : null;
+
   return (
     <div className="min-h-screen" style={{ background: "#F8FAFC" }}>
       <div className="sticky top-0 z-50 bg-white" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -412,12 +419,24 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
                 <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: BLUE }}>System Action</div>
                 <div className="text-xs font-medium" style={{ color: TEXT }} data-testid="text-system-action">{data.systemAction}</div>
               </div>
-              <div className="rounded-lg p-2.5" style={{ background: `${EMERALD}05`, border: `1px solid ${EMERALD}10` }}>
-                <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: EMERALD }}>Next Action</div>
-                <div className="text-xs font-medium" style={{ color: TEXT }} data-testid="text-next-action">{data.nextAction}</div>
+              <div className="rounded-lg p-2.5 transition-all duration-500" style={{
+                background: liveNextAction ? `${PURPLE}06` : `${EMERALD}05`,
+                border: `1px solid ${liveNextAction ? `${PURPLE}15` : `${EMERALD}10`}`,
+              }}>
+                <div className="flex items-center gap-1">
+                  <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: liveNextAction ? PURPLE : EMERALD }}>
+                    {liveNextAction ? "AI-Updated Next Action" : "Next Action"}
+                  </div>
+                  {liveNextAction && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full mb-0.5" style={{ background: `${PURPLE}12`, color: PURPLE }}>LIVE</span>
+                  )}
+                </div>
+                <div className="text-xs font-medium" style={{ color: TEXT }} data-testid="text-next-action">
+                  {liveNextAction || data.nextAction}
+                </div>
                 <div className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: MUTED }}>
                   <Clock className="w-2.5 h-2.5" />
-                  {dueDateStr}
+                  {liveDueStr || dueDateStr}
                 </div>
               </div>
             </div>
@@ -537,6 +556,28 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
                     <span className="text-xs" style={{ color: MUTED }}>Waiting for recording...</span>
                   </div>
                 )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {liveNotes && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+            <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${PURPLE}20` }}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${PURPLE}15` }}>
+                  <Brain className="w-3 h-3" style={{ color: PURPLE }} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>AI Notes from Transcript</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: `${PURPLE}12`, color: PURPLE }}>LIVE</span>
+              </div>
+              <div className="space-y-1.5">
+                {liveNotes.split(" | ").map((note: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-xs" style={{ color: TEXT }}>
+                    <div className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0" style={{ background: PURPLE }} />
+                    <span data-testid={`text-ai-note-${i}`}>{note}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </motion.div>
