@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { companyFlows, flowAttempts, actionQueue } from "@shared/schema";
-import { eq, and, lte, asc, desc, sql, isNull } from "drizzle-orm";
+import { eq, and, ne, lte, asc, desc, sql, isNull } from "drizzle-orm";
 import { syncOutcomeToAirtable, syncCallToAirtable } from "./airtable-writeback";
 import { log } from "./logger";
 
@@ -37,6 +37,7 @@ export const GK_OUTCOMES = [
   "refused",
   "asked_to_send_info",
   "message_taken",
+  "not_a_fit",
 ] as const;
 
 export const DM_OUTCOMES = [
@@ -50,6 +51,7 @@ export const DM_OUTCOMES = [
   "interested",
   "meeting_requested",
   "followup_scheduled",
+  "not_a_fit",
 ] as const;
 
 export const EMAIL_OUTCOMES = [
@@ -109,6 +111,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   wrong_person: "Wrong Person",
   referred_elsewhere: "Referred Elsewhere",
   not_relevant: "Not Relevant",
+  not_a_fit: "Not a Fit",
   interested: "Interested",
   meeting_requested: "Meeting Requested",
   followup_scheduled: "Follow-up Scheduled",
@@ -148,6 +151,17 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
   const now = new Date();
   const addDays = (d: number) => { const t = new Date(now); t.setDate(t.getDate() + d); return t; };
   const addHours = (h: number) => { const t = new Date(now); t.setHours(t.getHours() + h); return t; };
+
+  if (outcome === "not_a_fit") {
+    return {
+      nextAction: "Company disqualified — removed from all queues",
+      nextDueAt: addDays(3650),
+      flowStatus: FLOW_STATUS.COMPLETED,
+      priority: 0,
+      systemAction: "Disqualified company — all active flows terminated, removed from future call lists",
+      whyChosen: "User marked company as not a fit for this client's target market",
+    };
+  }
 
   if (flowType === FLOW_TYPES.GATEKEEPER) {
     switch (outcome) {
@@ -585,6 +599,39 @@ export async function logFlowAttempt(params: {
     }
   }
 
+  if (params.outcome === "not_a_fit") {
+    const dqReason = (params.capturedInfo || "").replace("not_a_fit:", "");
+    log(`DQ: ${params.companyName} marked not-a-fit (reason: ${dqReason}) — killing all flows`, "flow-engine");
+
+    await db.update(companyFlows).set({
+      status: FLOW_STATUS.COMPLETED,
+      lastOutcome: "not_a_fit",
+      nextAction: "Disqualified",
+      updatedAt: new Date(),
+    }).where(
+      and(
+        eq(companyFlows.companyId, params.companyId),
+        eq(companyFlows.clientId, params.clientId),
+        ne(companyFlows.id, params.flowId),
+      )
+    );
+
+    await db.update(actionQueue).set({
+      status: TASK_STATUS.COMPLETED,
+      completedAt: new Date(),
+    }).where(
+      and(
+        eq(actionQueue.companyId, params.companyId),
+        eq(actionQueue.clientId, params.clientId),
+        eq(actionQueue.status, TASK_STATUS.PENDING),
+      )
+    );
+
+    handleDqQueryFeedback(params.clientId, params.companyId, params.companyName, dqReason).catch(
+      e => log(`DQ query feedback error (non-blocking): ${e.message}`, "flow-engine")
+    );
+  }
+
   const isCallType = currentFlow.flowType === FLOW_TYPES.GATEKEEPER || currentFlow.flowType === FLOW_TYPES.DM_CALL;
   syncOutcomeToAirtable({
     companyId: params.companyId,
@@ -939,4 +986,94 @@ export async function seedFlowsFromTodayList(clientId: string, companies: Array<
     created++;
   }
   return { created };
+}
+
+const DQ_REASON_KEYWORDS: Record<string, string[]> = {
+  residential: ["residential", "home", "attic", "house", "apartment", "condo", "dwelling", "homeowner"],
+  supplier_distributor: ["supply", "supplier", "distributor", "wholesale", "retail", "store", "depot", "warehouse"],
+  wrong_service: ["lawn", "landscaping", "pool", "pest", "plumbing", "electrical", "hvac", "roofing"],
+  too_small: [],
+  out_of_area: [],
+  other: [],
+};
+
+async function handleDqQueryFeedback(clientId: string, companyId: string, companyName: string, dqReason: string): Promise<void> {
+  const normalizedReason = (dqReason || "").trim();
+  if (!normalizedReason) {
+    log(`DQ query feedback skipped: no reason provided for ${companyName}`, "flow-engine");
+    return;
+  }
+  const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
+  const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) return;
+
+  try {
+    const encoded = encodeURIComponent("Companies");
+    const formula = encodeURIComponent(`{Company_Name} = '${companyName.replace(/'/g, "\\'")}'`);
+    const res = await fetch(
+      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encoded}?filterByFormula=${formula}&fields[]=Source_Query&fields[]=Lead_Status`,
+      { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` } }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const record = data.records?.[0];
+    if (!record) return;
+
+    await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encoded}`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        records: [{ id: record.id, fields: { Lead_Status: "Disqualified", Last_Outcome: `not_a_fit:${dqReason}` } }],
+      }),
+    }).catch(() => {});
+
+    const sourceQuery = String(record.fields?.Source_Query || "").trim();
+    if (!sourceQuery) return;
+
+    const qEncoded = encodeURIComponent("Search_Queries");
+    const qFormula = encodeURIComponent(`AND({query} = '${sourceQuery.replace(/'/g, "\\'")}', NOT({Retired}))`);
+    const qRes = await fetch(
+      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${qEncoded}?filterByFormula=${qFormula}&fields[]=query&fields[]=Wins&fields[]=Results_Count&fields[]=Notes`,
+      { headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` } }
+    );
+    if (!qRes.ok) return;
+    const qData = await qRes.json();
+    const queryRecord = qData.records?.[0];
+    if (!queryRecord) return;
+
+    const currentNotes = String(queryRecord.fields?.Notes || "");
+    const dqTag = `[DQ:${normalizedReason}]`;
+    const updatedNotes = currentNotes ? `${currentNotes} ${dqTag}` : dqTag;
+
+    const dqCount = (updatedNotes.match(/\[DQ:/g) || []).length;
+
+    if (dqCount >= 3) {
+      log(`Smart query retirement: "${sourceQuery}" — ${dqCount} DQs, retiring query`, "flow-engine");
+      await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${qEncoded}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          records: [{ id: queryRecord.id, fields: { Retired: true, Status: "Done", Notes: updatedNotes + " [AUTO-RETIRED: too many DQs]" } }],
+        }),
+      });
+    } else {
+      await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${qEncoded}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          records: [{ id: queryRecord.id, fields: { Notes: updatedNotes } }],
+        }),
+      });
+      log(`DQ feedback: tagged query "${sourceQuery}" with ${dqTag} (${dqCount}/3 before auto-retire)`, "flow-engine");
+    }
+
+    if (normalizedReason && DQ_REASON_KEYWORDS[normalizedReason]) {
+      const newNegatives = DQ_REASON_KEYWORDS[normalizedReason];
+      if (newNegatives.length > 0) {
+        log(`DQ pattern: reason="${dqReason}" — negative keywords available for future filtering: ${newNegatives.join(", ")}`, "flow-engine");
+      }
+    }
+  } catch (err: any) {
+    log(`DQ query feedback error: ${err.message}`, "flow-engine");
+  }
 }

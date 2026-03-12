@@ -48,6 +48,7 @@ const CHANNEL_LABELS: Record<string, string> = {
 };
 
 function mapOutcomeToLeadStatus(flowType: string, outcome: string, currentStatus: string): string | null {
+  if (outcome === "not_a_fit") return "Disqualified";
   if (outcome === "interested" || outcome === "meeting_requested") return "Interested";
   if (outcome === "responded" && flowType === "nurture") return "Re-engaged";
   if (outcome === "reactivated") return "Re-engaged";

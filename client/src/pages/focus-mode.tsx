@@ -35,6 +35,15 @@ const FLOW_CONFIG: Record<string, { label: string; color: string; icon: any; bgL
   nurture: { label: "Long-Term Nurture", color: PURPLE, icon: Calendar, bgLight: "rgba(139,92,246,0.08)" },
 };
 
+const NOT_A_FIT_REASONS = [
+  { value: "residential", label: "Residential" },
+  { value: "supplier_distributor", label: "Supplier / Distributor" },
+  { value: "wrong_service", label: "Wrong Service Type" },
+  { value: "too_small", label: "Too Small" },
+  { value: "out_of_area", label: "Out of Area" },
+  { value: "other", label: "Other" },
+];
+
 const GK_OUTCOMES = [
   { value: "no_answer", label: "No Answer", icon: Phone, color: MUTED },
   { value: "general_voicemail", label: "General Voicemail", icon: MessageSquare, color: MUTED },
@@ -47,6 +56,7 @@ const GK_OUTCOMES = [
   { value: "refused", label: "Refused", icon: X, color: ERROR },
   { value: "asked_to_send_info", label: "Send Info", icon: Mail, color: BLUE },
   { value: "message_taken", label: "Message Taken", icon: MessageSquare, color: AMBER },
+  { value: "not_a_fit", label: "Not a Fit", icon: Shield, color: ERROR },
 ];
 
 const DM_OUTCOMES = [
@@ -57,6 +67,7 @@ const DM_OUTCOMES = [
   { value: "wrong_person", label: "Wrong Person", icon: X, color: ERROR },
   { value: "referred_elsewhere", label: "Referred", icon: ArrowRight, color: AMBER },
   { value: "not_relevant", label: "Not Relevant", icon: X, color: ERROR },
+  { value: "not_a_fit", label: "Not a Fit", icon: Shield, color: ERROR },
   { value: "interested", label: "Interested", icon: Zap, color: EMERALD },
   { value: "meeting_requested", label: "Meeting", icon: Calendar, color: EMERALD },
   { value: "followup_scheduled", label: "Follow-up Set", icon: Calendar, color: BLUE },
@@ -896,7 +907,7 @@ export default function FocusModePage() {
   const needsCaptureForOutcome = (outcome: string) =>
     currentAction?.flowType === "gatekeeper" && GK_CAPTURE_OUTCOMES.includes(outcome);
 
-  const submitOutcome = (outcome: string) => {
+  const submitOutcome = (outcome: string, capturedOverride?: string) => {
     if (!currentAction || !currentAction.flowId) return;
     if (logMutation.isPending || submitLockRef.current) return;
     submitLockRef.current = true;
@@ -914,16 +925,28 @@ export default function FocusModePage() {
       channel,
       outcome,
       notes: notes || undefined,
-      capturedInfo: capturedInfo || undefined,
+      capturedInfo: capturedOverride || capturedInfo || undefined,
     });
   };
 
+  const [dqReason, setDqReason] = useState<string | null>(null);
+
   const handleOutcome = (outcome: string) => {
+    if (outcome === "not_a_fit") {
+      setSelectedOutcome("not_a_fit");
+      return;
+    }
     if (needsCaptureForOutcome(outcome)) {
       setSelectedOutcome(outcome);
     } else {
       submitOutcome(outcome);
     }
+  };
+
+  const handleDqReasonSelect = (reason: string) => {
+    setDqReason(reason);
+    submitOutcome("not_a_fit", `not_a_fit:${reason}`);
+    setSelectedOutcome(null);
   };
 
   const handleSkip = () => {
@@ -1348,6 +1371,38 @@ export default function FocusModePage() {
                         Confirm
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => { setSelectedOutcome(null); setCapturedInfo(""); }} data-testid="button-cancel-capture">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedOutcome === "not_a_fit" && (
+                  <div className="rounded-lg p-3 mb-4" style={{ background: `${ERROR}06`, border: `1px solid ${ERROR}20` }}>
+                    <div className="text-xs font-semibold mb-2" style={{ color: ERROR }}>
+                      Why is this company not a fit?
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {NOT_A_FIT_REASONS.map(reason => (
+                        <button
+                          key={reason.value}
+                          onClick={() => handleDqReasonSelect(reason.value)}
+                          disabled={logMutation.isPending}
+                          className="px-3 py-2 rounded-lg text-xs font-medium transition-all hover:shadow-sm text-left"
+                          style={{
+                            background: "white",
+                            border: `1px solid ${ERROR}30`,
+                            color: TEXT,
+                            opacity: logMutation.isPending ? 0.5 : 1,
+                          }}
+                          data-testid={`dq-reason-${reason.value}`}
+                        >
+                          {reason.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2">
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedOutcome(null)} data-testid="button-cancel-dq">
                         Cancel
                       </Button>
                     </div>

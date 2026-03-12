@@ -55,6 +55,17 @@ Audit performed across all 8 phases. Key fixes applied:
 - **KPI accuracy**: `closedWon30` counts unique companies with `meeting_requested` outcomes (was hardcoded 0). `dmsIdentified` uses Set for unique companies (was counting events). `followupsScheduled` counts only explicit scheduling outcomes (was counting callbackAt-only). Email/LinkedIn KPI uses flowType OR channel for consistency.
 - **Double-click protection**: Synchronous `submitLockRef` prevents duplicate outcome submissions.
 
+## Not-a-Fit DQ Reason Tagging + Smart Query Retirement
+"Not a Fit" outcome added to Gatekeeper and DM call flows. When selected, a DQ reason picker appears (Residential, Supplier/Distributor, Wrong Service, Too Small, Out of Area, Other). Submitting a reason:
+- Sets the current flow to completed with `not_a_fit` outcome
+- Terminates all other active flows for that company/client
+- Cancels all pending action queue items for that company
+- Writes `Lead_Status = "Disqualified"` to Airtable
+- Tags the source query in Airtable's Search_Queries with `[DQ:reason]`
+- Auto-retires queries where 3+ companies from the same source query are DQ'd
+
+Key files: `focus-mode.tsx` (UI), `flow-engine.ts` (computeNextAction + handleDqQueryFeedback), `airtable-writeback.ts` (mapOutcomeToLeadStatus)
+
 ## Coaching Toggle
 Per-client setting to enable/disable live AI coaching during calls. When disabled, calls still get recorded and transcribed post-call (cheaper). Toggle available in Machine Settings under "Call Settings" card.
 - Schema: `clients.coaching_enabled` (boolean, default true)
