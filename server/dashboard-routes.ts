@@ -13,8 +13,8 @@ import { computeDMAuthorityReport } from "./dm-authority-learning";
 import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { db } from "./db";
-import { manualLeads, clients } from "@shared/schema";
-import { eq, inArray } from "drizzle-orm";
+import { manualLeads, clients, companyFlows, flowAttempts, actionQueue } from "@shared/schema";
+import { eq, and, gte, lte, inArray, sql, desc } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
@@ -1437,6 +1437,162 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     } catch (err: any) {
       log(`Enrich error for ${id}: ${err.message}`, "contacts");
       res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get("/api/command-center", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const sevenDaysAgo = new Date(todayStart);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const flowFilter = clientId ? eq(companyFlows.clientId, clientId) : sql`1=1`;
+      const attemptFilter = clientId ? eq(flowAttempts.clientId, clientId) : sql`1=1`;
+      const queueFilter = clientId ? eq(actionQueue.clientId, clientId) : sql`1=1`;
+
+      const [pipelineRows] = await Promise.all([
+        db.select({
+          status: companyFlows.status,
+          lastOutcome: companyFlows.lastOutcome,
+          flowType: companyFlows.flowType,
+          count: sql<number>`count(*)::int`,
+        }).from(companyFlows).where(flowFilter).groupBy(companyFlows.status, companyFlows.lastOutcome, companyFlows.flowType),
+      ]);
+
+      let hotLeads = 0, contacted = 0, interested = 0, proposalSent = 0, closedDeals = 0, dmIdentified = 0, newLeads = 0;
+      for (const row of pipelineRows) {
+        if (row.status === "active" && !row.lastOutcome) newLeads += row.count;
+        if (row.flowType === "dm_call" || row.flowType === "email" || row.flowType === "linkedin") dmIdentified += row.count;
+        if (row.lastOutcome && ["no_answer", "voicemail_left", "general_voicemail", "message_taken", "asked_to_send_info", "sent"].includes(row.lastOutcome)) contacted += row.count;
+        if (row.lastOutcome && ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"].includes(row.lastOutcome)) interested += row.count;
+        if (row.lastOutcome === "meeting_requested") proposalSent += row.count;
+        if (row.lastOutcome === "closed_won") closedDeals += row.count;
+      }
+
+      const todayAttempts = await db.select({
+        channel: flowAttempts.channel,
+        outcome: flowAttempts.outcome,
+        count: sql<number>`count(*)::int`,
+      }).from(flowAttempts).where(and(attemptFilter, gte(flowAttempts.createdAt, todayStart))).groupBy(flowAttempts.channel, flowAttempts.outcome);
+
+      let callsMade = 0, emailsSent = 0, conversationsStarted = 0, meetingsBooked = 0;
+      for (const row of todayAttempts) {
+        if (row.channel === "phone") callsMade += row.count;
+        if (row.channel === "email") emailsSent += row.count;
+        if (row.outcome && ["live_answer", "interested", "meeting_requested", "replied"].includes(row.outcome)) conversationsStarted += row.count;
+        if (row.outcome === "meeting_requested") meetingsBooked += row.count;
+      }
+
+      const callsDueToday = await db.select({ count: sql<number>`count(*)::int` })
+        .from(actionQueue)
+        .where(and(queueFilter, eq(actionQueue.status, "pending"), eq(actionQueue.taskType, "call"), lte(actionQueue.dueAt, now)));
+      const callsDue = callsDueToday[0]?.count || 0;
+
+      const overdueFollowups = await db.select({ count: sql<number>`count(*)::int` })
+        .from(companyFlows)
+        .where(and(flowFilter, eq(companyFlows.status, "active"), sql`${companyFlows.nextDueAt} IS NOT NULL`, lte(companyFlows.nextDueAt, todayStart)));
+      const overdue = overdueFollowups[0]?.count || 0;
+
+      const recentAttemptDays = await db.select({
+        day: sql<string>`DATE(${flowAttempts.createdAt})::text`,
+      }).from(flowAttempts).where(and(attemptFilter, gte(flowAttempts.createdAt, sevenDaysAgo))).groupBy(sql`DATE(${flowAttempts.createdAt})`).orderBy(desc(sql`DATE(${flowAttempts.createdAt})`));
+
+      let streak = 0;
+      const daySet = new Set(recentAttemptDays.map(r => r.day));
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(todayStart);
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().split("T")[0];
+        if (daySet.has(key)) streak++;
+        else break;
+      }
+
+      const hotFlows = await db.select({
+        companyName: companyFlows.companyName,
+        companyId: companyFlows.companyId,
+        lastOutcome: companyFlows.lastOutcome,
+        flowType: companyFlows.flowType,
+      }).from(companyFlows).where(and(
+        flowFilter,
+        eq(companyFlows.status, "active"),
+        sql`${companyFlows.lastOutcome} IN ('interested', 'meeting_requested', 'followup_scheduled', 'replied', 'live_answer')`,
+      )).orderBy(desc(companyFlows.updatedAt)).limit(10);
+      hotLeads = hotFlows.length;
+
+      const recentActivity = await db.select({
+        companyName: flowAttempts.companyName,
+        outcome: flowAttempts.outcome,
+        channel: flowAttempts.channel,
+        createdAt: flowAttempts.createdAt,
+      }).from(flowAttempts).where(and(attemptFilter, gte(flowAttempts.createdAt, todayStart))).orderBy(desc(flowAttempts.createdAt)).limit(8);
+
+      const aiRecommendations: Array<{ type: string; title: string; description: string; action: string; route: string }> = [];
+
+      if (overdue > 0) {
+        aiRecommendations.push({
+          type: "urgent",
+          title: `${overdue} overdue follow-up${overdue > 1 ? "s" : ""}`,
+          description: "These leads are waiting for a callback. Don't let them go cold.",
+          action: "View Follow-ups",
+          route: "/machine/followups",
+        });
+      }
+
+      for (const hot of hotFlows.slice(0, 3)) {
+        aiRecommendations.push({
+          type: "hot_lead",
+          title: `${hot.companyName} is warm`,
+          description: `Last outcome: ${hot.lastOutcome}. Strike while the iron is hot.`,
+          action: "View Company",
+          route: `/machine/company/${hot.companyId}`,
+        });
+      }
+
+      if (callsMade === 0 && callsDue > 0) {
+        aiRecommendations.push({
+          type: "action",
+          title: `${callsDue} calls waiting`,
+          description: "Your call queue is ready. Start Focus Mode to begin outreach.",
+          action: "Start Focus Mode",
+          route: "/machine/focus",
+        });
+      }
+
+      if (emailsSent === 0) {
+        aiRecommendations.push({
+          type: "action",
+          title: "No emails sent today",
+          description: "Check the email queue for leads ready for outreach.",
+          action: "View Email Queue",
+          route: "/machine/email-queue",
+        });
+      }
+
+      res.json({
+        revenue: {
+          hotLeads,
+          callsDue,
+          overdueFollowups: overdue,
+          pipelineValue: interested + proposalSent + closedDeals,
+        },
+        pipeline: { newLeads, dmIdentified, contacted, interested, proposalSent, closedDeals },
+        activity: {
+          callsMade,
+          emailsSent,
+          leadsFound: newLeads,
+          conversationsStarted,
+          meetingsBooked,
+          streak,
+        },
+        hotLeadsList: hotFlows,
+        recentActivity,
+        aiRecommendations,
+      });
+    } catch (err: any) {
+      log(`Command center error: ${err.message}`, "dashboard");
+      res.status(500).json({ error: err.message });
     }
   });
 }

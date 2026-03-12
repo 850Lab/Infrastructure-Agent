@@ -1,110 +1,38 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { useSSE } from "@/lib/use-sse";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
-import NeuralNetwork from "@/components/neural-network";
 import { Button } from "@/components/ui/button";
-import { Play, ChevronDown, ChevronUp, FileText, ArrowUpRight, ArrowDownRight, Minus, RotateCcw, Loader2, Settings, AlertTriangle, Target } from "lucide-react";
-
-const STEP_DONE_FEEDBACK: Record<string, { title: string; description: string }> = {
-  opportunity_engine: { title: "Targets acquired", description: "Call list built and prioritized." },
-  dm_coverage: { title: "Decision makers mapped", description: "Key contacts linked to today\u2019s targets." },
-  dm_fit: { title: "Buyers locked in", description: "Best-fit decision makers confirmed." },
-  playbooks: { title: "Scripts refreshed", description: "Custom scripts ready for today\u2019s targets." },
-  call_engine: { title: "Signals processed", description: "Call outcomes absorbed. Machine is learning." },
-  query_intel: { title: "Machine evolved", description: "New searches queued from field data." },
-  lead_feed: { title: "Pipeline expanded", description: "Fresh companies added to the funnel." },
-};
-
-const STEP_ORDER = [
-  "bootstrap",
-  "opportunity_engine",
-  "dm_coverage",
-  "dm_fit",
-  "playbooks",
-  "call_engine",
-  "query_intel",
-  "lead_feed",
-] as const;
-
-const STEP_LABELS: Record<string, string> = {
-  bootstrap: "System Boot",
-  opportunity_engine: "Market Scanner",
-  dm_coverage: "Decision Maker Mapping",
-  dm_fit: "Buyer Selection",
-  playbooks: "Script Generation",
-  call_engine: "Signal Processing",
-  query_intel: "Learning Engine",
-  lead_feed: "Lead Expansion",
-};
-
-const SECTION_BUTTONS = [
-  { label: "Today", route: "/machine/today", steps: ["opportunity_engine", "playbooks"] },
-  { label: "Pipeline", route: "/machine/pipeline", steps: [] },
-  { label: "Follow-ups", route: "/machine/followups", steps: ["call_engine"] },
-  { label: "Lead Engine", route: "/machine/lead-engine", steps: ["lead_feed", "query_intel"] },
-  { label: "Contacts", route: "/machine/contacts", steps: ["dm_coverage", "dm_fit"] },
-  { label: "Analytics", route: "/machine/analytics", steps: ["bootstrap"] },
-  { label: "Outreach", route: "/machine/outreach", steps: [] },
-  { label: "My Leads", route: "/machine/my-leads", steps: [] },
-];
+import {
+  Play, Settings, Target, Phone, Mail, Users, TrendingUp,
+  ArrowRight, Flame, Clock, AlertTriangle, Calendar, Zap,
+  Building2, MessageSquare, Briefcase, ChevronRight, Activity,
+  Brain, Sparkles, Eye, UserPlus, Search, BarChart3,
+  CheckCircle2, XCircle, Loader2, FileText, Star
+} from "lucide-react";
 
 const EMERALD = "#10B981";
-const EMERALD_DARK = "#059669";
-const ERROR_RED = "#EF4444";
+const TEXT = "#0F172A";
+const MUTED = "#94A3B8";
+const BORDER = "#E2E8F0";
+const BLUE = "#3B82F6";
+const AMBER = "#F59E0B";
+const ERROR = "#EF4444";
+const PURPLE = "#8B5CF6";
+const SUBTLE = "#F8FAFC";
 
-
-function StepTimeline({ activeNodes, doneSteps, runStatus }: {
-  activeNodes: Set<string>;
-  doneSteps: Set<string>;
-  runStatus: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-2" data-testid="step-timeline">
-      {STEP_ORDER.map((step) => {
-        const isActive = activeNodes.has(step);
-        const isDone = doneSteps.has(step);
-        const isError = runStatus === "error" && isActive;
-
-        let bg = "#F8FAFC";
-        let border = "#E2E8F0";
-        let color = "#94A3B8";
-        let shadow = "none";
-
-        if (isError) {
-          bg = "rgba(239,68,68,0.06)";
-          border = "rgba(239,68,68,0.3)";
-          color = ERROR_RED;
-          shadow = "0 0 8px rgba(239,68,68,0.15)";
-        } else if (isActive) {
-          bg = "rgba(16,185,129,0.06)";
-          border = "rgba(16,185,129,0.35)";
-          color = EMERALD;
-          shadow = "0 0 8px rgba(16,185,129,0.15)";
-        } else if (isDone) {
-          bg = "rgba(16,185,129,0.04)";
-          border = "rgba(16,185,129,0.15)";
-          color = "#6EE7B7";
-        }
-
-        return (
-          <div
-            key={step}
-            className="flex-shrink-0 px-3 py-1.5 rounded-lg font-mono text-xs font-medium transition-all duration-300"
-            style={{ background: bg, border: `1px solid ${border}`, color, boxShadow: shadow }}
-            data-testid={`timeline-step-${step}`}
-          >
-            {STEP_LABELS[step]}
-          </div>
-        );
-      })}
-    </div>
-  );
+interface CommandCenterData {
+  revenue: { hotLeads: number; callsDue: number; overdueFollowups: number; pipelineValue: number };
+  pipeline: { newLeads: number; dmIdentified: number; contacted: number; interested: number; proposalSent: number; closedDeals: number };
+  activity: { callsMade: number; emailsSent: number; leadsFound: number; conversationsStarted: number; meetingsBooked: number; streak: number };
+  hotLeadsList: Array<{ companyName: string; companyId: string; lastOutcome: string; flowType: string }>;
+  recentActivity: Array<{ companyName: string; outcome: string; channel: string; createdAt: string }>;
+  aiRecommendations: Array<{ type: string; title: string; description: string; action: string; route: string }>;
 }
 
 interface MachineConfigData {
@@ -116,60 +44,93 @@ interface MachineConfigData {
   industry_config_selected: string;
 }
 
+const SECTION_BUTTONS = [
+  { label: "Today", route: "/machine/today" },
+  { label: "Pipeline", route: "/machine/pipeline" },
+  { label: "Follow-ups", route: "/machine/followups" },
+  { label: "Lead Engine", route: "/machine/lead-engine" },
+  { label: "Contacts", route: "/machine/contacts" },
+  { label: "Analytics", route: "/machine/analytics" },
+  { label: "Outreach", route: "/machine/outreach" },
+  { label: "My Leads", route: "/machine/my-leads" },
+];
+
+function StatCard({ icon: Icon, label, value, color, onClick, subtitle }: {
+  icon: any; label: string; value: number | string; color: string; onClick?: () => void; subtitle?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl p-4 text-left transition-all hover:shadow-md w-full"
+      style={{ background: "white", border: `1px solid ${BORDER}` }}
+      data-testid={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${color}12` }}>
+          <Icon className="w-4 h-4" style={{ color }} />
+        </div>
+        {onClick && <ChevronRight className="w-3.5 h-3.5" style={{ color: MUTED }} />}
+      </div>
+      <div className="text-2xl font-bold" style={{ color: TEXT }}>{value}</div>
+      <div className="text-xs font-medium mt-0.5" style={{ color: MUTED }}>{label}</div>
+      {subtitle && <div className="text-[10px] mt-0.5" style={{ color }}>{subtitle}</div>}
+    </button>
+  );
+}
+
+function PipelineBar({ stages }: { stages: Array<{ label: string; count: number; color: string }> }) {
+  const total = stages.reduce((s, st) => s + st.count, 0) || 1;
+  return (
+    <div className="space-y-2">
+      <div className="flex h-3 rounded-full overflow-hidden" style={{ background: `${BORDER}` }}>
+        {stages.map((st) => (
+          <div key={st.label} className="h-full transition-all duration-700" style={{ width: `${(st.count / total) * 100}%`, background: st.color, minWidth: st.count > 0 ? "4px" : "0" }} />
+        ))}
+      </div>
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        {stages.map((st) => (
+          <div key={st.label} className="text-center" data-testid={`pipeline-${st.label.toLowerCase().replace(/\s+/g, "-")}`}>
+            <div className="text-lg font-bold" style={{ color: TEXT }}>{st.count}</div>
+            <div className="text-[10px] font-medium" style={{ color: MUTED }}>{st.label}</div>
+            <div className="w-full h-1 rounded-full mt-1" style={{ background: `${st.color}30` }}>
+              <div className="h-full rounded-full" style={{ background: st.color, width: `${Math.min(100, (st.count / total) * 100)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const OUTCOME_LABELS: Record<string, string> = {
+  no_answer: "No Answer", voicemail_left: "Voicemail Left", live_answer: "Live Answer",
+  interested: "Interested", meeting_requested: "Meeting", replied: "Replied",
+  sent: "Sent", opened: "Opened", clicked: "Clicked", bounced: "Bounced",
+  gave_dm_name: "Got DM Name", transferred: "Transferred", refused: "Refused",
+  not_a_fit: "Not a Fit", general_voicemail: "Voicemail", receptionist_answered: "Receptionist",
+  followup_scheduled: "Follow-up Set", asked_to_call_later: "Call Later",
+};
+
 export default function DashboardPage() {
   const { getToken } = useAuth();
   const token = getToken();
-  const { recentEvents, activeNodes, runStatus: sseRunStatus, connected, connectionStatus } = useSSE(token);
+  const { runStatus: sseRunStatus, connected, connectionStatus } = useSSE(token);
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [alertsToastShown, setAlertsToastShown] = useState(false);
 
-  const { data: polledRunStatus } = useQuery<{ is_running: boolean; current_run_id: string | null; current_step: string | null }>({
+  const { data: polledRunStatus } = useQuery<{ is_running: boolean }>({
     queryKey: ["/api/run-status"],
-    refetchInterval: sseRunStatus === "running" ? 15000 : 30000,
+    refetchInterval: 30000,
     enabled: !!token,
   });
 
   const runStatus = polledRunStatus?.is_running ? "running" : sseRunStatus;
-
-  const { data: alertsData } = useQuery<{ alerts: { id: number; alertType: string; message: string; severity: string }[] }>({
-    queryKey: ["/api/alerts", "unresolved"],
-    queryFn: () => fetch("/api/alerts?unresolved=true", {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then(r => r.json()),
-    enabled: !!token,
-    refetchInterval: 120000,
-  });
-
-  const unresolvedAlertCount = alertsData?.alerts?.length || 0;
-
-  useEffect(() => {
-    if (unresolvedAlertCount > 0 && !alertsToastShown) {
-      setAlertsToastShown(true);
-      toast({
-        title: `${unresolvedAlertCount} machine alert${unresolvedAlertCount > 1 ? "s" : ""} detected`,
-        description: "Check your Daily Briefing for details.",
-      });
-    }
-  }, [unresolvedAlertCount, alertsToastShown, toast]);
-
-  const [runLoading, setRunLoading] = useState(false);
-  const [doneSteps, setDoneSteps] = useState<Set<string>>(new Set());
-  const [shockwave, setShockwave] = useState(0);
-  const [burst, setBurst] = useState(0);
-  const [expandedRun, setExpandedRun] = useState<string | null>(null);
-  const [revertCatsMap, setRevertCatsMap] = useState<Record<string, Set<string>>>({});
-  const [eventRate, setEventRate] = useState(0);
-  const lastEventCount = useRef(0);
-  const eventTimestamps = useRef<number[]>([]);
 
   const { data: meData } = useQuery<{ email: string; machine_config: MachineConfigData | null; client?: { client_name?: string } | null }>({
     queryKey: ["/api/me"],
     enabled: !!token,
     staleTime: 60000,
   });
-
-  const mc = meData?.machine_config;
 
   const { data: stats } = useQuery<{
     today_list_count: number | null;
@@ -181,172 +142,13 @@ export default function DashboardPage() {
     enabled: !!token,
   });
 
-  const { data: machineMetrics } = useQuery<{
-    companies_total: number | null;
-    dms_total: number | null;
-    calls_total: number | null;
-    wins_total: number | null;
-    opportunities_total: number | null;
-    computed_at: number;
-  }>({
-    queryKey: ["/api/machine-metrics"],
+  const { data: cmd, isLoading, isError, refetch } = useQuery<CommandCenterData>({
+    queryKey: ["/api/command-center"],
     enabled: !!token,
-    refetchInterval: 300000,
+    refetchInterval: 60000,
   });
 
-  const { data: runHistory } = useQuery<Array<{
-    run_id: string;
-    started_at: string;
-    finished_at: string | null;
-    duration_ms?: number;
-    steps: Array<{ step: string; status: string; duration_ms?: number }>;
-    summary: Record<string, any>;
-    errors: string[];
-  }>>({
-    queryKey: ["/api/run-history"],
-    enabled: !!token,
-    refetchInterval: runStatus === "running" ? 15000 : 60000,
-  });
-
-  const { data: confidenceData } = useQuery<{
-    confidence_score: number;
-    explanation: string;
-    components: {
-      dm_name_rate: number;
-      dm_email_rate: number;
-      dm_phone_rate: number;
-      website_rate: number;
-      social_media_rate: number;
-    };
-    total_companies: number;
-  }>({
-    queryKey: ["/api/confidence"],
-    enabled: !!token,
-    refetchInterval: 120000,
-  });
-
-  const { data: dmAuthorityData } = useQuery<{
-    title_rankings: Array<{
-      title: string;
-      total_contacts: number;
-      reached_dm: number;
-      converted: number;
-      wrong_person: number;
-      rejected: number;
-      authority_score: number;
-    }>;
-    total_contacts_analyzed: number;
-    computed_at: number;
-  }>({
-    queryKey: ["/api/dm-authority/report"],
-    enabled: !!token,
-    refetchInterval: 300000,
-  });
-
-  const { data: queryIntelData } = useQuery<{
-    topQueries: Array<{ query: string; category: string; wins: number; runs: number; performanceScore: number }>;
-    totalActive: number;
-    totalRetired: number;
-    winPatterns: {
-      topCategories: Array<{ category: string; count: number; winRate: number }>;
-      topCities: Array<{ city: string; count: number }>;
-      commonKeywords: string[];
-      closedWins: number;
-      pipelineWins: number;
-      totalWinners: number;
-    } | null;
-    generationMode: string;
-  }>({
-    queryKey: ["/api/query-intel/summary"],
-    enabled: !!token,
-    refetchInterval: 300000,
-  });
-
-  const { data: authorityMissData } = useQuery<{
-    missCount: number;
-    totalContacted: number;
-    missRate: number;
-    hasData: boolean;
-  }>({
-    queryKey: ["/api/analytics/authority-miss-rate"],
-    enabled: !!token,
-    refetchInterval: 300000,
-  });
-
-  const { data: weightedSignals } = useQuery<{
-    hasData: boolean;
-    recentSignals: number;
-    historicalSignals: number;
-    totalSignals: number;
-    recentWeightPct: number;
-    historicalWeightPct: number;
-    decayConstant: number;
-  }>({
-    queryKey: ["/api/analytics/weighted-signals"],
-    enabled: !!token,
-    refetchInterval: 300000,
-  });
-
-  const { data: latestDiff } = useQuery<{
-    run_id: string | null;
-    started_at?: number;
-    finished_at?: number;
-    duration_ms: number | null;
-    status?: string;
-    diff: {
-      companies_added: number;
-      dms_added: number;
-      today_call_list_delta: number;
-      offer_dm_updated: number;
-      playbooks_generated: number;
-      queries_inserted: number;
-      queries_retired: number;
-    } | null;
-    errors_count?: number;
-  }>({
-    queryKey: ["/api/run-latest-diff"],
-    enabled: !!token,
-    refetchInterval: runStatus === "running" ? 15000 : 60000,
-  });
-
-  useEffect(() => {
-    if (recentEvents.length === 0 || recentEvents.length === lastEventCount.current) return;
-    const newCount = recentEvents.length - lastEventCount.current;
-    lastEventCount.current = recentEvents.length;
-    const last = recentEvents[recentEvents.length - 1];
-
-    const now = Date.now();
-    for (let i = 0; i < newCount; i++) eventTimestamps.current.push(now);
-    eventTimestamps.current = eventTimestamps.current.filter(t => now - t < 3000);
-    setEventRate(eventTimestamps.current.length / 3);
-
-    if (last.type === "STEP_STARTED") {
-      setShockwave((s) => s + 1);
-    }
-    if (last.type === "STEP_DONE") {
-      const step = last.payload.step;
-      if (step) {
-        setDoneSteps((prev) => new Set([...prev, step]));
-        const fb = STEP_DONE_FEEDBACK[step];
-        if (fb) toast({ title: fb.title, description: fb.description, duration: 3000 });
-      }
-    }
-    if (last.type === "TRIGGER_FIRED") {
-      setBurst((b) => b + 1);
-    }
-    if (last.type === "RUN_STARTED") {
-      setDoneSteps(new Set());
-    }
-  }, [recentEvents]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      eventTimestamps.current = eventTimestamps.current.filter(t => now - t < 3000);
-      setEventRate(eventTimestamps.current.length / 3);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const [runLoading, setRunLoading] = useState(false);
 
   const handleRunNow = useCallback(async () => {
     if (runStatus === "running" || runLoading) return;
@@ -357,64 +159,27 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
       if (res.status === 409) {
-        toast({ title: "Run already active", description: "A pipeline run is already in progress. Please wait for it to finish.", duration: 5000 });
-        return;
-      }
-      if (res.status === 400) {
-        const data = await res.json().catch(() => ({}));
-        toast({ title: "Cannot start run", description: data.error || "Client context required", variant: "destructive", duration: 5000 });
+        toast({ title: "Run already active", description: "A pipeline run is already in progress.", duration: 5000 });
         return;
       }
       if (!res.ok) throw new Error("Failed to start run");
     } catch (err: any) {
-      toast({ title: "Run failed", description: err.message || "Failed to start run", variant: "destructive" });
+      toast({ title: "Run failed", description: err.message, variant: "destructive" });
     } finally {
       setRunLoading(false);
     }
   }, [runStatus, runLoading, token, toast]);
 
-  const revertMutation = useMutation({
-    mutationFn: ({ runId, categories }: { runId: string; categories: string[] }) =>
-      apiRequest("POST", `/api/run-history/${runId}/revert`, { categories }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/run-history"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/run-latest-diff"] });
-    },
-  });
+  const mc = meData?.machine_config;
 
-  const getRevertCats = (runId: string, availableCats: string[]) => {
-    if (!revertCatsMap[runId]) {
-      return new Set(availableCats);
-    }
-    return revertCatsMap[runId];
-  };
-
-  const toggleRevertCat = (runId: string, cat: string) => {
-    setRevertCatsMap(prev => {
-      const current = prev[runId] || new Set(["rank", "offer_dm", "playbooks"]);
-      const next = new Set(current);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
-      return { ...prev, [runId]: next };
-    });
-  };
-
-  const statusLabel = runStatus === "running" ? "RUNNING" : runStatus === "error" ? "ERROR" : "STANDBY";
-  const statusSub = runStatus === "running"
-    ? "Processing run"
-    : runStatus === "error"
-      ? "Fault detected \u2014 check event log"
-      : "Listening for triggers";
-
-  const displayEvents = recentEvents.slice(-30).reverse();
-  const displayHistory = (runHistory || []).slice(0, 5);
-
-  const kpis = [
-    { label: "Today List", value: stats?.today_list_count },
-    { label: "Fresh Pool", value: stats?.fresh_pool_count },
-    { label: "DMs Resolved", value: stats?.dm_resolved_count },
-    { label: "Playbooks", value: stats?.playbooks_ready_count },
-  ];
+  const pipelineStages = cmd ? [
+    { label: "New", count: cmd.pipeline.newLeads, color: MUTED },
+    { label: "DM Found", count: cmd.pipeline.dmIdentified, color: BLUE },
+    { label: "Contacted", count: cmd.pipeline.contacted, color: AMBER },
+    { label: "Interested", count: cmd.pipeline.interested, color: EMERALD },
+    { label: "Proposal", count: cmd.pipeline.proposalSent, color: PURPLE },
+    { label: "Closed", count: cmd.pipeline.closedDeals, color: "#059669" },
+  ] : [];
 
   return (
     <AppLayout runStatus={runStatus}>
@@ -422,23 +187,19 @@ export default function DashboardPage() {
         {mc && (
           <div className="flex items-center justify-between mb-5" data-testid="machine-identity">
             <div>
-              <h1
-                className="text-xl font-bold font-mono tracking-tight"
-                style={{ color: "#0F172A" }}
-                data-testid="text-machine-name"
-              >
+              <h1 className="text-xl font-bold tracking-tight" style={{ color: TEXT }} data-testid="text-machine-name">
                 {mc.machine_name}
               </h1>
-              <p className="text-xs font-mono mt-0.5" style={{ color: "#94A3B8" }} data-testid="text-machine-config-line">
-                Configured for: {mc.opportunity} | Target: {mc.decision_maker_focus} | Territory: {mc.geo}
+              <p className="text-xs mt-0.5" style={{ color: MUTED }} data-testid="text-machine-config-line">
+                {mc.opportunity} | {mc.decision_maker_focus} | {mc.geo}
               </p>
             </div>
             <Button
               variant="outline"
               size="sm"
               onClick={() => navigate("/machine/settings")}
-              className="gap-1.5 text-xs font-mono"
-              style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}
+              className="gap-1.5 text-xs"
+              style={{ borderColor: BORDER, color: MUTED }}
               data-testid="button-machine-settings"
             >
               <Settings className="w-3.5 h-3.5" />
@@ -447,52 +208,32 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-6">
           <button
             onClick={() => navigate("/machine/focus")}
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all"
-            style={{
-              background: EMERALD,
-              color: "#FFFFFF",
-              boxShadow: "0 2px 8px rgba(16,185,129,0.25)",
-            }}
+            style={{ background: EMERALD, color: "#FFFFFF", boxShadow: "0 2px 8px rgba(16,185,129,0.25)" }}
             data-testid="nav-focus-mode"
           >
             <Target className="w-4 h-4" />
             Focus Mode
           </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 mb-6" data-testid="section-nav">
-          {SECTION_BUTTONS.map((sec) => {
-            const isStepActive = sec.steps.some((s) => activeNodes.has(s));
-            return (
-              <button
-                key={sec.route}
-                onClick={() => navigate(sec.route)}
-                className="px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300"
-                style={{
-                  background: isStepActive ? "rgba(16,185,129,0.08)" : "#F8FAFC",
-                  border: `1px solid ${isStepActive ? "rgba(16,185,129,0.35)" : "#E2E8F0"}`,
-                  color: isStepActive ? EMERALD : "#0F172A",
-                  boxShadow: isStepActive ? "0 0 12px rgba(16,185,129,0.1)" : "none",
-                }}
-                data-testid={`nav-${sec.label.toLowerCase().replace(/\s+/g, "-")}`}
-              >
-                {sec.label}
-              </button>
-            );
-          })}
+          {SECTION_BUTTONS.map((sec) => (
+            <button
+              key={sec.route}
+              onClick={() => navigate(sec.route)}
+              className="px-5 py-2 rounded-full text-sm font-semibold transition-all"
+              style={{ background: SUBTLE, border: `1px solid ${BORDER}`, color: TEXT }}
+              data-testid={`nav-${sec.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {sec.label}
+            </button>
+          ))}
           {meData?.client?.client_name === "Texas Cool Down Trailers" && (
             <button
               onClick={() => navigate("/machine/lng-projects")}
-              className="px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300"
-              style={{
-                background: "rgba(245,158,11,0.08)",
-                border: "1px solid rgba(245,158,11,0.35)",
-                color: "#F59E0B",
-                boxShadow: "0 0 12px rgba(245,158,11,0.1)",
-              }}
+              className="px-5 py-2 rounded-full text-sm font-semibold transition-all"
+              style={{ background: `${AMBER}08`, border: `1px solid ${AMBER}35`, color: AMBER }}
               data-testid="nav-lng-projects"
             >
               LNG Projects
@@ -500,809 +241,290 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-          <div className="lg:col-span-1 space-y-5">
-            <div
-              className="rounded-2xl p-5"
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #E2E8F0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-              data-testid="card-system-status"
-            >
-              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-                System Status
-              </p>
-              <p
-                className="text-3xl font-bold font-mono tracking-wider mb-1"
-                style={{
-                  color: runStatus === "error" ? ERROR_RED : runStatus === "running" ? EMERALD_DARK : "#0F172A",
-                }}
-                data-testid="text-system-status"
-              >
-                {statusLabel}
-              </p>
-              <p className="text-xs font-mono mb-4" style={{ color: "#94A3B8" }} data-testid="text-status-line">
-                {statusSub}
-              </p>
-
-              <div className="flex items-center gap-1.5 mb-4" data-testid="sse-status-indicator">
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{
-                    background: connectionStatus === "connected"
-                      ? EMERALD
-                      : connectionStatus === "reconnecting"
-                        ? "#F59E0B"
-                        : "#EF4444",
-                    animation: connectionStatus === "reconnecting" ? "pulse 1.5s ease-in-out infinite" : "none",
-                  }}
-                />
-                <span className="text-xs font-mono" style={{ color: "#94A3B8" }} data-testid="text-sse-status">
-                  {connectionStatus === "connected"
-                    ? "Connected"
-                    : connectionStatus === "reconnecting"
-                      ? "Reconnecting\u2026"
-                      : "Offline"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {kpis.map((kpi) => (
-                  <div key={kpi.label} className="rounded-lg p-2.5" style={{ background: "#F8FAFC", border: "1px solid #F1F5F9" }}>
-                    <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>{kpi.label}</p>
-                    <p className="text-lg font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`kpi-${kpi.label.toLowerCase().replace(/\s+/g, "-")}`}>
-                      {kpi.value != null ? kpi.value : "\u2014"}
-                    </p>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: EMERALD }} />
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-3">
+            <XCircle className="w-8 h-8" style={{ color: ERROR }} />
+            <p className="text-sm font-medium" style={{ color: TEXT }}>Failed to load Command Center data</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" data-testid="button-retry">
+              <Activity className="w-3.5 h-3.5" /> Retry
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" style={{ color: EMERALD }} />
+                    <span className="text-sm font-bold" style={{ color: TEXT }}>Revenue Opportunities</span>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl p-5"
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #E2E8F0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-              data-testid="card-machine-memory"
-            >
-              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-                Machine Memory
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Companies", value: machineMetrics?.companies_total },
-                  { label: "DMs", value: machineMetrics?.dms_total },
-                  { label: "Calls", value: machineMetrics?.calls_total },
-                  { label: "Wins", value: machineMetrics?.wins_total },
-                  { label: "Opps", value: machineMetrics?.opportunities_total },
-                ].map((m) => (
-                  <div key={m.label} className="rounded-lg p-2.5" style={{ background: "#F8FAFC", border: "1px solid #F1F5F9" }}>
-                    <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>{m.label}</p>
-                    <p className="text-lg font-bold font-mono" style={{ color: "#0F172A" }} data-testid={`metric-${m.label.toLowerCase()}`}>
-                      {m.value != null ? m.value.toLocaleString() : "\u2014"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl p-5"
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #E2E8F0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-              data-testid="card-targeting-accuracy"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-                  Targeting Accuracy
-                </p>
-                {confidenceData?.total_companies != null && (
-                  <p className="text-xs font-mono" style={{ color: "#94A3B8" }} data-testid="text-total-companies">
-                    {confidenceData.total_companies} companies
-                  </p>
-                )}
-              </div>
-              <div className="flex items-end gap-3 mb-2">
-                <p
-                  className="text-3xl font-bold font-mono"
-                  style={{
-                    color: (confidenceData?.confidence_score ?? 0) >= 70 ? EMERALD
-                      : (confidenceData?.confidence_score ?? 0) >= 40 ? "#F59E0B"
-                      : ERROR_RED,
-                  }}
-                  data-testid="text-confidence-score"
-                >
-                  {confidenceData?.confidence_score ?? 0}
-                </p>
-                <p className="text-xs font-mono mb-1" style={{ color: "#94A3B8" }}>/100</p>
-              </div>
-              <div className="w-full h-2 rounded-full mb-3" style={{ background: "#F1F5F9" }}>
-                <div
-                  className="h-2 rounded-full transition-all duration-700"
-                  style={{
-                    width: `${confidenceData?.confidence_score ?? 0}%`,
-                    background: (confidenceData?.confidence_score ?? 0) >= 70 ? EMERALD
-                      : (confidenceData?.confidence_score ?? 0) >= 40 ? "#F59E0B"
-                      : ERROR_RED,
-                  }}
-                  data-testid="confidence-bar"
-                />
-              </div>
-              {confidenceData?.components && (
-                <div className="space-y-1.5 mb-3">
-                  {[
-                    { label: "DM Name", rate: confidenceData.components.dm_name_rate, testId: "bar-dm-name" },
-                    { label: "DM Email", rate: confidenceData.components.dm_email_rate, testId: "bar-dm-email" },
-                    { label: "DM Phone", rate: confidenceData.components.dm_phone_rate, testId: "bar-dm-phone" },
-                    { label: "Website", rate: confidenceData.components.website_rate, testId: "bar-website" },
-                    { label: "Social", rate: confidenceData.components.social_media_rate, testId: "bar-social" },
-                  ].map((item) => (
-                    <div key={item.label} className="flex items-center gap-2">
-                      <p className="text-[10px] font-mono w-16 text-right" style={{ color: "#94A3B8" }}>{item.label}</p>
-                      <div className="flex-1 h-1.5 rounded-full" style={{ background: "#F1F5F9" }}>
-                        <div
-                          className="h-1.5 rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.round(item.rate * 100)}%`,
-                            background: item.rate >= 0.9 ? EMERALD : item.rate >= 0.5 ? "#F59E0B" : ERROR_RED,
-                          }}
-                          data-testid={item.testId}
-                        />
-                      </div>
-                      <p className="text-[10px] font-mono w-8" style={{ color: item.rate >= 0.9 ? EMERALD : item.rate >= 0.5 ? "#F59E0B" : ERROR_RED }}>
-                        {Math.round(item.rate * 100)}%
-                      </p>
-                    </div>
-                  ))}
                 </div>
-              )}
-              <p className="text-xs" style={{ color: "#64748B" }} data-testid="text-confidence-explanation">
-                {confidenceData?.explanation || "No companies in today's pull yet."}
-              </p>
-            </div>
-
-            <Button
-              onClick={handleRunNow}
-              disabled={runStatus === "running" || runLoading}
-              className="w-full h-12 text-base font-bold tracking-wider rounded-xl"
-              style={{
-                background: runStatus === "running" ? "#F8FAFC" : "#0F172A",
-                color: runStatus === "running" ? "#64748B" : "#FFFFFF",
-                border: `1px solid ${runStatus === "running" ? "#E2E8F0" : "#0F172A"}`,
-              }}
-              data-testid="button-run-now"
-            >
-              <Play className="w-5 h-5 mr-2" />
-              {runLoading ? "STARTING..." : runStatus === "running" ? "RUNNING..." : "RUN NOW"}
-            </Button>
-
-            <Button
-              onClick={() => navigate("/machine/briefing")}
-              className="w-full h-10 text-sm font-semibold tracking-wider rounded-xl relative"
-              style={{
-                background: "#F8FAFC",
-                color: "#0F172A",
-                border: unresolvedAlertCount > 0 ? "1px solid rgba(245,158,11,0.4)" : "1px solid #E2E8F0",
-              }}
-              data-testid="button-daily-briefing"
-            >
-              {unresolvedAlertCount > 0 ? (
-                <AlertTriangle className="w-4 h-4 mr-2" style={{ color: "#F59E0B" }} />
-              ) : (
-                <FileText className="w-4 h-4 mr-2" />
-              )}
-              Daily Briefing
-              {unresolvedAlertCount > 0 && (
-                <span
-                  className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold"
-                  style={{ background: "#F59E0B", color: "#FFFFFF" }}
-                  data-testid="badge-alert-count"
-                >
-                  {unresolvedAlertCount}
-                </span>
-              )}
-            </Button>
-
-            {latestDiff?.diff && (
-              <div
-                className="rounded-2xl p-4"
-                style={{
-                  background: "#FFFFFF",
-                  border: "1px solid #E2E8F0",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                }}
-                data-testid="panel-last-run-changes"
-              >
-                <p className="text-xs font-mono tracking-widest uppercase mb-2" style={{ color: "#94A3B8" }}>
-                  Last Run Changes
-                </p>
-                {latestDiff.finished_at && (
-                  <p className="text-xs font-mono mb-3" style={{ color: "#CBD5E1" }}>
-                    {new Date(latestDiff.finished_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}
-                    {latestDiff.duration_ms != null && ` \u00B7 ${(latestDiff.duration_ms / 1000).toFixed(0)}s`}
-                  </p>
-                )}
-                <div className="space-y-1.5">
-                  {[
-                    { label: "Companies added", value: latestDiff.diff.companies_added },
-                    { label: "DMs added", value: latestDiff.diff.dms_added },
-                    { label: "Call list", value: latestDiff.diff.today_call_list_delta },
-                    { label: "Offer DMs updated", value: latestDiff.diff.offer_dm_updated },
-                    { label: "Playbooks generated", value: latestDiff.diff.playbooks_generated },
-                    { label: "Queries inserted", value: latestDiff.diff.queries_inserted },
-                    { label: "Queries retired", value: latestDiff.diff.queries_retired },
-                  ].map((item) => {
-                    const isPositive = item.value > 0;
-                    const isNegative = item.value < 0;
-                    const Icon = isPositive ? ArrowUpRight : isNegative ? ArrowDownRight : Minus;
-                    const color = isPositive ? EMERALD : isNegative ? ERROR_RED : "#CBD5E1";
-                    return (
-                      <div key={item.label} className="flex items-center justify-between" data-testid={`diff-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
-                        <span className="text-xs font-mono" style={{ color: "#64748B" }}>{item.label}</span>
-                        <div className="flex items-center gap-1">
-                          <Icon className="w-3 h-3" style={{ color }} />
-                          <span className="text-xs font-mono font-semibold" style={{ color }}>
-                            {isPositive ? `+${item.value}` : item.value === 0 ? "0" : `${item.value}`}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {(latestDiff.errors_count ?? 0) > 0 && (
-                    <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid #F1F5F9" }}>
-                      <span className="text-xs font-mono" style={{ color: ERROR_RED }}>Errors</span>
-                      <span className="text-xs font-mono font-semibold" style={{ color: ERROR_RED }}>{latestDiff.errors_count}</span>
-                    </div>
-                  )}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard icon={Flame} label="Hot Leads" value={cmd?.revenue.hotLeads || 0} color={ERROR} onClick={() => navigate("/machine/pipeline")} subtitle={cmd?.revenue.hotLeads ? "Ready to close" : undefined} />
+                  <StatCard icon={Phone} label="Calls Due Today" value={cmd?.revenue.callsDue || 0} color={BLUE} onClick={() => navigate("/machine/focus")} subtitle={cmd?.revenue.callsDue ? "Start calling" : undefined} />
+                  <StatCard icon={AlertTriangle} label="Overdue Follow-ups" value={cmd?.revenue.overdueFollowups || 0} color={AMBER} onClick={() => navigate("/machine/followups")} subtitle={cmd?.revenue.overdueFollowups ? "Need attention" : undefined} />
+                  <StatCard icon={Briefcase} label="Pipeline Value" value={cmd?.revenue.pipelineValue || 0} color={EMERALD} onClick={() => navigate("/machine/pipeline")} subtitle="Active opportunities" />
                 </div>
               </div>
-            )}
-          </div>
+            </motion.div>
 
-          <div className="lg:col-span-2 flex items-center justify-center">
-            <div className="w-full max-w-lg">
-              <NeuralNetwork
-                runStatus={runStatus}
-                activeNodes={activeNodes}
-                doneSteps={doneSteps}
-                shockwave={shockwave}
-                burst={burst}
-                machineMetrics={machineMetrics ? {
-                  wins_total: machineMetrics.wins_total,
-                  calls_total: machineMetrics.calls_total,
-                } : null}
-                runHistory={runHistory ?? null}
-                eventRate={eventRate}
-                confidenceScore={confidenceData?.confidence_score ?? 50}
-                onNodeClick={(route) => navigate(route)}
-              />
-            </div>
-          </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <motion.div className="lg:col-span-2" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.05 }}>
+                <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <BarChart3 className="w-4 h-4" style={{ color: BLUE }} />
+                    <span className="text-sm font-bold" style={{ color: TEXT }}>Pipeline Snapshot</span>
+                  </div>
+                  <PipelineBar stages={pipelineStages} />
+                </div>
+              </motion.div>
 
-          <div className="lg:col-span-1 space-y-5">
-            <div
-              className="rounded-2xl p-4"
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #E2E8F0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                maxHeight: "340px",
-              }}
-              data-testid="panel-run-history"
-            >
-              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-                Run History
-              </p>
-              <div style={{ maxHeight: "280px", overflowY: "auto" }}>
-                {displayHistory.length === 0 ? (
-                  <p className="text-xs font-mono text-center py-4" style={{ color: "#CBD5E1" }}>No runs yet</p>
-                ) : (
-                  displayHistory.map((run) => {
-                    const isExpanded = expandedRun === run.run_id;
-                    const runTime = new Date(run.started_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-                    const hasErrors = run.errors && run.errors.length > 0;
-                    return (
-                      <div key={run.run_id} className="mb-1">
-                        <button
-                          onClick={() => setExpandedRun(isExpanded ? null : run.run_id)}
-                          className="w-full flex items-center justify-between py-1.5 px-2 rounded-lg text-left transition-colors"
-                          style={{ background: isExpanded ? "#F8FAFC" : "transparent" }}
-                          data-testid={`run-${run.run_id}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: hasErrors ? ERROR_RED : run.finished_at ? EMERALD : "#F59E0B" }} />
-                            <span className="text-xs font-mono" style={{ color: "#64748B" }}>{runTime}</span>
-                            <span className="text-xs font-mono font-medium" style={{ color: hasErrors ? ERROR_RED : "#334155" }}>
-                              {hasErrors ? "Error" : run.finished_at ? "Done" : "Running"}
-                            </span>
-                          </div>
-                          {isExpanded ? <ChevronUp className="w-3 h-3" style={{ color: "#94A3B8" }} /> : <ChevronDown className="w-3 h-3" style={{ color: "#94A3B8" }} />}
-                        </button>
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="pl-5 py-1 space-y-0.5">
-                                {run.steps.map((s, si) => (
-                                  <div key={si} className="flex items-center gap-2 text-xs font-mono" style={{ color: s.status === "error" ? ERROR_RED : "#64748B" }}>
-                                    <span>{s.status === "done" ? "\u2713" : s.status === "error" ? "\u2717" : "\u00B7"}</span>
-                                    <span>{STEP_LABELS[s.step] || s.step.replace(/_/g, " ")}</span>
-                                    {s.duration_ms != null && <span style={{ color: "#CBD5E1" }}>{(s.duration_ms / 1000).toFixed(1)}s</span>}
-                                  </div>
-                                ))}
-                                {run.duration_ms != null && (
-                                  <div className="text-xs font-mono pt-1" style={{ color: "#CBD5E1", borderTop: "1px solid #F1F5F9" }}>
-                                    Total: {(run.duration_ms / 1000).toFixed(1)}s
-                                  </div>
-                                )}
-                                {run.summary?.diff && (() => {
-                                  const d = run.summary.diff;
-                                  const items = [
-                                    { l: "Companies", v: d.companies_added },
-                                    { l: "DMs", v: d.dms_added },
-                                    { l: "Call list", v: d.today_call_list_delta },
-                                    { l: "Offer DMs", v: d.offer_dm_updated },
-                                    { l: "Playbooks", v: d.playbooks_generated },
-                                    { l: "Queries +", v: d.queries_inserted },
-                                    { l: "Queries -", v: d.queries_retired },
-                                  ].filter((i) => i.v !== 0);
-                                  if (items.length === 0) return null;
-                                  return (
-                                    <div className="pt-1 mt-1 space-y-0.5" style={{ borderTop: "1px solid #F1F5F9" }}>
-                                      <span className="text-xs font-mono" style={{ color: "#94A3B8" }}>Changes:</span>
-                                      {items.map((i) => (
-                                        <div key={i.l} className="flex items-center justify-between text-xs font-mono">
-                                          <span style={{ color: "#94A3B8" }}>{i.l}</span>
-                                          <span style={{ color: i.v > 0 ? EMERALD : i.v < 0 ? ERROR_RED : "#CBD5E1" }}>
-                                            {i.v > 0 ? `+${i.v}` : i.v}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
-                                {run.summary?.changeset && (() => {
-                                  const cs = run.summary.changeset;
-                                  const revertedCatsSet = new Set(cs.reverted_categories || []);
-                                  const catCounts: Record<string, number> = {};
-                                  for (const e of cs.entries || []) {
-                                    if (!revertedCatsSet.has(e.category)) {
-                                      catCounts[e.category] = (catCounts[e.category] || 0) + 1;
-                                    }
-                                  }
-                                  const unrevertedCats = Object.keys(catCounts);
-                                  const CAT_LABELS: Record<string, string> = { rank: "Rank", offer_dm: "Offer DM", playbooks: "Playbooks" };
-                                  const runRevertCats = getRevertCats(run.run_id, unrevertedCats);
-
-                                  return (
-                                    <div className="pt-2 mt-1" style={{ borderTop: "1px solid #F1F5F9" }} data-testid={`revert-panel-${run.run_id}`}>
-                                      {revertedCatsSet.size > 0 && (
-                                        <div className="flex items-center gap-1.5 mb-1.5">
-                                          <RotateCcw className="w-3 h-3" style={{ color: "#94A3B8" }} />
-                                          <span className="text-xs font-mono" style={{ color: "#94A3B8" }}>
-                                            Reverted: {Array.from(revertedCatsSet).map((c: string) => CAT_LABELS[c] || c).join(", ")}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {unrevertedCats.length > 0 && (
-                                        <div>
-                                          <span className="text-xs font-mono block mb-1.5" style={{ color: "#94A3B8" }}>Revert categories:</span>
-                                          <div className="flex flex-wrap gap-1.5 mb-2">
-                                            {unrevertedCats.map((cat) => (
-                                              <button
-                                                key={cat}
-                                                onClick={(e) => { e.stopPropagation(); toggleRevertCat(run.run_id, cat); }}
-                                                className="px-2 py-0.5 rounded text-xs font-mono transition-colors"
-                                                style={{
-                                                  background: runRevertCats.has(cat) ? "rgba(239,68,68,0.08)" : "#F8FAFC",
-                                                  color: runRevertCats.has(cat) ? ERROR_RED : "#94A3B8",
-                                                  border: `1px solid ${runRevertCats.has(cat) ? "rgba(239,68,68,0.25)" : "#E2E8F0"}`,
-                                                }}
-                                                data-testid={`revert-toggle-${cat}`}
-                                              >
-                                                {CAT_LABELS[cat] || cat} ({catCounts[cat]})
-                                              </button>
-                                            ))}
-                                          </div>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (runRevertCats.size === 0) return;
-                                              revertMutation.mutate({ runId: run.run_id, categories: Array.from(runRevertCats) });
-                                            }}
-                                            disabled={revertMutation.isPending || runRevertCats.size === 0}
-                                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-colors"
-                                            style={{
-                                              background: revertMutation.isPending ? "#F8FAFC" : "rgba(239,68,68,0.08)",
-                                              color: revertMutation.isPending ? "#94A3B8" : ERROR_RED,
-                                              border: `1px solid ${revertMutation.isPending ? "#E2E8F0" : "rgba(239,68,68,0.25)"}`,
-                                            }}
-                                            data-testid={`button-revert-${run.run_id}`}
-                                          >
-                                            {revertMutation.isPending ? (
-                                              <Loader2 className="w-3 h-3 animate-spin" />
-                                            ) : (
-                                              <RotateCcw className="w-3 h-3" />
-                                            )}
-                                            {revertMutation.isPending ? "Reverting..." : "Revert Selected"}
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl p-4"
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #E2E8F0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                maxHeight: "300px",
-              }}
-              data-testid="card-event-log"
-            >
-              <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-                Event Log
-              </p>
-              <div style={{ maxHeight: "248px", overflowY: "auto" }} data-testid="panel-event-log">
-                {displayEvents.length === 0 ? (
-                  <p className="text-xs font-mono text-center py-4" style={{ color: "#CBD5E1" }}>[awaiting signal...]</p>
-                ) : (
-                  displayEvents.map((evt, idx) => {
-                    const time = new Date(evt.receivedAt).toLocaleTimeString("en-US", {
-                      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-                    });
-                    const severity = evt.payload.severity || "info";
-                    const icon = severity === "error" ? "\u26D4" : severity === "warn" ? "\u26A0" : severity === "success" ? "\u2713" : "\u25B6";
-                    const iconColor = severity === "error" ? ERROR_RED : severity === "warn" ? "#F59E0B" : severity === "success" ? EMERALD : "#94A3B8";
-                    const titleColor = severity === "error" ? ERROR_RED : "#0F172A";
-                    const title = evt.payload.human_title || evt.type;
-                    const message = evt.payload.human_message || evt.payload.step || evt.payload.trigger || "";
-                    return (
-                      <div
-                        key={`${evt.receivedAt}-${idx}`}
-                        className="flex items-start gap-2 py-1.5"
-                        style={{ borderBottom: "1px solid #F1F5F9" }}
-                        data-testid={`event-row-${idx}`}
-                      >
-                        <span className="text-xs flex-shrink-0 mt-0.5" style={{ color: iconColor, width: "14px", textAlign: "center" }}>{icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold truncate" style={{ color: titleColor }} data-testid={`event-title-${idx}`}>{title}</span>
-                            <span className="text-xs font-mono flex-shrink-0" style={{ color: "#94A3B8" }}>{time}</span>
-                          </div>
-                          <p className="text-xs font-mono truncate mt-0.5" style={{ color: "#64748B" }} data-testid={`event-message-${idx}`}>{message}</p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {((dmAuthorityData?.title_rankings && dmAuthorityData.title_rankings.length > 0) ||
-          (queryIntelData?.topQueries && queryIntelData.topQueries.length > 0) ||
-          queryIntelData?.winPatterns ||
-          authorityMissData?.hasData ||
-          weightedSignals?.hasData) && (
-          <div className="mt-6">
-            <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-              Intelligence
-            </p>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {dmAuthorityData?.title_rankings && dmAuthorityData.title_rankings.length > 0 && (
-                <div
-                  className="rounded-2xl p-4"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E2E8F0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  }}
-                  data-testid="card-dm-authority"
-                >
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
+                <div className="rounded-xl p-5 h-full" style={{ background: "white", border: `1px solid ${BORDER}` }}>
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-                      DM Authority
-                    </p>
-                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
-                      {dmAuthorityData.total_contacts_analyzed} contacts
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-4 h-4" style={{ color: PURPLE }} />
+                      <span className="text-sm font-bold" style={{ color: TEXT }}>Activity Momentum</span>
+                    </div>
+                    {(cmd?.activity.streak || 0) > 0 && (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: `${AMBER}12` }} data-testid="streak-badge">
+                        <Flame className="w-3 h-3" style={{ color: AMBER }} />
+                        <span className="text-[10px] font-bold" style={{ color: AMBER }}>{cmd?.activity.streak} day streak</span>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    {dmAuthorityData.title_rankings.slice(0, 5).map((t, i) => {
-                      const convRate = t.total_contacts > 0 ? Math.round((t.converted / t.total_contacts) * 100) : 0;
-                      const barWidth = Math.max(8, Math.round(t.authority_score));
-                      return (
-                        <div key={t.title} data-testid={`dm-authority-row-${i}`}>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-xs font-semibold truncate" style={{ color: "#0F172A", maxWidth: "60%" }}>
-                              {t.title}
-                            </span>
-                            <span className="text-xs font-mono" style={{ color: "#64748B" }}>
-                              {convRate}% conv · {t.total_contacts} calls
-                            </span>
-                          </div>
-                          <div className="w-full rounded-full" style={{ height: "4px", background: "#F1F5F9" }}>
-                            <div
-                              className="rounded-full"
-                              style={{
-                                height: "4px",
-                                width: `${barWidth}%`,
-                                background: i === 0 ? "#10B981" : i <= 2 ? "#059669" : "#94A3B8",
-                                transition: "width 0.5s ease",
-                              }}
-                            />
-                          </div>
+                    {[
+                      { label: "Calls Made", value: cmd?.activity.callsMade || 0, icon: Phone, color: BLUE },
+                      { label: "Emails Sent", value: cmd?.activity.emailsSent || 0, icon: Mail, color: PURPLE },
+                      { label: "Leads Found", value: cmd?.activity.leadsFound || 0, icon: Search, color: EMERALD },
+                      { label: "Conversations", value: cmd?.activity.conversationsStarted || 0, icon: MessageSquare, color: AMBER },
+                      { label: "Meetings Booked", value: cmd?.activity.meetingsBooked || 0, icon: Calendar, color: "#059669" },
+                    ].map((m) => (
+                      <div key={m.label} className="flex items-center justify-between py-1.5" data-testid={`activity-${m.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                        <div className="flex items-center gap-2">
+                          <m.icon className="w-3.5 h-3.5" style={{ color: m.color }} />
+                          <span className="text-xs font-medium" style={{ color: TEXT }}>{m.label}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {queryIntelData?.topQueries && queryIntelData.topQueries.length > 0 && (
-                <div
-                  className="rounded-2xl p-4"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E2E8F0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  }}
-                  data-testid="card-query-performance"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-                      Top Queries
-                    </p>
-                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
-                      {queryIntelData.totalActive} active · {queryIntelData.totalRetired} retired
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {queryIntelData.topQueries.slice(0, 5).map((q, i) => (
-                      <div key={i} className="flex items-start gap-2" data-testid={`query-row-${i}`}>
-                        <span className="text-xs font-mono flex-shrink-0 mt-0.5" style={{ color: q.wins > 0 ? "#10B981" : "#94A3B8" }}>
-                          {q.wins > 0 ? "★" : "○"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold truncate" style={{ color: "#0F172A" }}>{q.query}</p>
-                          <p className="text-xs font-mono" style={{ color: "#64748B" }}>
-                            {q.wins}W / {q.runs}R · Score: {q.performanceScore}
-                          </p>
-                        </div>
+                        <span className="text-sm font-bold" style={{ color: m.value > 0 ? m.color : MUTED }}>{m.value}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-2 pt-2" style={{ borderTop: "1px solid #F1F5F9" }}>
-                    <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>
-                      Mode: <span style={{ color: queryIntelData.generationMode === "WinPattern" ? "#10B981" : "#64748B" }}>{queryIntelData.generationMode}</span>
-                    </p>
-                  </div>
                 </div>
-              )}
-
-              {authorityMissData?.hasData && (
-                <div
-                  className="rounded-2xl p-4"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E2E8F0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  }}
-                  data-testid="card-authority-miss"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-                      Authority Miss Rate
-                    </p>
-                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
-                      {authorityMissData.totalContacted} contacted
-                    </span>
-                  </div>
-                  <div className="flex items-end gap-3">
-                    <span
-                      className="text-3xl font-bold font-mono"
-                      style={{ color: authorityMissData.missRate > 20 ? "#EF4444" : authorityMissData.missRate > 10 ? "#F59E0B" : "#10B981" }}
-                      data-testid="text-authority-miss-rate"
-                    >
-                      {authorityMissData.missRate}%
-                    </span>
-                    <span className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>
-                      {authorityMissData.missCount} wrong person{authorityMissData.missCount !== 1 ? "s" : ""}
-                    </span>
-                  </div>
-                  <div className="w-full rounded-full mt-2" style={{ height: "4px", background: "#F1F5F9" }}>
-                    <div
-                      className="rounded-full"
-                      style={{
-                        height: "4px",
-                        width: `${Math.min(100, authorityMissData.missRate)}%`,
-                        background: authorityMissData.missRate > 20 ? "#EF4444" : authorityMissData.missRate > 10 ? "#F59E0B" : "#10B981",
-                        transition: "width 0.5s ease",
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs font-mono mt-2" style={{ color: "#94A3B8" }}>
-                    {authorityMissData.missRate > 20
-                      ? "High miss rate — DM targeting needs improvement"
-                      : authorityMissData.missRate > 10
-                      ? "Moderate — machine is learning correct targets"
-                      : "Low — DM targeting is accurate"}
-                  </p>
-                </div>
-              )}
-
-              {weightedSignals?.hasData && (
-                <div
-                  className="rounded-2xl p-4"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E2E8F0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  }}
-                  data-testid="card-weighted-signals"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-                      Signal Recency
-                    </p>
-                    <span className="text-xs font-mono" style={{ color: "#CBD5E1" }}>
-                      {weightedSignals.totalSignals} signals
-                    </span>
-                  </div>
-                  <div className="flex items-end gap-3 mb-3">
-                    <span
-                      className="text-3xl font-bold font-mono"
-                      style={{ color: "#10B981" }}
-                      data-testid="text-recent-weight-pct"
-                    >
-                      {weightedSignals.recentWeightPct}%
-                    </span>
-                    <span className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>
-                      recent influence
-                    </span>
-                  </div>
-                  <div className="w-full rounded-full flex overflow-hidden" style={{ height: "8px" }}>
-                    <div
-                      className="rounded-l-full"
-                      style={{
-                        width: `${weightedSignals.recentWeightPct}%`,
-                        background: "#10B981",
-                        transition: "width 0.5s ease",
-                      }}
-                    />
-                    <div
-                      className="rounded-r-full"
-                      style={{
-                        width: `${weightedSignals.historicalWeightPct}%`,
-                        background: "#94A3B8",
-                        transition: "width 0.5s ease",
-                      }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-2">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ background: "#10B981" }} />
-                      <span className="text-xs font-mono" style={{ color: "#64748B" }} data-testid="text-recent-signals-count">
-                        {weightedSignals.recentSignals} recent
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ background: "#94A3B8" }} />
-                      <span className="text-xs font-mono" style={{ color: "#64748B" }} data-testid="text-historical-signals-count">
-                        {weightedSignals.historicalSignals} historical
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-xs font-mono mt-2" style={{ color: "#94A3B8" }}>
-                    {weightedSignals.recentWeightPct >= 70
-                      ? "Strong recent signal base — learning is fresh"
-                      : weightedSignals.recentWeightPct >= 40
-                      ? "Balanced signal mix — good learning stability"
-                      : "Heavy historical influence — need fresh engagement data"}
-                  </p>
-                  <p className="text-xs font-mono mt-1" style={{ color: "#CBD5E1" }}>
-                    Decay window: {weightedSignals.decayConstant} days
-                  </p>
-                </div>
-              )}
-
-              {queryIntelData?.winPatterns && (
-                <div
-                  className="rounded-2xl p-4"
-                  style={{
-                    background: "#FFFFFF",
-                    border: "1px solid #E2E8F0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  }}
-                  data-testid="card-win-patterns"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-mono tracking-widest uppercase" style={{ color: "#94A3B8" }}>
-                      Win Patterns
-                    </p>
-                    <span className="text-xs font-mono" style={{ color: "#10B981" }}>
-                      {queryIntelData.winPatterns.closedWins} closed · {queryIntelData.winPatterns.pipelineWins} pipeline
-                    </span>
-                  </div>
-                  {queryIntelData.winPatterns.topCategories.length > 0 && (
-                    <div className="mb-2">
-                      <p className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>Top Categories</p>
-                      <div className="flex flex-wrap gap-1">
-                        {queryIntelData.winPatterns.topCategories.slice(0, 4).map((c) => (
-                          <span
-                            key={c.category}
-                            className="text-xs font-mono px-2 py-0.5 rounded-full"
-                            style={{ background: "#F0FDF4", color: "#059669", border: "1px solid #BBF7D0" }}
-                            data-testid={`win-category-${c.category}`}
-                          >
-                            {c.category} ({c.winRate}%)
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {queryIntelData.winPatterns.topCities.length > 0 && (
-                    <div className="mb-2">
-                      <p className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>Top Cities</p>
-                      <div className="flex flex-wrap gap-1">
-                        {queryIntelData.winPatterns.topCities.slice(0, 4).map((c) => (
-                          <span
-                            key={c.city}
-                            className="text-xs font-mono px-2 py-0.5 rounded-full"
-                            style={{ background: "#F8FAFC", color: "#64748B", border: "1px solid #E2E8F0" }}
-                            data-testid={`win-city-${c.city}`}
-                          >
-                            {c.city} ({c.count})
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {queryIntelData.winPatterns.commonKeywords.length > 0 && (
-                    <div>
-                      <p className="text-xs font-mono mb-1" style={{ color: "#64748B" }}>Keywords</p>
-                      <p className="text-xs font-mono" style={{ color: "#94A3B8" }}>
-                        {queryIntelData.winPatterns.commonKeywords.slice(0, 6).join(" · ")}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
+              </motion.div>
             </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <motion.div className="lg:col-span-2" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
+                <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Brain className="w-4 h-4" style={{ color: PURPLE }} />
+                    <span className="text-sm font-bold" style={{ color: TEXT }}>AI Recommendations</span>
+                  </div>
+                  {(cmd?.aiRecommendations || []).length === 0 ? (
+                    <div className="text-center py-6">
+                      <CheckCircle2 className="w-8 h-8 mx-auto mb-2" style={{ color: EMERALD }} />
+                      <p className="text-sm font-medium" style={{ color: TEXT }}>All caught up</p>
+                      <p className="text-xs" style={{ color: MUTED }}>No urgent recommendations right now</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {cmd?.aiRecommendations.map((rec, i) => (
+                        <button
+                          key={i}
+                          onClick={() => navigate(rec.route)}
+                          className="w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all hover:shadow-sm"
+                          style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}
+                          data-testid={`ai-rec-${i}`}
+                        >
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{
+                            background: rec.type === "urgent" ? `${ERROR}12` : rec.type === "hot_lead" ? `${AMBER}12` : `${BLUE}12`,
+                          }}>
+                            {rec.type === "urgent" ? <AlertTriangle className="w-3.5 h-3.5" style={{ color: ERROR }} /> :
+                             rec.type === "hot_lead" ? <Flame className="w-3.5 h-3.5" style={{ color: AMBER }} /> :
+                             <Zap className="w-3.5 h-3.5" style={{ color: BLUE }} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold" style={{ color: TEXT }}>{rec.title}</div>
+                            <div className="text-[11px] mt-0.5" style={{ color: MUTED }}>{rec.description}</div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0 mt-1">
+                            <span className="text-[10px] font-semibold" style={{ color: EMERALD }}>{rec.action}</span>
+                            <ArrowRight className="w-3 h-3" style={{ color: EMERALD }} />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
+                <div className="rounded-xl p-5 h-full" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4" style={{ color: AMBER }} />
+                    <span className="text-sm font-bold" style={{ color: TEXT }}>Hot Leads</span>
+                  </div>
+                  {(cmd?.hotLeadsList || []).length === 0 ? (
+                    <div className="text-center py-6">
+                      <Search className="w-6 h-6 mx-auto mb-2" style={{ color: MUTED }} />
+                      <p className="text-xs" style={{ color: MUTED }}>No hot leads yet. Keep calling.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {cmd?.hotLeadsList.slice(0, 6).map((lead, i) => (
+                        <button
+                          key={i}
+                          onClick={() => navigate(`/machine/company/${lead.companyId}`)}
+                          className="w-full flex items-center gap-2 p-2 rounded-lg text-left transition-all hover:shadow-sm"
+                          style={{ background: SUBTLE }}
+                          data-testid={`hot-lead-${i}`}
+                        >
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${AMBER}15` }}>
+                            <Building2 className="w-3 h-3" style={{ color: AMBER }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium truncate" style={{ color: TEXT }}>{lead.companyName}</div>
+                            <div className="text-[10px]" style={{ color: EMERALD }}>{OUTCOME_LABELS[lead.lastOutcome] || lead.lastOutcome}</div>
+                          </div>
+                          <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: MUTED }} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <motion.div className="lg:col-span-2" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.25 }}>
+                <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Clock className="w-4 h-4" style={{ color: MUTED }} />
+                    <span className="text-sm font-bold" style={{ color: TEXT }}>Recent Activity</span>
+                  </div>
+                  {(cmd?.recentActivity || []).length === 0 ? (
+                    <div className="text-center py-6">
+                      <Activity className="w-6 h-6 mx-auto mb-2" style={{ color: MUTED }} />
+                      <p className="text-xs" style={{ color: MUTED }}>No activity yet today</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {cmd?.recentActivity.map((act, i) => (
+                        <div key={i} className="flex items-center gap-3 py-2 px-2 rounded-lg" style={{ background: i % 2 === 0 ? SUBTLE : "transparent" }} data-testid={`recent-activity-${i}`}>
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{
+                            background: act.channel === "phone" ? `${BLUE}12` : act.channel === "email" ? `${PURPLE}12` : `${EMERALD}12`,
+                          }}>
+                            {act.channel === "phone" ? <Phone className="w-3 h-3" style={{ color: BLUE }} /> :
+                             act.channel === "email" ? <Mail className="w-3 h-3" style={{ color: PURPLE }} /> :
+                             <MessageSquare className="w-3 h-3" style={{ color: EMERALD }} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-medium" style={{ color: TEXT }}>{act.companyName}</span>
+                          </div>
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0" style={{
+                            background: ["interested", "meeting_requested", "replied", "live_answer"].includes(act.outcome) ? `${EMERALD}12` : `${MUTED}12`,
+                            color: ["interested", "meeting_requested", "replied", "live_answer"].includes(act.outcome) ? EMERALD : MUTED,
+                          }}>{OUTCOME_LABELS[act.outcome] || act.outcome}</span>
+                          <span className="text-[10px] flex-shrink-0" style={{ color: MUTED }}>
+                            {new Date(act.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.3 }}>
+                <div className="rounded-xl p-5 h-full" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-4 h-4" style={{ color: EMERALD }} />
+                    <span className="text-sm font-bold" style={{ color: TEXT }}>Automation Health</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-xs font-medium" style={{ color: TEXT }}>Engine Status</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{
+                          background: connectionStatus === "connected" ? EMERALD : connectionStatus === "reconnecting" ? AMBER : ERROR,
+                        }} />
+                        <span className="text-xs font-semibold" style={{
+                          color: connectionStatus === "connected" ? EMERALD : connectionStatus === "reconnecting" ? AMBER : ERROR,
+                        }} data-testid="text-engine-status">
+                          {runStatus === "running" ? "Running" : connectionStatus === "connected" ? "Online" : "Offline"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-xs font-medium" style={{ color: TEXT }}>Untouched Leads</span>
+                      <span className="text-sm font-bold" style={{ color: BLUE }} data-testid="stat-untouched-leads">{stats?.fresh_pool_count ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-xs font-medium" style={{ color: TEXT }}>Outreach Scripts</span>
+                      <span className="text-sm font-bold" style={{ color: PURPLE }} data-testid="stat-outreach-scripts">{stats?.playbooks_ready_count ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-xs font-medium" style={{ color: TEXT }}>Today's List</span>
+                      <span className="text-sm font-bold" style={{ color: EMERALD }} data-testid="stat-today-list">{stats?.today_list_count ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-xs font-medium" style={{ color: TEXT }}>DMs Resolved</span>
+                      <span className="text-sm font-bold" style={{ color: AMBER }} data-testid="stat-dms-resolved">{stats?.dm_resolved_count ?? "—"}</span>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                    <Button
+                      onClick={handleRunNow}
+                      disabled={runStatus === "running" || runLoading}
+                      className="w-full h-9 text-xs font-semibold gap-1.5"
+                      style={{ background: runStatus === "running" ? MUTED : EMERALD, color: "white" }}
+                      data-testid="button-run-engine"
+                    >
+                      {runLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                      {runStatus === "running" ? "Engine Running..." : "Run Lead Engine"}
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.35 }}>
+              <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="w-4 h-4" style={{ color: EMERALD }} />
+                  <span className="text-sm font-bold" style={{ color: TEXT }}>Quick Actions</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: "Start Focus Mode", route: "/machine/focus", icon: Target, color: EMERALD },
+                    { label: "View Follow-ups", route: "/machine/followups", icon: Calendar, color: AMBER },
+                    { label: "Review Leads", route: "/machine/pipeline", icon: Users, color: BLUE },
+                    { label: "Add Company", route: "/machine/my-leads", icon: UserPlus, color: PURPLE },
+                    ...(meData?.client?.client_name === "Texas Cool Down Trailers"
+                      ? [{ label: "View LNG Projects", route: "/machine/lng-projects", icon: Briefcase, color: AMBER }]
+                      : []),
+                  ].map((qa) => (
+                    <button
+                      key={qa.route}
+                      onClick={() => navigate(qa.route)}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all hover:shadow-sm"
+                      style={{ background: `${qa.color}08`, border: `1px solid ${qa.color}20`, color: qa.color }}
+                      data-testid={`quick-${qa.label.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      <qa.icon className="w-3.5 h-3.5" />
+                      {qa.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
           </div>
         )}
-
-        <div className="mt-6">
-          <p className="text-xs font-mono tracking-widest uppercase mb-3" style={{ color: "#94A3B8" }}>
-            Run Timeline
-          </p>
-          <StepTimeline activeNodes={activeNodes} doneSteps={doneSteps} runStatus={runStatus} />
-        </div>
       </div>
     </AppLayout>
   );
