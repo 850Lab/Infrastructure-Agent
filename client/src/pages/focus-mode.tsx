@@ -310,6 +310,296 @@ function LiveCoachPanel({ callSid, token }: { callSid: string; token: string }) 
 }
 
 
+interface ExplanationProps {
+  data: {
+    outcomeLabel: string;
+    systemAction: string;
+    whyChosen: string;
+    stateChanges: string[];
+    flowLabel: string;
+    nextAction: string;
+    nextDueAt: string;
+    companyName: string;
+    companyId: string;
+    callSid: string | null;
+    callDurationSec: number | null;
+  };
+  onContinue: () => void;
+  onViewCompany: () => void;
+}
+
+function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps) {
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showDecisionDetail, setShowDecisionDetail] = useState(false);
+
+  const { data: recording } = useQuery<any>({
+    queryKey: [`/api/twilio/recording-by-callsid/${data.callSid}`],
+    enabled: !!data.callSid,
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d) return 5000;
+      if (d.processedAt) return false;
+      if (d.status === "error" || d.status === "download_failed") return false;
+      return 5000;
+    },
+  });
+
+  const dueDateStr = data.nextDueAt
+    ? new Date(data.nextDueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : "Pending";
+
+  const callDurStr = data.callDurationSec != null
+    ? `${Math.floor(data.callDurationSec / 60)}:${String(data.callDurationSec % 60).padStart(2, "0")}`
+    : recording?.duration
+      ? `${Math.floor(recording.duration / 60)}:${String(recording.duration % 60).padStart(2, "0")}`
+      : null;
+
+  const hasRecording = !!data.callSid;
+  const isProcessing = hasRecording && recording && !recording.processedAt && recording.status !== "error" && recording.status !== "download_failed";
+  const hasFailed = hasRecording && recording && (recording.status === "error" || recording.status === "download_failed");
+  const hasTranscript = recording?.transcription && recording.transcription.length > 0;
+  const hasAnalysis = recording?.analysis && recording.analysis.length > 0;
+
+  return (
+    <div className="min-h-screen" style={{ background: "#F8FAFC" }}>
+      <div className="sticky top-0 z-50 bg-white" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <div className="max-w-3xl mx-auto px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Brain className="w-4 h-4" style={{ color: EMERALD }} />
+            <span className="text-sm font-semibold" style={{ color: TEXT }}>Call Summary</span>
+          </div>
+          <span className="text-xs font-medium" style={{ color: TEXT }}>{data.companyName}</span>
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-3">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
+                  <Check className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+                </div>
+                <div>
+                  <div className="text-base font-bold" style={{ color: TEXT }} data-testid="text-outcome-recorded">
+                    {data.outcomeLabel}
+                  </div>
+                  <div className="text-[11px]" style={{ color: MUTED }}>{data.flowLabel}</div>
+                </div>
+              </div>
+              {callDurStr && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: `${BLUE}08`, border: `1px solid ${BLUE}15` }}>
+                  <Phone className="w-3 h-3" style={{ color: BLUE }} />
+                  <span className="text-xs font-semibold" style={{ color: BLUE }}>{callDurStr}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg p-2.5" style={{ background: `${BLUE}05`, border: `1px solid ${BLUE}10` }}>
+                <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: BLUE }}>System Action</div>
+                <div className="text-xs font-medium" style={{ color: TEXT }} data-testid="text-system-action">{data.systemAction}</div>
+              </div>
+              <div className="rounded-lg p-2.5" style={{ background: `${EMERALD}05`, border: `1px solid ${EMERALD}10` }}>
+                <div className="text-[9px] font-bold uppercase tracking-wider mb-0.5" style={{ color: EMERALD }}>Next Action</div>
+                <div className="text-xs font-medium" style={{ color: TEXT }} data-testid="text-next-action">{data.nextAction}</div>
+                <div className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: MUTED }}>
+                  <Clock className="w-2.5 h-2.5" />
+                  {dueDateStr}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {hasRecording && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
+            <div className="rounded-xl overflow-hidden" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${PURPLE}15` }}>
+                    <Mic className="w-3 h-3" style={{ color: PURPLE }} />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Call Recording</span>
+                  {isProcessing && (
+                    <span className="ml-auto flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${AMBER}10`, color: AMBER }}>
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      Processing
+                    </span>
+                  )}
+                  {recording?.processedAt && (
+                    <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${EMERALD}10`, color: EMERALD }}>
+                      Analyzed
+                    </span>
+                  )}
+                </div>
+
+                {recording?.problemDetected && (
+                  <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg" style={{ background: `${ERROR}06`, border: `1px solid ${ERROR}15` }}>
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: ERROR }} />
+                    <span className="text-xs font-medium" style={{ color: ERROR }}>{recording.problemDetected}</span>
+                  </div>
+                )}
+
+                {recording?.noAuthority && (
+                  <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg" style={{ background: `${AMBER}06`, border: `1px solid ${AMBER}15` }}>
+                    <Shield className="w-3.5 h-3.5 flex-shrink-0" style={{ color: AMBER }} />
+                    <span className="text-xs font-medium" style={{ color: AMBER }}>
+                      No Authority{recording.authorityReason ? ` - ${recording.authorityReason}` : ""}
+                    </span>
+                  </div>
+                )}
+
+                {recording?.suggestedRole && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${PURPLE}10`, color: PURPLE }}>
+                      Suggested Role: {recording.suggestedRole}
+                    </span>
+                    {recording?.followupDate && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${EMERALD}10`, color: EMERALD }}>
+                        Follow-up: {new Date(recording.followupDate).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {hasAnalysis && (
+                  <div className="mb-2">
+                    <button
+                      onClick={() => setShowAnalysis(!showAnalysis)}
+                      className="w-full flex items-center justify-between py-1.5 text-left"
+                      data-testid="toggle-analysis"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Brain className="w-3 h-3" style={{ color: BLUE }} />
+                        <span className="text-xs font-semibold" style={{ color: BLUE }}>AI Analysis</span>
+                      </div>
+                      {showAnalysis ? <ChevronUp className="w-3.5 h-3.5" style={{ color: MUTED }} /> : <ChevronDown className="w-3.5 h-3.5" style={{ color: MUTED }} />}
+                    </button>
+                    {showAnalysis && (
+                      <div className="text-xs leading-relaxed mt-1 p-2.5 rounded-lg" style={{ color: TEXT, background: `${BLUE}04` }}>
+                        {recording.analysis}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {hasTranscript && (
+                  <div>
+                    <button
+                      onClick={() => setShowTranscript(!showTranscript)}
+                      className="w-full flex items-center justify-between py-1.5 text-left"
+                      data-testid="toggle-transcript"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="w-3 h-3" style={{ color: MUTED }} />
+                        <span className="text-xs font-semibold" style={{ color: TEXT }}>Transcript</span>
+                      </div>
+                      {showTranscript ? <ChevronUp className="w-3.5 h-3.5" style={{ color: MUTED }} /> : <ChevronDown className="w-3.5 h-3.5" style={{ color: MUTED }} />}
+                    </button>
+                    {showTranscript && (
+                      <div className="text-xs leading-relaxed mt-1 p-2.5 rounded-lg max-h-48 overflow-y-auto" style={{ color: TEXT, background: SUBTLE, whiteSpace: "pre-wrap" }}>
+                        {recording.transcription}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isProcessing && !hasAnalysis && !hasTranscript && (
+                  <div className="flex items-center gap-2 py-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: MUTED }} />
+                    <span className="text-xs" style={{ color: MUTED }}>Recording is being transcribed and analyzed...</span>
+                  </div>
+                )}
+
+                {hasFailed && !hasAnalysis && !hasTranscript && (
+                  <div className="flex items-center gap-2 py-2">
+                    <AlertCircle className="w-3.5 h-3.5" style={{ color: ERROR }} />
+                    <span className="text-xs" style={{ color: ERROR }}>Recording processing failed. Check company detail for updates.</span>
+                  </div>
+                )}
+
+                {hasRecording && !recording && (
+                  <div className="flex items-center gap-2 py-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: MUTED }} />
+                    <span className="text-xs" style={{ color: MUTED }}>Waiting for recording...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: hasRecording ? 0.3 : 0.15 }}>
+          <button
+            onClick={() => setShowDecisionDetail(!showDecisionDetail)}
+            className="w-full rounded-xl p-3 flex items-center justify-between text-left"
+            style={{ background: "white", border: `1px solid ${BORDER}` }}
+            data-testid="toggle-decision-detail"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: `${AMBER}15` }}>
+                <Brain className="w-2.5 h-2.5" style={{ color: AMBER }} />
+              </div>
+              <span className="text-xs font-semibold" style={{ color: TEXT }}>Machine Decision Details</span>
+            </div>
+            {showDecisionDetail ? <ChevronUp className="w-4 h-4" style={{ color: MUTED }} /> : <ChevronDown className="w-4 h-4" style={{ color: MUTED }} />}
+          </button>
+          {showDecisionDetail && (
+            <div className="mt-1 rounded-xl p-4 space-y-3" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: AMBER }}>Why This Action Was Chosen</div>
+                <div className="text-xs" style={{ color: TEXT }} data-testid="text-why-chosen">{data.whyChosen}</div>
+              </div>
+              {data.stateChanges.length > 0 && (
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: PURPLE }}>State Changes</div>
+                  <div className="space-y-1">
+                    {data.stateChanges.map((change, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs" style={{ color: TEXT }}>
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: EMERALD }} />
+                        {change}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: hasRecording ? 0.4 : 0.25 }}
+          className="flex gap-2 pt-1"
+        >
+          <Button
+            onClick={onContinue}
+            className="flex-1 h-10 text-sm font-semibold"
+            style={{ background: EMERALD, color: "white" }}
+            data-testid="button-continue-next"
+          >
+            Continue to Next
+            <ChevronRight className="w-4 h-4 ml-1" />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onViewCompany}
+            className="h-10 text-sm font-semibold"
+            style={{ borderColor: BORDER, color: BLUE }}
+            data-testid="button-open-detail"
+          >
+            Company Detail
+          </Button>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function FocusModePage() {
   const { toast } = useToast();
   const { getToken } = useAuth();
@@ -558,6 +848,8 @@ export default function FocusModePage() {
       resetCallState();
 
       if (data.explanation) {
+        const savedCallSid = callSid;
+        const savedDuration = callDuration;
         setExplanationData({
           outcomeLabel: data.explanation.outcomeLabel,
           systemAction: data.explanation.systemAction,
@@ -568,6 +860,8 @@ export default function FocusModePage() {
           nextDueAt: data.nextDueAt,
           companyName: vars.companyName,
           companyId: vars.companyId,
+          callSid: savedCallSid,
+          callDurationSec: savedDuration,
         });
       }
 
@@ -594,6 +888,8 @@ export default function FocusModePage() {
     nextDueAt: string;
     companyName: string;
     companyId: string;
+    callSid: string | null;
+    callDurationSec: number | null;
   } | null>(null);
 
   const GK_CAPTURE_OUTCOMES = ["gave_dm_name", "gave_title_only", "gave_direct_extension", "gave_email"];
@@ -710,133 +1006,7 @@ export default function FocusModePage() {
   }
 
   if (explanationData) {
-    const dueDateStr = explanationData.nextDueAt
-      ? new Date(explanationData.nextDueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-      : "Pending";
-
-    return (
-      <div className="min-h-screen" style={{ background: "#F8FAFC" }}>
-        <div className="sticky top-0 z-50 bg-white" style={{ borderBottom: `1px solid ${BORDER}` }}>
-          <div className="max-w-3xl mx-auto px-4 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4" style={{ color: EMERALD }} />
-              <span className="text-sm font-semibold" style={{ color: TEXT }}>Machine Decision</span>
-            </div>
-            <span className="text-xs" style={{ color: MUTED }}>{explanationData.companyName}</span>
-          </div>
-        </div>
-
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-            <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
-                  <Check className="w-3 h-3" style={{ color: EMERALD }} />
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Outcome Recorded</span>
-              </div>
-              <div className="text-lg font-bold" style={{ color: TEXT }} data-testid="text-outcome-recorded">
-                {explanationData.outcomeLabel}
-              </div>
-              <div className="text-xs mt-1" style={{ color: MUTED }}>{explanationData.flowLabel}</div>
-            </div>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
-            <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${BLUE}15` }}>
-                  <Activity className="w-3 h-3" style={{ color: BLUE }} />
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>System Action Taken</span>
-              </div>
-              <div className="text-sm font-semibold" style={{ color: TEXT }} data-testid="text-system-action">
-                {explanationData.systemAction}
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
-            <div className="rounded-xl p-5" style={{ background: `${EMERALD}04`, border: `1px solid ${EMERALD}20` }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
-                  <Target className="w-3 h-3" style={{ color: EMERALD }} />
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Next Best Action</span>
-              </div>
-              <div className="text-sm font-semibold" style={{ color: TEXT }} data-testid="text-next-action">
-                {explanationData.nextAction}
-              </div>
-              <div className="text-xs mt-1.5 flex items-center gap-1" style={{ color: MUTED }}>
-                <Clock className="w-3 h-3" />
-                Due: {dueDateStr}
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.3 }}>
-            <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${AMBER}15` }}>
-                  <Brain className="w-3 h-3" style={{ color: AMBER }} />
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Why This Action Was Chosen</span>
-              </div>
-              <div className="text-sm" style={{ color: TEXT }} data-testid="text-why-chosen">
-                {explanationData.whyChosen}
-              </div>
-            </div>
-          </motion.div>
-
-          {explanationData.stateChanges.length > 0 && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.4 }}>
-              <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${PURPLE}15` }}>
-                    <FileText className="w-3 h-3" style={{ color: PURPLE }} />
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>System State Changes</span>
-                </div>
-                <div className="space-y-1.5">
-                  {explanationData.stateChanges.map((change, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs" style={{ color: TEXT }}>
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: EMERALD }} />
-                      {change}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.5 }}
-            className="flex gap-2 pt-2"
-          >
-            <Button
-              onClick={() => { setExplanationData(null); }}
-              className="flex-1 h-10 text-sm font-semibold"
-              style={{ background: EMERALD, color: "white" }}
-              data-testid="button-continue-next"
-            >
-              Continue to Next
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => { const compId = explanationData.companyId; setExplanationData(null); if (compId) navigate(`/machine/company/${compId}`); }}
-              className="h-10 text-sm font-semibold"
-              style={{ borderColor: BORDER, color: BLUE }}
-              data-testid="button-open-detail"
-            >
-              Company Detail
-            </Button>
-          </motion.div>
-        </div>
-      </div>
-    );
+    return <ExplanationScreen data={explanationData} onContinue={() => setExplanationData(null)} onViewCompany={() => { const compId = explanationData.companyId; setExplanationData(null); if (compId) navigate(`/machine/company/${compId}`); }} />;
   }
 
   const flowConfig = FLOW_CONFIG[currentAction.flowType] || FLOW_CONFIG.gatekeeper;

@@ -525,6 +525,47 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     }
   });
 
+  app.get("/api/twilio/recording-by-callsid/:callSid", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { callSid } = req.params;
+      if (!callSid) return res.json(null);
+      const clientId = (req as any).user?.clientId;
+
+      const [recording] = await db.select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.callSid, callSid))
+        .orderBy(desc(twilioRecordings.createdAt))
+        .limit(1);
+
+      if (!recording) return res.json(null);
+      if (clientId && recording.clientId && recording.clientId !== clientId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      res.json({
+        id: recording.id,
+        callSid: recording.callSid,
+        recordingSid: recording.recordingSid,
+        duration: recording.duration,
+        transcription: recording.transcription,
+        analysis: recording.analysis,
+        problemDetected: recording.problemDetected,
+        noAuthority: recording.noAuthority,
+        authorityReason: recording.authorityReason,
+        suggestedRole: recording.suggestedRole,
+        followupDate: recording.followupDate,
+        companyName: recording.companyName,
+        contactName: recording.contactName,
+        status: recording.status,
+        createdAt: recording.createdAt,
+        processedAt: recording.processedAt,
+      });
+    } catch (err: any) {
+      log(`Recording by callSid error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/twilio/call/:sid", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { sid } = req.params;
