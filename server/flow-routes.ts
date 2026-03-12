@@ -9,6 +9,7 @@ import {
   getFlowAttemptHistory,
   getActionQueueStats,
   seedFlowsFromTodayList,
+  checkDuplicateFlow,
   FLOW_TYPES,
   GK_OUTCOMES,
   DM_OUTCOMES,
@@ -115,7 +116,7 @@ export function registerFlowRoutes(app: Express) {
         touchCount: parseInt(String(f.Touch_Count || "0")) || 0,
       };
 
-      const companyNameClean = company.companyName.replace(/'/g, "\\'");
+      const companyNameClean = company.companyName.replace(/['"\\]/g, "");
       const dmRecords = await airtableFetchFiltered(
         "Decision_Makers",
         `SEARCH("${companyNameClean}", {company_name_text}&"")`,
@@ -145,14 +146,32 @@ export function registerFlowRoutes(app: Express) {
         if (match) match.isDM = true;
       }
 
+      const contactIdMap = new Map<string, string>();
+      for (const c of contacts) {
+        contactIdMap.set(c.name.toLowerCase(), c.id);
+      }
+
       const flows = await getCompanyFlows(clientId, companyId);
 
       const allAttempts: any[] = [];
+      const flowTypeMap = new Map<number, string>();
       for (const flow of flows) {
+        flowTypeMap.set(flow.id, flow.flowType);
         const attempts = await getFlowAttemptHistory(flow.id);
-        allAttempts.push(...attempts);
+        for (const a of attempts) {
+          allAttempts.push({
+            ...a,
+            flowType: flow.flowType,
+            contactAirtableId: a.contactName ? contactIdMap.get(a.contactName.toLowerCase()) || null : null,
+          });
+        }
       }
-      allAttempts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      allAttempts.sort((a, b) => {
+        const tA = new Date(a.createdAt).getTime();
+        const tB = new Date(b.createdAt).getTime();
+        if (tA !== tB) return tB - tA;
+        return b.id - a.id;
+      });
 
       const pendingActions = await db.select()
         .from(actionQueue)
@@ -242,6 +261,16 @@ export function registerFlowRoutes(app: Express) {
       const validTypes = Object.values(FLOW_TYPES);
       if (!validTypes.includes(flowType)) {
         return res.status(400).json({ error: `Invalid flowType. Must be one of: ${validTypes.join(", ")}` });
+      }
+
+      const dupCheck = await checkDuplicateFlow({ clientId, companyId, flowType, contactId });
+      if (dupCheck.isDuplicate) {
+        const existingFlow = await db.select().from(companyFlows).where(eq(companyFlows.id, dupCheck.existingFlowId!)).limit(1);
+        return res.json({
+          ...existingFlow[0],
+          _duplicate: true,
+          _message: `An active ${flowType} flow already exists for this company (flow #${dupCheck.existingFlowId}). Returning existing flow.`,
+        });
       }
 
       const flow = await createFlow({

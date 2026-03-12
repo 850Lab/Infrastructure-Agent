@@ -1,0 +1,114 @@
+Excellent. Continue.
+
+Phase 2 looks directionally correct, but before moving to Twilio I want the data integrity layer tightened.
+
+Priority now:
+1. Airtable write-back for flow-aware outcome logging
+2. Harden flow/state integrity
+3. Then Twilio integration
+
+==================================================
+PHASE 3 — AIRTABLE WRITE-BACK + STATE INTEGRITY
+==================================================
+
+I need the flow engine to sync meaningful outreach state back into Airtable so the external operating layer stays aligned with PostgreSQL.
+
+Do not start Twilio yet.
+
+Build this now.
+
+==================================================
+PART 1 — AIRTABLE WRITE-BACK
+==================================================
+
+When a flow attempt is logged in PostgreSQL, the system should also write back the relevant outcome/state into Airtable.
+
+At minimum, I need a clear mapping strategy for:
+- company-level outreach status
+- last touch date
+- last touch channel
+- last touch outcome
+- next action
+- next action due
+- gatekeeper status
+- DM status
+- email flow status
+- LinkedIn flow status
+- nurture status
+- decision maker identified yes/no
+
+If the current Airtable schema does not have the exact fields needed:
+- identify the closest existing fields
+- clearly label missing fields
+- use a safe fallback approach
+- do not silently discard key state
+
+I want outcome logging to keep Airtable operationally useful, not just PostgreSQL.
+
+==================================================
+PART 2 — FLOW / STATE INTEGRITY HARDENING
+==================================================
+
+I want you to tighten the logic so the machine behaves like a controlled state system, not just a flexible task generator.
+
+Implement and/or verify these rules:
+
+1. No duplicate active flows of the same type
+- Prevent accidental creation of duplicate active Gatekeeper, Email, LinkedIn, or Nurture flows at company level
+- Prevent duplicate DM flows for the same contact unless prior flow is closed/inactive or explicitly restarted
+
+2. Deterministic flow transitions
+Examples:
+- Gatekeeper gives DM name -> create/update contact -> activate DM flow
+- Gatekeeper gives email -> activate Email flow
+- DM voicemail left -> schedule DM retry
+- DM not relevant -> close DM flow and update company state
+- Max attempts reached -> deactivate active flow and move to next recommended path or nurture
+
+3. Stable contact linkage
+If any part of the current company/contact lookup is using company-name SEARCH() matching only, improve it where possible.
+Prefer stable Airtable record IDs or another more reliable link strategy if the current schema supports it.
+If not fully possible yet, explain the limitation clearly and implement the safest partial improvement.
+
+4. Timeline / attempt history integrity
+Ensure all timeline items:
+- sort consistently by timestamp
+- show correct flow type
+- show correct contact linkage
+- preserve captured intel
+- do not duplicate or misorder attempts
+
+5. Queue usefulness
+Improve queue sorting/grouping so queues are not just filtered task lists.
+At minimum:
+- overdue first
+- highest priority next
+- earliest due next
+- show enough context to act without guessing
+
+==================================================
+RESPONSE FORMAT
+==================================================
+
+Reply in this exact format after implementing:
+
+SECTION 1 — FILES CHANGED
+List every file changed.
+
+SECTION 2 — AIRTABLE WRITE-BACK IMPLEMENTED
+Explain exactly what now syncs from PostgreSQL/flow logging back to Airtable.
+
+SECTION 3 — STATE INTEGRITY IMPROVEMENTS
+Explain exactly what protections and rules were added.
+
+SECTION 4 — LIMITATIONS / SAFE FALLBACKS
+List anything that still cannot be perfectly synced or linked and how you handled it safely.
+
+SECTION 5 — TEST INSTRUCTIONS
+Tell me exactly how to test Airtable sync and verify state integrity.
+
+SECTION 6 — NEXT BUILD STEP
+Tell me the next recommended implementation step after this is verified.
+
+Do not stay in planning mode.
+Implement Airtable write-back and state integrity hardening now.

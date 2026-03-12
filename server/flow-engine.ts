@@ -1,6 +1,8 @@
 import { db } from "./db";
 import { companyFlows, flowAttempts, actionQueue } from "@shared/schema";
 import { eq, and, lte, asc, desc, sql, isNull } from "drizzle-orm";
+import { syncOutcomeToAirtable, syncCallToAirtable } from "./airtable-writeback";
+import { log } from "./logger";
 
 export const FLOW_TYPES = {
   GATEKEEPER: "gatekeeper",
@@ -439,13 +441,15 @@ export async function logFlowAttempt(params: {
 
   const callbackDate = params.callbackAt || computed.nextDueAt;
 
+  const finalStatus = computed.flowStatus;
+
   await db.update(companyFlows).set({
     attemptCount: newAttemptCount,
     lastOutcome: params.outcome,
     lastAttemptAt: new Date(),
     nextAction: computed.nextAction,
     nextDueAt: callbackDate,
-    status: computed.flowStatus,
+    status: finalStatus,
     priority: computed.priority,
     updatedAt: new Date(),
   }).where(eq(companyFlows.id, params.flowId));
@@ -460,7 +464,7 @@ export async function logFlowAttempt(params: {
     )
   );
 
-  if (computed.flowStatus === FLOW_STATUS.ACTIVE || computed.flowStatus === FLOW_STATUS.PAUSED) {
+  if (finalStatus === FLOW_STATUS.ACTIVE || finalStatus === FLOW_STATUS.PAUSED) {
     await db.insert(actionQueue).values({
       clientId: params.clientId,
       companyId: params.companyId,
@@ -482,6 +486,17 @@ export async function logFlowAttempt(params: {
     });
   }
 
+  const isTerminal = finalStatus === FLOW_STATUS.RECYCLED || finalStatus === FLOW_STATUS.COMPLETED || finalStatus === FLOW_STATUS.PAUSED;
+  const atMaxAttempts = newAttemptCount >= currentFlow.maxAttempts;
+  const alreadySpawning = computed.spawnFlows && computed.spawnFlows.length > 0;
+  const isNurtureFlow = currentFlow.flowType === FLOW_TYPES.NURTURE;
+
+  if (isTerminal && atMaxAttempts && !alreadySpawning && !isNurtureFlow) {
+    log(`Flow #${params.flowId} (${currentFlow.flowType}) reached max attempts (${newAttemptCount}/${currentFlow.maxAttempts}) — auto-spawning nurture for ${params.companyName}`, "flow-engine");
+    if (!computed.spawnFlows) (computed as any).spawnFlows = [];
+    computed.spawnFlows!.push({ flowType: FLOW_TYPES.NURTURE, reason: `${currentFlow.flowType} exhausted max attempts` });
+  }
+
   const spawnedFlows: number[] = [];
   if (computed.spawnFlows) {
     for (const sf of computed.spawnFlows) {
@@ -498,7 +513,59 @@ export async function logFlowAttempt(params: {
     }
   }
 
+  const isCallType = currentFlow.flowType === FLOW_TYPES.GATEKEEPER || currentFlow.flowType === FLOW_TYPES.DM_CALL;
+  syncOutcomeToAirtable({
+    companyId: params.companyId,
+    companyName: params.companyName,
+    flowType: currentFlow.flowType,
+    channel: params.channel,
+    outcome: params.outcome,
+    contactName: params.contactName,
+    contactId: params.contactId,
+    capturedInfo: params.capturedInfo,
+    nextAction: computed.nextAction,
+    nextDueAt: callbackDate,
+    flowStatus: computed.flowStatus,
+    isCallType,
+  }).catch(e => log(`Airtable write-back failed (non-blocking): ${e.message}`, "flow-engine"));
+
+  if (isCallType) {
+    syncCallToAirtable({
+      companyName: params.companyName,
+      phone: "",
+      callDate: new Date(),
+    }).catch(e => log(`Calls table sync failed (non-blocking): ${e.message}`, "flow-engine"));
+  }
+
   return { attempt, nextAction: computed.nextAction, nextDueAt: callbackDate, flowStatus: computed.flowStatus, spawnedFlows };
+}
+
+export async function checkDuplicateFlow(params: {
+  clientId: string;
+  companyId: string;
+  flowType: string;
+  contactId?: string;
+}): Promise<{ isDuplicate: boolean; existingFlowId?: number; existingStatus?: string }> {
+  const conditions = [
+    eq(companyFlows.clientId, params.clientId),
+    eq(companyFlows.companyId, params.companyId),
+    eq(companyFlows.flowType, params.flowType),
+    sql`${companyFlows.status} IN ('active', 'paused')`,
+  ];
+
+  if (params.flowType === FLOW_TYPES.DM_CALL && params.contactId) {
+    conditions.push(eq(companyFlows.contactId, params.contactId));
+  }
+
+  const existing = await db.select({ id: companyFlows.id, status: companyFlows.status })
+    .from(companyFlows)
+    .where(and(...conditions))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { isDuplicate: true, existingFlowId: existing[0].id, existingStatus: existing[0].status };
+  }
+  return { isDuplicate: false };
 }
 
 export async function createFlow(params: {
@@ -510,7 +577,23 @@ export async function createFlow(params: {
   flowType: string;
   notes?: string;
   priority?: number;
+  skipDuplicateCheck?: boolean;
 }) {
+  if (!params.skipDuplicateCheck) {
+    const dupCheck = await checkDuplicateFlow({
+      clientId: params.clientId,
+      companyId: params.companyId,
+      flowType: params.flowType,
+      contactId: params.contactId,
+    });
+    if (dupCheck.isDuplicate) {
+      log(`Duplicate flow blocked: ${params.flowType} for ${params.companyName} (existing flow #${dupCheck.existingFlowId}, status: ${dupCheck.existingStatus})`, "flow-engine");
+      const existingFlow = await db.select().from(companyFlows).where(eq(companyFlows.id, dupCheck.existingFlowId!)).limit(1);
+      if (existingFlow.length > 0) return existingFlow[0];
+      throw new Error(`Duplicate active ${params.flowType} flow already exists for this company`);
+    }
+  }
+
   const maxAttempts = params.flowType === FLOW_TYPES.EMAIL ? 5 :
                       params.flowType === FLOW_TYPES.LINKEDIN ? 6 :
                       params.flowType === FLOW_TYPES.NURTURE ? 4 : 6;
@@ -582,7 +665,11 @@ export async function getTodayActions(clientId: string) {
         lte(actionQueue.dueAt, endOfDay),
       )
     )
-    .orderBy(desc(actionQueue.priority), asc(actionQueue.dueAt));
+    .orderBy(
+      sql`CASE WHEN ${actionQueue.dueAt} < NOW() THEN 0 ELSE 1 END`,
+      desc(actionQueue.priority),
+      asc(actionQueue.dueAt),
+    );
 }
 
 export async function getAllPendingActions(clientId: string) {
@@ -594,7 +681,11 @@ export async function getAllPendingActions(clientId: string) {
         eq(actionQueue.status, TASK_STATUS.PENDING),
       )
     )
-    .orderBy(desc(actionQueue.priority), asc(actionQueue.dueAt));
+    .orderBy(
+      sql`CASE WHEN ${actionQueue.dueAt} < NOW() THEN 0 ELSE 1 END`,
+      desc(actionQueue.priority),
+      asc(actionQueue.dueAt),
+    );
 }
 
 export async function getCompanyFlows(clientId: string, companyId: string) {
