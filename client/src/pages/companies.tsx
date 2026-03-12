@@ -52,9 +52,10 @@ export default function CompaniesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBucket, setFilterBucket] = useState<string>("all");
 
-  const { data: companies = [], isLoading } = useQuery<TodayCompany[]>({
+  const { data: todayResponse, isLoading } = useQuery<{ companies: TodayCompany[]; count: number }>({
     queryKey: ["/api/today-list"],
   });
+  const companies = Array.isArray(todayResponse) ? todayResponse : (todayResponse?.companies || []);
 
   const { data: flows = [] } = useQuery<CompanyFlow[]>({
     queryKey: ["/api/flows/all"],

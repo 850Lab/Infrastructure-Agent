@@ -30,6 +30,7 @@ import CompaniesPage from "@/pages/companies";
 import CallQueuePage from "@/pages/call-queue";
 import EmailQueuePage from "@/pages/email-queue";
 import LinkedInQueuePage from "@/pages/linkedin-queue";
+import CompanyDetailPage from "@/pages/company-detail";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -145,6 +146,7 @@ function Router() {
         <Route path="/machine/call-queue"><MachineRoute><CallQueuePage /></MachineRoute></Route>
         <Route path="/machine/email-queue"><MachineRoute><EmailQueuePage /></MachineRoute></Route>
         <Route path="/machine/linkedin-queue"><MachineRoute><LinkedInQueuePage /></MachineRoute></Route>
+        <Route path="/machine/company/:id"><MachineRoute><CompanyDetailPage /></MachineRoute></Route>
         <Route path="/machine/followups"><MachineRoute><FollowupsPage /></MachineRoute></Route>
         <Route path="/machine/lead-engine"><MachineRoute><LeadEnginePage /></MachineRoute></Route>
         <Route path="/machine/contacts"><MachineRoute><ContactsPage /></MachineRoute></Route>

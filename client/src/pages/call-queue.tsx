@@ -23,6 +23,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 interface ActionItem {
   id: number;
+  companyId: string;
   companyName: string;
   contactName: string | null;
   flowType: string;
@@ -42,7 +43,7 @@ export default function CallQueuePage() {
   const [filter, setFilter] = useState<"all" | "gatekeeper" | "dm_call">("all");
 
   const { data: actions = [], isLoading } = useQuery<ActionItem[]>({
-    queryKey: ["/api/flows/action-queue", "all"],
+    queryKey: ["/api/flows/action-queue?filter=all"],
   });
 
   const callActions = actions.filter(a =>

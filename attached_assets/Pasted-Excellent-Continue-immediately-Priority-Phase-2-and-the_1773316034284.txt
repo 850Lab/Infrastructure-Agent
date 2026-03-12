@@ -1,0 +1,222 @@
+Excellent. Continue immediately.
+
+Priority = Phase 2, and the first build must be the Company Detail / Relationship Control Panel.
+
+Do not shift to Twilio or Airtable sync yet.
+The next highest-leverage move is giving the operator one place to see and manage the full relationship state for a company.
+
+PHASE 2 PRIORITY ORDER:
+1. Company Detail / Relationship Control Panel
+2. Populate Call Queue, Email Queue, and LinkedIn Queue with real action-queue-backed data
+3. Airtable write-back for flow-aware outcome logging
+4. Twilio click-to-call / Live Coach integration
+
+Build Phase 2 now.
+
+==================================================
+PHASE 2 — COMPANY DETAIL / RELATIONSHIP CONTROL PANEL
+==================================================
+
+Create /machine/company/:id as the mission control page for a single company.
+
+This page must become the system of record for one account’s outreach state.
+
+Required sections:
+
+SECTION 1 — COMPANY SUMMARY
+Show:
+- company name
+- trade/category
+- city/state
+- website
+- main phone
+- plant/refinery relevance
+- priority score
+- pipeline stage
+- company status
+- last touch date
+- next action
+- next action due
+
+SECTION 2 — TARGET ROLES
+Show likely buyer/influencer roles for this company, such as:
+- operations manager
+- superintendent
+- project manager
+- safety manager
+- field operations lead
+- branch manager
+
+If the system already stores role data, use it.
+If not, show inferred/default target roles in a clean way.
+
+SECTION 3 — CONTACTS / DECISION MAKERS
+Show all known contacts for the company.
+
+For each contact show:
+- name
+- title
+- phone
+- extension
+- email
+- LinkedIn URL
+- decision maker flag
+- source/confidence if available
+- current contact status
+
+Actions per contact:
+- Call
+- Email
+- View flow state
+- Log touch
+- Mark as DM
+- Mark inactive / wrong person
+
+SECTION 4 — FLOW PROGRESS
+Visually display the 5 flows for this company:
+- Gatekeeper Discovery
+- DM Direct Call
+- Email
+- LinkedIn
+- Long-Term Nurture
+
+For each flow show:
+- status
+- stage
+- attempt count
+- max attempts
+- last outcome
+- next action
+- next due date
+- active/inactive
+
+This should be readable at a glance.
+
+SECTION 5 — ATTEMPT HISTORY / TIMELINE
+Create one unified chronological timeline combining:
+- gatekeeper calls
+- DM calls
+- emails
+- LinkedIn touches
+- nurture touches
+- notes
+- captured intel
+
+Each timeline item should show:
+- timestamp
+- channel
+- flow type
+- contact if applicable
+- outcome
+- notes
+- operator
+- any captured info (DM name, email, extension, etc.)
+
+SECTION 6 — NEXT BEST ACTION
+This must be pinned high on the page.
+
+Show clearly:
+- recommended next action
+- why that action is next
+- due timing
+- which flow it belongs to
+
+Examples:
+- Call gatekeeper attempt #4 tomorrow morning
+- Call Mike direct attempt #2 today
+- Send email step 2 now
+- Request LinkedIn connection
+- Move to nurture for 90 days
+
+SECTION 7 — QUICK ACTIONS
+Add buttons for:
+- Log Gatekeeper Call
+- Log DM Call
+- Log Email Touch
+- Log LinkedIn Touch
+- Schedule Follow-Up
+- Move to Nurture
+- Reactivate
+- Edit Company
+- Add Contact
+
+SECTION 8 — NOTES / INTEL
+Create a section for important account intelligence, including:
+- gatekeeper names
+- receptionist notes
+- project timing clues
+- refinery/plant clues
+- contractor trade relevance
+- callback preferences
+- relationship notes
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+Use the actual Phase 1 flow engine and PostgreSQL flow tables already built.
+Do not build this as a fake static page.
+
+Wire the page to real data including:
+- company record
+- flows for that company
+- attempts for that company
+- contacts for that company
+- next action data for that company
+
+If some data is not yet present in the schema, use the cleanest temporary fallback and label it clearly.
+
+==================================================
+AFTER THE COMPANY PAGE
+==================================================
+
+Once the company detail page is working, then populate these queue pages with real data:
+
+1. /machine/call-queue
+   - Gatekeeper calls
+   - DM direct calls
+   - callbacks
+   - overdue calls
+   - high-priority calls
+
+2. /machine/email-queue
+   - emails due
+   - sequence stage
+   - paused/replied/completed states
+
+3. /machine/linkedin
+   - profile not found
+   - found not viewed
+   - viewed not requested
+   - requested pending
+   - connected not messaged
+   - follow-up due
+
+These must be backed by real action queue / flow data, not placeholders.
+
+==================================================
+RESPONSE FORMAT
+==================================================
+
+Reply in this exact format after building:
+
+SECTION 1 — FILES CHANGED
+List every file changed.
+
+SECTION 2 — COMPANY DETAIL PAGE IMPLEMENTED
+Explain exactly what is now working on /machine/company/:id
+
+SECTION 3 — DATA SOURCES USED
+Explain which existing schema/tables/routes/services power the page.
+
+SECTION 4 — QUEUE PAGES STATUS
+Explain whether the queue pages were also populated yet or still pending.
+
+SECTION 5 — TEST INSTRUCTIONS
+Tell me exactly how to test the company page and confirm it is wired correctly.
+
+SECTION 6 — NEXT BUILD STEP
+Tell me the exact next implementation step after this is verified.
+
+Do not stay in planning mode.
+Implement the Phase 2 company detail page now.

@@ -18,6 +18,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 interface ActionItem {
   id: number;
+  companyId: string;
   companyName: string;
   contactName: string | null;
   flowType: string;
@@ -34,7 +35,7 @@ export default function EmailQueuePage() {
   const [, navigate] = useLocation();
 
   const { data: actions = [], isLoading } = useQuery<ActionItem[]>({
-    queryKey: ["/api/flows/action-queue", "all"],
+    queryKey: ["/api/flows/action-queue?filter=all"],
   });
 
   const emailActions = actions.filter(a => a.taskType === "send_email");
