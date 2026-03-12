@@ -560,6 +560,74 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     }
   });
 
+  app.post("/api/twilio/webhook/voice", async (req: Request, res: Response) => {
+    try {
+      const { CallSid, From, To, Direction } = req.body;
+      log(`Inbound call: SID=${CallSid}, From=${From}, To=${To}, Direction=${Direction || "inbound"}`);
+
+      const baseUrl = getBaseUrl(req);
+      const statusCallbackUrl = `${baseUrl}/api/twilio/webhook/status`;
+      const recordingCallbackUrl = `${baseUrl}/api/twilio/webhook/recording`;
+
+      const agentPhone = process.env.AGENT_PHONE || "+14093387109";
+
+      let twiml = `<Response>`;
+
+      const allClients = await db.select({ id: clients.id, coachingEnabled: clients.coachingEnabled }).from(clients).limit(1);
+      const coachingActive = allClients[0]?.coachingEnabled ?? true;
+
+      if (coachingActive) {
+        const wsProtocol = baseUrl.startsWith("https") ? "wss" : "ws";
+        const host = baseUrl.replace(/^https?:\/\//, "");
+        twiml += `<Start><Stream url="${wsProtocol}://${host}/media-stream" track="both_tracks" /></Start>`;
+      }
+
+      twiml += `<Say>Connecting your call now.</Say>`;
+      twiml += `<Dial record="record-from-answer-dual" callerId="${To}"`;
+      twiml += ` recordingStatusCallback="${recordingCallbackUrl}" recordingStatusCallbackMethod="POST"`;
+      twiml += ` action="${statusCallbackUrl}">`;
+      twiml += `${agentPhone}`;
+      twiml += `</Dial>`;
+      twiml += `</Response>`;
+
+      try {
+        const clientId = allClients[0]?.id || null;
+        await db.insert(twilioRecordings).values({
+          callSid: CallSid,
+          recordingSid: `pending-${CallSid}`,
+          clientId,
+          toNumber: From,
+          companyName: null,
+          contactName: null,
+          status: "inbound_call",
+        });
+      } catch (e: any) {
+        log(`Failed to create inbound recording record: ${e.message}`);
+      }
+
+      activeCallMeta.set(CallSid, {
+        flowId: null,
+        companyId: null,
+        contactId: null,
+        flowType: null,
+        taskId: null,
+        clientId: allClients[0]?.id || null,
+        direction: "inbound",
+        callerNumber: From,
+      });
+
+      if (coachingActive) {
+        registerCoachingSession(CallSid, `Inbound: ${From}`, "", []);
+      }
+
+      log(`Inbound call forwarding to agent ${agentPhone} (recording: yes, coaching: ${coachingActive ? "yes" : "off"})`);
+      res.type("text/xml").send(twiml);
+    } catch (err: any) {
+      log(`Inbound call webhook error: ${err.message}`);
+      res.type("text/xml").send(`<Response><Say>We're sorry, an error occurred. Please try again later.</Say></Response>`);
+    }
+  });
+
   app.get("/api/twilio/coaching/:callSid", (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;
     if (!token || !validateToken(token)) {
