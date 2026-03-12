@@ -10,7 +10,7 @@ import {
   User, Check, Copy, Loader2, X, Calendar, MapPin,
   Building2, Clock, Play, Target, Zap, Shield,
   MessageSquare, ChevronDown, ChevronUp, SkipForward, Trophy,
-  AlertCircle, ExternalLink
+  AlertCircle, ExternalLink, PhoneOff, Radio, Mic
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -155,6 +155,16 @@ interface SessionLog {
   timestamp: number;
 }
 
+type CallState = "idle" | "dialing" | "ringing" | "in-progress" | "completed" | "failed" | "no-answer" | "busy" | "canceled";
+
+interface CoachingAlert {
+  type: string;
+  severity: string;
+  message: string;
+  suggestion: string;
+  timestamp: number;
+}
+
 function CopyButton({ text, label, id }: { text: string; label: string; id: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -170,8 +180,138 @@ function CopyButton({ text, label, id }: { text: string; label: string; id: stri
   );
 }
 
+function CallTimer({ startTime }: { startTime: number }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  return (
+    <span className="font-mono text-sm font-semibold" data-testid="text-call-timer">
+      {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+    </span>
+  );
+}
+
+function LiveCoachPanel({ callSid, token }: { callSid: string; token: string }) {
+  const [transcript, setTranscript] = useState<string[]>([]);
+  const [alerts, setAlerts] = useState<CoachingAlert[]>([]);
+  const [connected, setConnected] = useState(false);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    if (!callSid || !token) return;
+
+    const url = `/api/twilio/coaching/${callSid}?token=${encodeURIComponent(token)}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.onopen = () => setConnected(true);
+
+    es.addEventListener("transcript", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.text) {
+          setTranscript(prev => [...prev.slice(-100), data.text]);
+        }
+      } catch {}
+    });
+
+    es.addEventListener("coaching_alert", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        setAlerts(prev => [...prev.slice(-20), data]);
+      } catch {}
+    });
+
+    es.addEventListener("call_ended", () => {
+      setConnected(false);
+      es.close();
+    });
+
+    es.onerror = () => {
+      setConnected(false);
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [callSid, token]);
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [transcript]);
+
+  const latestAlert = alerts.length > 0 ? alerts[alerts.length - 1] : null;
+
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="panel-live-coach">
+      <div className="px-4 py-2 flex items-center justify-between" style={{ background: connected ? `${EMERALD}08` : `${MUTED}08`, borderBottom: `1px solid ${BORDER}` }}>
+        <div className="flex items-center gap-2">
+          <Radio className="w-3.5 h-3.5" style={{ color: connected ? EMERALD : MUTED }} />
+          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: connected ? EMERALD : MUTED }}>
+            Live Coach {connected ? "Connected" : "Connecting..."}
+          </span>
+        </div>
+        {connected && (
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: EMERALD }} />
+            <span className="text-[10px]" style={{ color: MUTED }}>Live</span>
+          </div>
+        )}
+      </div>
+
+      {latestAlert && (
+        <div className="px-4 py-2" style={{
+          background: latestAlert.severity === "red" ? `${ERROR}08` : latestAlert.severity === "amber" ? `${AMBER}08` : `${BLUE}08`,
+          borderBottom: `1px solid ${BORDER}`
+        }}>
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{
+              color: latestAlert.severity === "red" ? ERROR : latestAlert.severity === "amber" ? AMBER : BLUE
+            }} />
+            <div>
+              <div className="text-xs font-semibold" style={{
+                color: latestAlert.severity === "red" ? ERROR : latestAlert.severity === "amber" ? AMBER : BLUE
+              }}>
+                {latestAlert.message}
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: TEXT }}>
+                {latestAlert.suggestion}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 py-2 max-h-32 overflow-y-auto" style={{ background: SUBTLE }}>
+        {transcript.length === 0 ? (
+          <div className="text-xs italic py-2" style={{ color: MUTED }}>
+            Waiting for conversation...
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {transcript.slice(-10).map((line, i) => (
+              <div key={i} className="text-xs" style={{ color: TEXT }}>{line}</div>
+            ))}
+            <div ref={transcriptEndRef} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 export default function FocusModePage() {
   const { toast } = useToast();
+  const { getToken } = useAuth();
   const [, navigate] = useLocation();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionLog, setSessionLog] = useState<SessionLog[]>([]);
@@ -179,6 +319,26 @@ export default function FocusModePage() {
   const [notes, setNotes] = useState("");
   const [showScripts, setShowScripts] = useState(false);
   const [loggingOutcome, setLoggingOutcome] = useState<string | null>(null);
+
+  const [callState, setCallState] = useState<CallState>("idle");
+  const [callSid, setCallSid] = useState<string | null>(null);
+  const [callStartTime, setCallStartTime] = useState<number | null>(null);
+  const [callDuration, setCallDuration] = useState<number | null>(null);
+  const [twilioReady, setTwilioReady] = useState<boolean | null>(null);
+  const callPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    apiRequest("GET", "/api/twilio/status")
+      .then(r => r.json())
+      .then(d => setTwilioReady(d.connected === true))
+      .catch(() => setTwilioReady(false));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (callPollRef.current) clearInterval(callPollRef.current);
+    };
+  }, []);
 
   const { data: actions = [], isLoading } = useQuery<ActionItem[]>({
     queryKey: ["/api/flows/action-queue"],
@@ -201,6 +361,133 @@ export default function FocusModePage() {
   const totalActions = actions.length;
   const progress = totalActions > 0 ? ((currentIndex + 1) / totalActions) * 100 : 0;
   const isSessionComplete = currentIndex >= totalActions && totalActions > 0;
+
+  const pollFailCountRef = useRef(0);
+
+  const startCallPoll = useCallback((sid: string) => {
+    if (callPollRef.current) clearInterval(callPollRef.current);
+    pollFailCountRef.current = 0;
+    const token = getToken();
+    callPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/twilio/call-session/${sid}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) {
+          pollFailCountRef.current++;
+          if (pollFailCountRef.current >= 10) {
+            setCallState("completed");
+            if (callPollRef.current) { clearInterval(callPollRef.current); callPollRef.current = null; }
+          }
+          return;
+        }
+        pollFailCountRef.current = 0;
+        const data = await res.json();
+        const s = data.status as string;
+
+        if (s === "ringing" || s === "queued") {
+          setCallState("ringing");
+        } else if (s === "in-progress") {
+          setCallState(prev => {
+            if (prev !== "in-progress") setCallStartTime(Date.now());
+            return "in-progress";
+          });
+        } else if (s === "completed" || s === "canceled" || s === "failed" || s === "no-answer" || s === "busy") {
+          setCallState(s as CallState);
+          if (data.duration) setCallDuration(parseInt(data.duration, 10));
+          if (callPollRef.current) {
+            clearInterval(callPollRef.current);
+            callPollRef.current = null;
+          }
+        }
+      } catch {
+        pollFailCountRef.current++;
+        if (pollFailCountRef.current >= 10) {
+          setCallState("completed");
+          if (callPollRef.current) { clearInterval(callPollRef.current); callPollRef.current = null; }
+        }
+      }
+    }, 3000);
+  }, [getToken]);
+
+  const callActionIdRef = useRef<number | null>(null);
+
+  const initiateCallMutation = useMutation({
+    mutationFn: async (params: {
+      to: string;
+      companyName: string;
+      contactName?: string;
+      flowId?: number;
+      companyId?: string;
+      contactId?: string;
+      flowType?: string;
+      taskId?: number;
+      talkingPoints?: string[];
+      _actionId?: number;
+    }) => {
+      callActionIdRef.current = params._actionId || null;
+      const { _actionId, ...callParams } = params;
+      const res = await apiRequest("POST", "/api/twilio/call", callParams);
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      if (callActionIdRef.current !== currentAction?.id) return;
+      if (data.ok && data.sid) {
+        setCallSid(data.sid);
+        setCallState("dialing");
+        setCallStartTime(null);
+        setCallDuration(null);
+        startCallPoll(data.sid);
+        toast({ title: "Call initiated", description: "Dialing agent phone..." });
+      } else {
+        setCallState("failed");
+        toast({ title: "Call failed", description: data.error || "Could not initiate call", variant: "destructive" });
+      }
+    },
+    onError: (err: any) => {
+      if (callActionIdRef.current !== currentAction?.id) return;
+      setCallState("failed");
+      toast({ title: "Call failed", description: err.message || "Network error", variant: "destructive" });
+    },
+  });
+
+  const handleInitiateCall = () => {
+    if (!currentAction) return;
+    const phone = currentAction.contactPhone || currentAction.companyPhone || currentCompany?.phone;
+    if (!phone) {
+      toast({ title: "No phone number", description: "No phone number available for this contact", variant: "destructive" });
+      return;
+    }
+
+    const talkingPoints: string[] = [];
+    if (currentCompany?.playbook_opener) talkingPoints.push(currentCompany.playbook_opener);
+    if (currentCompany?.playbook_gatekeeper) talkingPoints.push(currentCompany.playbook_gatekeeper);
+    if (currentCompany?.playbook_strategy_notes) talkingPoints.push(currentCompany.playbook_strategy_notes);
+
+    initiateCallMutation.mutate({
+      to: phone,
+      companyName: currentAction.companyName,
+      contactName: currentAction.contactName || undefined,
+      flowId: currentAction.flowId || undefined,
+      companyId: currentAction.companyId,
+      contactId: currentAction.contactId || undefined,
+      flowType: currentAction.flowType,
+      taskId: currentAction.id,
+      talkingPoints,
+      _actionId: currentAction.id,
+    });
+  };
+
+  const resetCallState = () => {
+    if (callPollRef.current) {
+      clearInterval(callPollRef.current);
+      callPollRef.current = null;
+    }
+    setCallState("idle");
+    setCallSid(null);
+    setCallStartTime(null);
+    setCallDuration(null);
+  };
 
   const logMutation = useMutation({
     mutationFn: async (params: { flowId: number; companyId: string; companyName: string; contactId?: string; contactName?: string; channel: string; outcome: string; notes?: string; capturedInfo?: string }) => {
@@ -231,6 +518,7 @@ export default function FocusModePage() {
       setLoggingOutcome(null);
       setSelectedOutcome(null);
       setShowScripts(false);
+      resetCallState();
 
       setTimeout(() => {
         setCurrentIndex(prev => prev + 1);
@@ -277,6 +565,7 @@ export default function FocusModePage() {
   };
 
   const handleSkip = () => {
+    resetCallState();
     setCurrentIndex(prev => prev + 1);
     setCapturedInfo("");
     setNotes("");
@@ -356,7 +645,25 @@ export default function FocusModePage() {
   const isOverdue = new Date(currentAction.dueAt) < new Date();
   const isCallFlow = currentAction.flowType === "gatekeeper" || currentAction.flowType === "dm_call";
   const phone = currentAction.contactPhone || currentAction.companyPhone || currentCompany?.phone;
-  const needsCapturedInfo = currentAction.flowType === "gatekeeper" && ["gave_dm_name", "gave_title_only", "gave_direct_extension", "gave_email"].includes(loggingOutcome || "");
+
+  const isCallActive = callState !== "idle" && callState !== "failed";
+  const isCallEnded = callState === "completed" || callState === "no-answer" || callState === "busy" || callState === "canceled";
+  const isCallLive = callState === "in-progress";
+  const isCallDialing = callState === "dialing" || callState === "ringing";
+
+  const callStateLabel = callState === "dialing" ? "Dialing..." :
+    callState === "ringing" ? "Ringing..." :
+    callState === "in-progress" ? "In Progress" :
+    callState === "completed" ? "Call Ended" :
+    callState === "no-answer" ? "No Answer" :
+    callState === "busy" ? "Line Busy" :
+    callState === "canceled" ? "Canceled" :
+    callState === "failed" ? "Failed" : "";
+
+  const callStateColor = isCallLive ? EMERALD :
+    isCallDialing ? AMBER :
+    isCallEnded ? MUTED :
+    callState === "failed" ? ERROR : MUTED;
 
   return (
     <div className="min-h-screen" style={{ background: "#F8FAFC" }}>
@@ -374,7 +681,7 @@ export default function FocusModePage() {
               <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progress}%`, background: EMERALD }} />
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleSkip} className="text-xs" style={{ color: MUTED }} data-testid="button-skip">
+          <Button variant="ghost" size="sm" onClick={handleSkip} className="text-xs" style={{ color: MUTED }} data-testid="button-skip" disabled={isCallLive || isCallDialing || initiateCallMutation.isPending}>
             Skip
             <SkipForward className="w-3.5 h-3.5 ml-1" />
           </Button>
@@ -460,17 +767,131 @@ export default function FocusModePage() {
                 )}
 
                 {isCallFlow && phone && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <a href={`tel:${phone}`} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                      style={{ background: `${EMERALD}12`, color: EMERALD, border: `1px solid ${EMERALD}30` }}
-                      data-testid="button-call"
-                    >
-                      <Phone className="w-4 h-4" />
-                      {phone}
-                    </a>
-                    <CopyButton text={phone} label="Copy" id="phone" />
-                    {currentAction.contactEmail && (
-                      <CopyButton text={currentAction.contactEmail} label="Email" id="email" />
+                  <div className="mb-4">
+                    {callState === "idle" && (
+                      <div className="flex items-center gap-2">
+                        {twilioReady === null ? (
+                          <button
+                            disabled
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold"
+                            style={{ background: `${MUTED}15`, color: MUTED, border: `1px solid ${BORDER}` }}
+                          >
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Checking...
+                          </button>
+                        ) : twilioReady ? (
+                          <button
+                            onClick={handleInitiateCall}
+                            disabled={initiateCallMutation.isPending}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+                            style={{ background: EMERALD, color: "white" }}
+                            data-testid="button-call-twilio"
+                          >
+                            {initiateCallMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Phone className="w-4 h-4" />
+                            )}
+                            Call {phone}
+                          </button>
+                        ) : (
+                          <a href={`tel:${phone}`} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                            style={{ background: `${EMERALD}12`, color: EMERALD, border: `1px solid ${EMERALD}30` }}
+                            data-testid="button-call"
+                          >
+                            <Phone className="w-4 h-4" />
+                            {phone}
+                          </a>
+                        )}
+                        <CopyButton text={phone} label="Copy" id="phone" />
+                        {currentAction.contactEmail && (
+                          <CopyButton text={currentAction.contactEmail} label="Email" id="email" />
+                        )}
+                      </div>
+                    )}
+
+                    {isCallActive && (
+                      <div className="rounded-lg overflow-hidden" style={{ border: `2px solid ${callStateColor}30`, background: `${callStateColor}04` }} data-testid="panel-call-session">
+                        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${callStateColor}15` }}>
+                          <div className="flex items-center gap-3">
+                            {isCallDialing && (
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${AMBER}15` }}>
+                                <Loader2 className="w-4 h-4 animate-spin" style={{ color: AMBER }} />
+                              </div>
+                            )}
+                            {isCallLive && (
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
+                                <Mic className="w-4 h-4" style={{ color: EMERALD }} />
+                              </div>
+                            )}
+                            {isCallEnded && (
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${MUTED}15` }}>
+                                <PhoneOff className="w-4 h-4" style={{ color: MUTED }} />
+                              </div>
+                            )}
+                            <div>
+                              <div className="text-sm font-semibold" style={{ color: callStateColor }} data-testid="text-call-state">
+                                {callStateLabel}
+                              </div>
+                              <div className="text-xs" style={{ color: MUTED }}>
+                                {currentAction.companyName}{currentAction.contactName ? ` - ${currentAction.contactName}` : ""}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {isCallLive && callStartTime && (
+                              <CallTimer startTime={callStartTime} />
+                            )}
+                            {isCallEnded && callDuration != null && (
+                              <span className="text-xs font-mono" style={{ color: MUTED }}>
+                                {Math.floor(callDuration / 60)}:{String(callDuration % 60).padStart(2, "0")}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {isCallLive && callSid && (
+                          <div className="p-3">
+                            <LiveCoachPanel callSid={callSid} token={getToken() || ""} />
+                          </div>
+                        )}
+
+                        {isCallEnded && (
+                          <div className="px-4 py-3">
+                            <div className="text-xs font-semibold uppercase mb-2" style={{ color: EMERALD }}>
+                              Log call outcome below
+                            </div>
+                            <button
+                              onClick={resetCallState}
+                              className="text-xs px-2 py-1 rounded transition-colors"
+                              style={{ color: MUTED, border: `1px solid ${BORDER}` }}
+                              data-testid="button-dismiss-call"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {callState === "failed" && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="text-xs" style={{ color: ERROR }}>Call failed to connect.</div>
+                        <button
+                          onClick={resetCallState}
+                          className="text-xs px-2 py-1 rounded"
+                          style={{ color: BLUE, border: `1px solid ${BORDER}` }}
+                          data-testid="button-retry-call"
+                        >
+                          Try Again
+                        </button>
+                        <a href={`tel:${phone}`} className="text-xs px-2 py-1 rounded"
+                          style={{ color: MUTED, border: `1px solid ${BORDER}` }}
+                          data-testid="button-call-fallback"
+                        >
+                          Use Phone
+                        </a>
+                      </div>
                     )}
                   </div>
                 )}
@@ -575,7 +996,9 @@ export default function FocusModePage() {
                 </div>
 
                 <div>
-                  <div className="text-xs font-semibold uppercase mb-2" style={{ color: MUTED }}>Log Outcome</div>
+                  <div className="text-xs font-semibold uppercase mb-2" style={{ color: isCallEnded ? EMERALD : MUTED }}>
+                    {isCallEnded ? "Log Call Outcome" : "Log Outcome"}
+                  </div>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {outcomes.map((outcome) => {
                       const Icon = outcome.icon;

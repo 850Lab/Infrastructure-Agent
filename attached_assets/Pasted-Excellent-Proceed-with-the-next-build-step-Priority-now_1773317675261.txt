@@ -1,0 +1,126 @@
+Excellent. Proceed with the next build step.
+
+Priority now:
+Twilio click-to-call integration into Focus Mode as a true flow-aware calling cockpit.
+
+Do not treat this as just replacing tel: links.
+Build it as an integrated execution layer tied to the flow engine, attempt logging, and Live Coach context.
+
+==================================================
+PHASE 4 — TWILIO CALLING INTEGRATION
+==================================================
+
+I need Focus Mode to support real operator calling directly inside the system.
+
+The goal is:
+- operator selects a task in Focus Mode
+- clicks Call
+- Twilio initiates the call
+- the system knows which company/contact/flow this call belongs to
+- Live Coach / transcript context is tied to that call session
+- when the call ends, the operator logs the outcome
+- the flow engine advances and the next action is generated
+
+==================================================
+REQUIRED BEHAVIOR
+==================================================
+
+1. CALL INITIATION
+Inside Focus Mode, replace tel: links with Twilio-powered call initiation.
+
+When a call starts, the system must know:
+- companyId
+- contactId if known
+- flowId
+- flowType
+- taskId if launched from action queue
+- target phone number
+- operator identity if available
+
+2. CALL SESSION CONTEXT
+Create or use a call-session structure so the system can associate the live call with:
+- company
+- contact
+- flow
+- attempt
+- scripts/intel panel
+- live coaching / transcript stream if available
+
+3. FOCUS MODE UI UPDATES
+In Focus Mode, during a live call show:
+- dialing state
+- in-call state
+- target contact/company
+- active script/intel drawer
+- call timer if available
+- live coach panel if infrastructure already exists
+- post-call outcome logging state
+
+4. POST-CALL LOGGING
+After the call ends, immediately prompt for the flow-specific outcome.
+Do not make the operator navigate elsewhere.
+
+After outcome is logged:
+- create flow attempt
+- sync Airtable write-back
+- update queues
+- generate next recommended action
+- move to next task if operator chooses
+
+5. TWILIO SERVICE INTEGRATION
+Use the existing infrastructure if present:
+- server/twilio-service.ts
+- server/realtime-coaching.ts
+
+Do not rebuild unnecessary duplicate calling logic if these already exist.
+
+6. SAFE FALLBACKS
+If live transcript / coach integration is not yet fully wired, still complete Twilio click-to-call first.
+Label any partial Live Coach integration clearly.
+
+==================================================
+IMPLEMENTATION GOALS
+==================================================
+
+I want the result to feel like:
+- Focus Mode is the operator cockpit
+- click call
+- run the conversation
+- log the outcome
+- advance the flow
+- keep momentum
+
+Not:
+- click a phone link
+- leave the system
+- manually reconstruct context later
+
+==================================================
+RESPONSE FORMAT
+==================================================
+
+Reply in this exact format after implementing:
+
+SECTION 1 — FILES CHANGED
+List every file changed.
+
+SECTION 2 — TWILIO CALLING IMPLEMENTED
+Explain exactly how Twilio calling now works inside Focus Mode.
+
+SECTION 3 — CALL SESSION CONTEXT
+Explain how company/contact/flow/task context is attached to each call.
+
+SECTION 4 — LIVE COACH STATUS
+Explain what is already integrated vs what remains partial.
+
+SECTION 5 — POST-CALL FLOW LOGGING
+Explain exactly what happens after a call ends.
+
+SECTION 6 — TEST INSTRUCTIONS
+Tell me exactly how to test the Twilio-powered calling flow in Focus Mode.
+
+SECTION 7 — NEXT BUILD STEP
+Tell me the next recommended improvement after this is verified.
+
+Do not stay in planning mode.
+Implement the Twilio Focus Mode integration now.

@@ -153,6 +153,15 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
   }
 }
 
+const activeCallMeta = new Map<string, {
+  flowId: number | null;
+  companyId: string | null;
+  contactId: string | null;
+  flowType: string | null;
+  taskId: number | null;
+  clientId: string | null;
+}>();
+
 export function registerTwilioRoutes(app: Express, authMiddleware: any) {
   app.get("/api/twilio/status", authMiddleware, async (_req: Request, res: Response) => {
     try {
@@ -188,7 +197,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.post("/api/twilio/call", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { to, companyName, contactName, talkingPoints } = req.body;
+      const { to, companyName, contactName, talkingPoints, flowId, companyId, contactId, flowType, taskId } = req.body;
       if (!to) {
         return res.status(400).json({ error: "Phone number 'to' is required" });
       }
@@ -221,6 +230,16 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           log(`Failed to create recording record: ${e.message}`);
         }
 
+        const sessionMeta = {
+          flowId: flowId || null,
+          companyId: companyId || null,
+          contactId: contactId || null,
+          flowType: flowType || null,
+          taskId: taskId || null,
+          clientId,
+        };
+        activeCallMeta.set(result.sid, sessionMeta);
+
         registerCoachingSession(
           result.sid,
           companyName || "",
@@ -229,10 +248,24 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         );
       }
 
-      log(`Call initiated by user to ${to} (recording + live coaching, SID: ${result.sid})`);
+      log(`Call initiated by user to ${to} (recording + live coaching, SID: ${result.sid}, flow: ${flowId || "none"}, company: ${companyId || "none"})`);
       res.json({ ok: true, sid: result.sid, recordingEnabled: true, coachingEnabled: true });
     } catch (err: any) {
       log(`Call route error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/twilio/call-session/:sid", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { sid } = req.params;
+      const status = await getCallStatus(sid);
+      const meta = activeCallMeta.get(sid) || null;
+      res.json({
+        ...(status || { status: "unknown" }),
+        meta,
+      });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -291,6 +324,8 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       }
 
       res.status(200).send("<Response></Response>");
+
+      activeCallMeta.delete(CallSid);
 
       setImmediate(() => {
         processRecording(CallSid, RecordingSid, clientId).catch((err) => {
