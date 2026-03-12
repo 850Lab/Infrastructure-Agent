@@ -368,4 +368,137 @@ export function registerFlowRoutes(app: Express) {
       res.status(500).json({ error: e.message });
     }
   });
+
+  app.get("/api/flows/kpi", authMiddleware, async (req, res) => {
+    try {
+      const clientId = getClientId(req);
+      if (!clientId) return res.status(400).json({ error: "No client context" });
+
+      const now = new Date();
+      const daysAgo = (d: number) => {
+        const t = new Date(now);
+        t.setDate(t.getDate() - d);
+        t.setHours(0, 0, 0, 0);
+        return t;
+      };
+
+      const day5 = daysAgo(5);
+      const day7 = daysAgo(7);
+      const day30 = daysAgo(30);
+
+      const allAttempts = await db.select()
+        .from(flowAttempts)
+        .where(and(
+          eq(flowAttempts.clientId, clientId),
+          sql`${flowAttempts.createdAt} >= ${day30}`,
+        ))
+        .orderBy(desc(flowAttempts.createdAt));
+
+      const allFlows = await db.select()
+        .from(companyFlows)
+        .where(eq(companyFlows.clientId, clientId));
+
+      const att5 = allAttempts.filter(a => new Date(a.createdAt!) >= day5);
+      const att7 = allAttempts.filter(a => new Date(a.createdAt!) >= day7);
+      const att30 = allAttempts;
+
+      const liveDMOutcomes = ["live_answer", "interested", "meeting_requested", "followup_scheduled", "asked_to_call_later"];
+      const qualifiedOutcomes = ["interested", "meeting_requested"];
+      const gkBreakthroughOutcomes = ["gave_dm_name", "gave_direct_extension", "gave_email", "transferred"];
+      const dmConnectionOutcomes = ["live_answer", "interested", "meeting_requested", "followup_scheduled"];
+
+      const companiesTouched5 = new Set(att5.map(a => a.companyId)).size;
+      const dmsIdentified5 = att5.filter(a =>
+        gkBreakthroughOutcomes.includes(a.outcome) ||
+        (a.channel === "phone" && a.contactName && ["dm_call"].includes(
+          allFlows.find(f => f.id === a.flowId)?.flowType || ""
+        ))
+      ).length;
+      const liveDMConvos5 = att5.filter(a => liveDMOutcomes.includes(a.outcome)).length;
+      const qualifiedOpps5 = new Set(att5.filter(a => qualifiedOutcomes.includes(a.outcome)).map(a => a.companyId)).size;
+      const followupsScheduled5 = att5.filter(a =>
+        a.outcome === "followup_scheduled" || a.outcome === "asked_to_call_later" || a.callbackAt
+      ).length;
+
+      const gkAttempts7 = att7.filter(a => {
+        const flow = allFlows.find(f => f.id === a.flowId);
+        return flow?.flowType === "gatekeeper";
+      });
+      const gkBreakthroughs7 = gkAttempts7.filter(a => gkBreakthroughOutcomes.includes(a.outcome)).length;
+      const gkBreakthroughRate = gkAttempts7.length > 0 ? Math.round((gkBreakthroughs7 / gkAttempts7.length) * 100) : 0;
+
+      const dmAttempts7 = att7.filter(a => {
+        const flow = allFlows.find(f => f.id === a.flowId);
+        return flow?.flowType === "dm_call";
+      });
+      const dmConnections7 = dmAttempts7.filter(a => dmConnectionOutcomes.includes(a.outcome)).length;
+      const dmConnectionRate = dmAttempts7.length > 0 ? Math.round((dmConnections7 / dmAttempts7.length) * 100) : 0;
+
+      const emailAttempts7 = att7.filter(a => a.channel === "email");
+      const emailReplies7 = emailAttempts7.filter(a => a.outcome === "replied" || a.outcome === "interested").length;
+      const emailReplyRate = emailAttempts7.length > 0 ? Math.round((emailReplies7 / emailAttempts7.length) * 100) : 0;
+
+      const linkedinAttempts7 = att7.filter(a => a.channel === "linkedin");
+      const linkedinConnects7 = linkedinAttempts7.filter(a => a.outcome === "connected" || a.outcome === "responded").length;
+      const linkedinConnectionRate = linkedinAttempts7.length > 0 ? Math.round((linkedinConnects7 / linkedinAttempts7.length) * 100) : 0;
+
+      const nurtureReactivations7 = att7.filter(a => a.outcome === "reactivated").length;
+
+      const warmCompanyIds = new Set(
+        att30.filter(a => liveDMOutcomes.includes(a.outcome)).map(a => a.companyId)
+      );
+      const lostCompanyIds = new Set(
+        att30.filter(a => a.outcome === "closed_lost" || a.outcome === "not_relevant").map(a => a.companyId)
+      );
+      const warmAccounts30 = [...warmCompanyIds].filter(id => !lostCompanyIds.has(id)).length;
+      const opportunitiesCreated30 = new Set(att30.filter(a => qualifiedOutcomes.includes(a.outcome)).map(a => a.companyId)).size;
+      const meetingsTriggered30 = att30.filter(a => a.outcome === "meeting_requested").length;
+      const closedWon30 = 0;
+      const closedLost30 = att30.filter(a => a.outcome === "closed_lost").length;
+
+      let interpretation = "";
+      if (dmsIdentified5 > 0 && liveDMConvos5 === 0) {
+        interpretation = "Targeting is good but connections are weak. Focus on improving call timing and openers.";
+      } else if (liveDMConvos5 > 0 && qualifiedOpps5 === 0) {
+        interpretation = "Getting through to DMs but not converting. Refine your pitch and value proposition.";
+      } else if (followupsScheduled5 > liveDMConvos5) {
+        interpretation = "Pipeline is warming. Follow-ups are stacking up — stay disciplined.";
+      } else if (warmAccounts30 > opportunitiesCreated30 && warmAccounts30 > 3) {
+        interpretation = "Machine is compounding. Warm accounts are growing — keep the pressure on.";
+      } else if (companiesTouched5 > 0 && gkBreakthroughRate > 30) {
+        interpretation = "Strong gatekeeper performance. Pipeline is growing well.";
+      } else if (companiesTouched5 > 0) {
+        interpretation = "Pipeline is active. Keep working the queue consistently.";
+      } else {
+        interpretation = "Low activity. Activate flows and start calling to build pipeline.";
+      }
+
+      res.json({
+        fiveDay: {
+          companiesTouched: companiesTouched5,
+          dmsIdentified: dmsIdentified5,
+          liveDMConversations: liveDMConvos5,
+          qualifiedOpportunities: qualifiedOpps5,
+          followupsScheduled: followupsScheduled5,
+        },
+        sevenDay: {
+          gkBreakthroughRate,
+          dmConnectionRate,
+          emailReplyRate,
+          linkedinConnectionRate,
+          nurtureReactivations: nurtureReactivations7,
+        },
+        thirtyDay: {
+          warmAccounts: warmAccounts30,
+          opportunitiesCreated: opportunitiesCreated30,
+          meetingsTriggered: meetingsTriggered30,
+          closedWon: closedWon30,
+          closedLost: closedLost30,
+        },
+        interpretation,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 }

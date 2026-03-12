@@ -1,0 +1,192 @@
+Excellent. Phase 5 and Phase 6 are complete and the system now has:
+
+- real-time Twilio call status via SSE
+- Focus Mode live updates with polling fallback
+- recording playback in Company Detail timeline
+- transcript + AI analysis visibility tied to call attempts
+
+Do not change the working Twilio, flow engine, Airtable write-back, or recording pipeline.
+
+The next priority is:
+
+1. Outcome Explanation Layer
+2. KPI Scoreboard for pipeline health
+
+The goal is to make the machine more trustworthy, more measurable, and more operator-guiding.
+
+==================================================
+PHASE 7 — OUTCOME EXPLANATION LAYER
+==================================================
+
+Goal:
+After any logged outcome, the system should clearly explain:
+
+- what outcome was recorded
+- what the machine decided
+- what changed in the system
+- what the next action is
+- when that next action is due
+
+Right now the flow engine advances correctly, but the operator should not have to infer the logic.
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+After logging any outcome in Focus Mode, show a clear post-log summary panel.
+
+This panel should include:
+
+1. OUTCOME RECORDED
+Examples:
+- No Answer
+- Gave DM Name
+- Interested
+- Meeting Requested
+- Wrong Person
+
+2. SYSTEM ACTION TAKEN
+Examples:
+- Continued Gatekeeper flow
+- Created DM Call flow
+- Activated Email flow
+- Moved company to Nurture
+- Completed current flow
+- Scheduled retry
+
+3. NEXT BEST ACTION
+Examples:
+- Call Mike Turner direct tomorrow at 7:30 AM
+- Send Email Step 2 today
+- Request LinkedIn connection
+- Check back in 90 days
+
+4. WHY THIS ACTION WAS CHOSEN
+Examples:
+- Gatekeeper provided a direct contact
+- Max call attempts reached
+- Decision maker requested email follow-up
+- No response after multiple touches
+- Not relevant right now, moved to nurture
+
+5. SYSTEM STATE CHANGES
+Examples:
+- Contact added
+- DM marked identified
+- Gatekeeper flow completed
+- New task created in action queue
+- Airtable company status updated
+
+This should appear immediately after outcome logging in Focus Mode before auto-advancing, with an option to:
+- Continue to next task
+- Stay on this company
+- Open Company Detail
+
+==================================================
+PHASE 8 — KPI SCOREBOARD
+==================================================
+
+Goal:
+Make it obvious whether the pipeline is flourishing, not just busy.
+
+Build a KPI scoreboard that reflects real pipeline progress.
+
+==================================================
+KPI REQUIREMENTS
+==================================================
+
+Add a KPI module to the Today page and/or a dedicated performance section that tracks:
+
+FOR THE LAST 5 DAYS:
+- Companies Touched
+- Decision Makers Identified
+- Live DM Conversations
+- Qualified Opportunities
+- Follow-Ups Scheduled
+
+FOR THE LAST 7 DAYS:
+- Gatekeeper Breakthrough Rate
+- DM Connection Rate
+- Email Reply Rate
+- LinkedIn Connection Rate
+- Nurture Reactivations
+
+FOR THE LAST 30 DAYS:
+- Warm Accounts Created
+- Opportunities Created
+- Meetings / Presentations Triggered
+- Closed Won
+- Closed Lost
+
+==================================================
+DEFINITIONS
+==================================================
+
+Use deterministic definitions, not vague guesses.
+
+Examples:
+
+Companies Touched:
+Distinct companies with at least one touch logged in the period
+
+Decision Makers Identified:
+Companies or contacts where DM identification occurred from a gatekeeper or contact creation event
+
+Live DM Conversations:
+DM call attempts logged with live_answer, interested, meeting_requested, follow_up_scheduled, or similar live-conversation outcomes
+
+Qualified Opportunities:
+Companies where the DM confirmed refinery/plant relevance, crew relevance, interest, or moved to an opportunity-ready state
+
+Follow-Ups Scheduled:
+Attempts or flows where callback/follow-up date was captured or next action was scheduled intentionally
+
+Warm Accounts:
+Companies with at least one live DM conversation and not marked lost
+
+==================================================
+UX REQUIREMENTS
+==================================================
+
+The KPI area should feel like an operator scoreboard, not generic analytics.
+
+Good UX examples:
+- 5-day execution scorecard at top of Today page
+- Green/yellow/red indicator versus targets
+- Small trend arrows where possible
+- “Pipeline is growing” vs “Pipeline is active but shallow” style interpretation text
+
+Example interpretation logic:
+- If DMs identified are high but conversations are low → targeting good, connection weak
+- If conversations are high but qualified opps are low → message or targeting issue
+- If follow-ups are rising steadily → pipeline warming
+- If warm accounts are increasing → machine is compounding
+
+==================================================
+RESPONSE FORMAT
+==================================================
+
+Reply in this exact format after implementing:
+
+SECTION 1 — FILES CHANGED
+List every file changed.
+
+SECTION 2 — OUTCOME EXPLANATION IMPLEMENTED
+Explain exactly what the operator now sees after logging an outcome.
+
+SECTION 3 — KPI SCOREBOARD IMPLEMENTED
+Explain exactly which KPIs are now shown and where.
+
+SECTION 4 — KPI DEFINITIONS USED
+Explain the logic used to compute each KPI.
+
+SECTION 5 — TEST INSTRUCTIONS
+Tell me exactly how to test both:
+- outcome explanation panel
+- KPI scoreboard
+
+SECTION 6 — NEXT BUILD STEP
+Tell me the next highest-value improvement after this is verified.
+
+Do not stay in planning mode.
+Implement the outcome explanation layer and KPI scoreboard now.

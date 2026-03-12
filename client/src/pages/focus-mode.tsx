@@ -10,7 +10,8 @@ import {
   User, Check, Copy, Loader2, X, Calendar, MapPin,
   Building2, Clock, Play, Target, Zap, Shield,
   MessageSquare, ChevronDown, ChevronUp, SkipForward, Trophy,
-  AlertCircle, ExternalLink, PhoneOff, Radio, Mic
+  AlertCircle, ExternalLink, PhoneOff, Radio, Mic,
+  Brain, ChevronRight, FileText, Activity
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -547,14 +548,7 @@ export default function FocusModePage() {
 
       queryClient.invalidateQueries({ queryKey: ["/api/flows/action-queue"] });
       queryClient.invalidateQueries({ queryKey: ["/api/flows/stats"] });
-
-      const outcomeList = getOutcomesForFlow(currentAction?.flowType || "gatekeeper");
-      const outcomeLabel = outcomeList.find(o => o.value === vars.outcome)?.label || vars.outcome;
-
-      toast({
-        title: "Outcome logged",
-        description: `${vars.companyName}: ${outcomeLabel}${data.nextAction ? ` — Next: ${data.nextAction}` : ""}`,
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/flows/kpi"] });
 
       setCapturedInfo("");
       setNotes("");
@@ -563,9 +557,22 @@ export default function FocusModePage() {
       setShowScripts(false);
       resetCallState();
 
-      setTimeout(() => {
-        setCurrentIndex(prev => prev + 1);
-      }, 500);
+      if (data.explanation) {
+        setExplanationData({
+          outcomeLabel: data.explanation.outcomeLabel,
+          systemAction: data.explanation.systemAction,
+          whyChosen: data.explanation.whyChosen,
+          stateChanges: data.explanation.stateChanges || [],
+          flowLabel: data.explanation.flowLabel,
+          nextAction: data.nextAction,
+          nextDueAt: data.nextDueAt,
+          companyName: vars.companyName,
+        });
+      } else {
+        setTimeout(() => {
+          setCurrentIndex(prev => prev + 1);
+        }, 500);
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to log outcome", variant: "destructive" });
@@ -574,6 +581,16 @@ export default function FocusModePage() {
   });
 
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
+  const [explanationData, setExplanationData] = useState<{
+    outcomeLabel: string;
+    systemAction: string;
+    whyChosen: string;
+    stateChanges: string[];
+    flowLabel: string;
+    nextAction: string;
+    nextDueAt: string;
+    companyName: string;
+  } | null>(null);
 
   const GK_CAPTURE_OUTCOMES = ["gave_dm_name", "gave_title_only", "gave_direct_extension", "gave_email"];
   const needsCaptureForOutcome = (outcome: string) =>
@@ -678,6 +695,145 @@ export default function FocusModePage() {
             Back to Today
           </Button>
         </motion.div>
+      </div>
+    );
+  }
+
+  if (explanationData) {
+    const dueDateStr = explanationData.nextDueAt
+      ? new Date(explanationData.nextDueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "Pending";
+
+    return (
+      <div className="min-h-screen" style={{ background: "#F8FAFC" }}>
+        <div className="sticky top-0 z-50 bg-white" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="max-w-3xl mx-auto px-4 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Brain className="w-4 h-4" style={{ color: EMERALD }} />
+              <span className="text-sm font-semibold" style={{ color: TEXT }}>Machine Decision</span>
+            </div>
+            <span className="text-xs" style={{ color: MUTED }}>{explanationData.companyName}</span>
+          </div>
+        </div>
+
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+            <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
+                  <Check className="w-3 h-3" style={{ color: EMERALD }} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Outcome Recorded</span>
+              </div>
+              <div className="text-lg font-bold" style={{ color: TEXT }} data-testid="text-outcome-recorded">
+                {explanationData.outcomeLabel}
+              </div>
+              <div className="text-xs mt-1" style={{ color: MUTED }}>{explanationData.flowLabel}</div>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
+            <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${BLUE}15` }}>
+                  <Activity className="w-3 h-3" style={{ color: BLUE }} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>System Action Taken</span>
+              </div>
+              <div className="text-sm font-semibold" style={{ color: TEXT }} data-testid="text-system-action">
+                {explanationData.systemAction}
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
+            <div className="rounded-xl p-5" style={{ background: `${EMERALD}04`, border: `1px solid ${EMERALD}20` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${EMERALD}15` }}>
+                  <Target className="w-3 h-3" style={{ color: EMERALD }} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Next Best Action</span>
+              </div>
+              <div className="text-sm font-semibold" style={{ color: TEXT }} data-testid="text-next-action">
+                {explanationData.nextAction}
+              </div>
+              <div className="text-xs mt-1.5 flex items-center gap-1" style={{ color: MUTED }}>
+                <Clock className="w-3 h-3" />
+                Due: {dueDateStr}
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.3 }}>
+            <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${AMBER}15` }}>
+                  <Brain className="w-3 h-3" style={{ color: AMBER }} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Why This Action Was Chosen</span>
+              </div>
+              <div className="text-sm" style={{ color: TEXT }} data-testid="text-why-chosen">
+                {explanationData.whyChosen}
+              </div>
+            </div>
+          </motion.div>
+
+          {explanationData.stateChanges.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.4 }}>
+              <div className="rounded-xl p-5" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${PURPLE}15` }}>
+                    <FileText className="w-3 h-3" style={{ color: PURPLE }} />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>System State Changes</span>
+                </div>
+                <div className="space-y-1.5">
+                  {explanationData.stateChanges.map((change, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs" style={{ color: TEXT }}>
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ background: EMERALD }} />
+                      {change}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.5 }}
+            className="flex gap-2 pt-2"
+          >
+            <Button
+              onClick={() => { setExplanationData(null); setCurrentIndex(prev => prev + 1); }}
+              className="flex-1 h-10 text-sm font-semibold"
+              style={{ background: EMERALD, color: "white" }}
+              data-testid="button-continue-next"
+            >
+              Continue to Next
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { setExplanationData(null); }}
+              className="h-10 text-sm font-semibold"
+              style={{ borderColor: BORDER, color: TEXT }}
+              data-testid="button-stay-company"
+            >
+              Stay Here
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { setExplanationData(null); navigate(`/machine/company/${currentAction?.companyId}`); }}
+              className="h-10 text-sm font-semibold"
+              style={{ borderColor: BORDER, color: BLUE }}
+              data-testid="button-open-detail"
+            >
+              Company Detail
+            </Button>
+          </motion.div>
+        </div>
       </div>
     );
   }

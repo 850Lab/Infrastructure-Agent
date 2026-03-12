@@ -83,6 +83,14 @@ export const NURTURE_OUTCOMES = [
   "closed_lost",
 ] as const;
 
+const FLOW_TYPE_LABELS: Record<string, string> = {
+  gatekeeper: "Gatekeeper Discovery",
+  dm_call: "DM Direct Call",
+  email: "Email Outreach",
+  linkedin: "LinkedIn",
+  nurture: "Long-Term Nurture",
+};
+
 const OUTCOME_LABELS: Record<string, string> = {
   no_answer: "No Answer",
   general_voicemail: "General Voicemail",
@@ -134,6 +142,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
   flowStatus: string;
   priority: number;
   spawnFlows?: Array<{ flowType: string; reason: string }>;
+  systemAction: string;
+  whyChosen: string;
 } {
   const now = new Date();
   const addDays = (d: number) => { const t = new Date(now); t.setDate(t.getDate() + d); return t; };
@@ -150,6 +160,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 90,
           spawnFlows: [{ flowType: FLOW_TYPES.DM_CALL, reason: `Gatekeeper ${getOutcomeLabel(outcome)}` }],
+          systemAction: "Completed Gatekeeper flow, created DM Direct Call flow",
+          whyChosen: "Gatekeeper provided a direct contact — switching to DM outreach",
         };
       case "transferred":
         return {
@@ -158,6 +170,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 95,
           spawnFlows: [{ flowType: FLOW_TYPES.DM_CALL, reason: "Transferred by gatekeeper" }],
+          systemAction: "Completed Gatekeeper flow, created DM Call flow",
+          whyChosen: "Gatekeeper transferred to decision maker directly",
         };
       case "gave_title_only":
         return {
@@ -165,6 +179,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(2),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.PAUSED : FLOW_STATUS.ACTIVE,
           priority: 60,
+          systemAction: attemptCount >= maxAttempts ? "Paused Gatekeeper flow at max attempts" : "Scheduled retry with refined approach",
+          whyChosen: "Got title but not name — need to call back for full contact info",
         };
       case "refused":
         return {
@@ -172,6 +188,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(attemptCount >= 3 ? 14 : 5),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.RECYCLED : FLOW_STATUS.ACTIVE,
           priority: 30,
+          systemAction: attemptCount >= maxAttempts ? "Recycled Gatekeeper flow — max attempts reached" : "Scheduled retry with longer delay",
+          whyChosen: attemptCount >= 3 ? "Multiple refusals — backing off to avoid burning the contact" : "Gatekeeper refused — waiting before trying a different angle",
         };
       case "asked_to_send_info":
         return {
@@ -180,6 +198,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 75,
           spawnFlows: [{ flowType: FLOW_TYPES.EMAIL, reason: "Gatekeeper asked to send info" }],
+          systemAction: "Continued Gatekeeper flow, activated Email flow",
+          whyChosen: "Gatekeeper asked for info — email opens the door for follow-up call",
         };
       case "message_taken":
         return {
@@ -187,6 +207,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(3),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 55,
+          systemAction: "Scheduled follow-up call in 3 days",
+          whyChosen: "Message was taken — following up to check if it was delivered",
         };
       case "receptionist_answered":
         return {
@@ -194,6 +216,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 65,
+          systemAction: "Scheduled next-day callback with department approach",
+          whyChosen: "Receptionist answered — trying again with specific department request",
         };
       default:
         return {
@@ -201,6 +225,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(2),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.RECYCLED : FLOW_STATUS.ACTIVE,
           priority: 50,
+          systemAction: attemptCount >= maxAttempts ? "Recycled flow after max attempts" : "Scheduled retry in 2 days",
+          whyChosen: "No response after multiple touches — retrying with standard spacing",
         };
     }
   }
@@ -214,6 +240,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 100,
+          systemAction: outcome === "meeting_requested" ? "Set highest priority — meeting preparation" : "Set highest priority — advance interested DM",
+          whyChosen: outcome === "meeting_requested" ? "Decision maker requested a meeting — strike while hot" : "Decision maker showed interest — advance quickly",
         };
       case "followup_scheduled":
         return {
@@ -221,6 +249,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(2),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 85,
+          systemAction: "Scheduled callback as agreed",
+          whyChosen: "Decision maker requested follow-up — honoring their timing",
         };
       case "live_answer":
         return {
@@ -229,6 +259,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 80,
           spawnFlows: [{ flowType: FLOW_TYPES.EMAIL, reason: "Had live conversation" }],
+          systemAction: "Activated Email flow to reinforce conversation",
+          whyChosen: "Had live conversation — sending supporting info builds credibility",
         };
       case "voicemail_left":
         return {
@@ -236,6 +268,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(2),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.PAUSED : FLOW_STATUS.ACTIVE,
           priority: 60,
+          systemAction: attemptCount >= maxAttempts ? "Paused DM flow at max voicemails" : "Scheduled retry in 2 days",
+          whyChosen: "Voicemail left — giving time before next attempt",
         };
       case "asked_to_call_later":
         return {
@@ -243,6 +277,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 80,
+          systemAction: "Scheduled callback as requested by DM",
+          whyChosen: "DM acknowledged and asked to call back — they're open but busy",
         };
       case "wrong_person":
       case "referred_elsewhere":
@@ -252,6 +288,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 70,
           spawnFlows: [{ flowType: FLOW_TYPES.GATEKEEPER, reason: `DM ${getOutcomeLabel(outcome)} — need correct contact` }],
+          systemAction: "Completed DM flow, restarted Gatekeeper discovery",
+          whyChosen: `${getOutcomeLabel(outcome)} — need to find the right decision maker`,
         };
       case "not_relevant":
         return {
@@ -260,6 +298,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 10,
           spawnFlows: [{ flowType: FLOW_TYPES.NURTURE, reason: "DM said not relevant" }],
+          systemAction: "Completed DM flow, moved to long-term nurture",
+          whyChosen: "DM confirmed not relevant right now — nurture keeps the door open",
         };
       default:
         return {
@@ -267,6 +307,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(2),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.RECYCLED : FLOW_STATUS.ACTIVE,
           priority: 50,
+          systemAction: attemptCount >= maxAttempts ? "Recycled DM flow — max attempts" : "Scheduled retry",
+          whyChosen: "No response after multiple touches — standard retry spacing",
         };
     }
   }
@@ -280,6 +322,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: now,
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 95,
+          systemAction: "Elevated to highest email priority",
+          whyChosen: outcome === "replied" ? "Email reply received — respond quickly to maintain momentum" : "Contact expressed interest via email",
         };
       case "opened":
       case "clicked":
@@ -288,6 +332,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(2),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 70,
+          systemAction: "Scheduled next email step",
+          whyChosen: `Email was ${outcome} — engagement signal, advancing sequence`,
         };
       case "bounced":
         return {
@@ -295,6 +341,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.PAUSED,
           priority: 40,
+          systemAction: "Paused Email flow — invalid address",
+          whyChosen: "Email bounced — need a valid address before continuing",
         };
       case "not_relevant":
         return {
@@ -302,6 +350,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(90),
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 10,
+          systemAction: "Completed Email flow",
+          whyChosen: "Contact indicated not relevant — stopping sequence",
         };
       default:
         return {
@@ -309,6 +359,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(3),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.COMPLETED : FLOW_STATUS.ACTIVE,
           priority: 45,
+          systemAction: attemptCount >= maxAttempts ? "Completed email sequence" : "Scheduled next email",
+          whyChosen: "Standard email cadence — spacing for deliverability",
         };
     }
   }
@@ -321,6 +373,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: now,
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 85,
+          systemAction: "Elevated priority — LinkedIn response received",
+          whyChosen: "Contact responded on LinkedIn — engage immediately",
         };
       case "connected":
         return {
@@ -328,6 +382,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 65,
+          systemAction: "Scheduled introductory message",
+          whyChosen: "Connection accepted — send intro message while visible",
         };
       case "connection_requested":
         return {
@@ -335,6 +391,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(5),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 30,
+          systemAction: "Waiting for connection acceptance",
+          whyChosen: "Request sent — LinkedIn requires patience for acceptance",
         };
       case "message_sent":
       case "followup_sent":
@@ -343,6 +401,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(5),
           flowStatus: attemptCount >= maxAttempts ? FLOW_STATUS.COMPLETED : FLOW_STATUS.ACTIVE,
           priority: 35,
+          systemAction: attemptCount >= maxAttempts ? "Completed LinkedIn flow" : "Scheduled response check",
+          whyChosen: "Message sent — giving time for response before follow-up",
         };
       case "profile_found":
       case "viewed":
@@ -351,6 +411,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 50,
+          systemAction: "Scheduled connection request",
+          whyChosen: "Profile identified — next step is to connect",
         };
       default:
         return {
@@ -358,6 +420,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(1),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 40,
+          systemAction: "Scheduled profile search",
+          whyChosen: "Need to locate contact on LinkedIn first",
         };
     }
   }
@@ -372,6 +436,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 80,
           spawnFlows: [{ flowType: FLOW_TYPES.GATEKEEPER, reason: "Reactivated from nurture" }],
+          systemAction: "Reactivated — started fresh Gatekeeper flow",
+          whyChosen: "Nurture contact re-engaged — capitalize on renewed interest",
         };
       case "closed_lost":
         return {
@@ -379,6 +445,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(365),
           flowStatus: FLOW_STATUS.COMPLETED,
           priority: 5,
+          systemAction: "Closed — no further outreach",
+          whyChosen: "Marked as lost — removing from active pipeline",
         };
       default:
         return {
@@ -386,6 +454,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
           nextDueAt: addDays(90),
           flowStatus: FLOW_STATUS.ACTIVE,
           priority: 15,
+          systemAction: "Scheduled quarterly check-in",
+          whyChosen: "Maintaining relationship with periodic touchpoints",
         };
     }
   }
@@ -395,6 +465,8 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
     nextDueAt: addDays(1),
     flowStatus: FLOW_STATUS.ACTIVE,
     priority: 50,
+    systemAction: "Queued for manual review",
+    whyChosen: "Unknown flow type — needs operator decision",
   };
 }
 
@@ -537,7 +609,35 @@ export async function logFlowAttempt(params: {
     }).catch(e => log(`Calls table sync failed (non-blocking): ${e.message}`, "flow-engine"));
   }
 
-  return { attempt, nextAction: computed.nextAction, nextDueAt: callbackDate, flowStatus: computed.flowStatus, spawnedFlows };
+  const stateChanges: string[] = [];
+  if (finalStatus !== currentFlow.status) {
+    const flowLabel = FLOW_TYPE_LABELS[currentFlow.flowType] || currentFlow.flowType;
+    stateChanges.push(`${flowLabel} flow ${finalStatus === "completed" ? "completed" : finalStatus === "recycled" ? "recycled" : finalStatus === "paused" ? "paused" : "updated"}`);
+  }
+  if (computed.spawnFlows) {
+    for (const sf of computed.spawnFlows) {
+      stateChanges.push(`New ${FLOW_TYPE_LABELS[sf.flowType] || sf.flowType} flow created`);
+    }
+  }
+  stateChanges.push("New task created in action queue");
+  if (params.capturedInfo) stateChanges.push("Contact info captured");
+  stateChanges.push("Airtable company status updated");
+
+  return {
+    attempt,
+    nextAction: computed.nextAction,
+    nextDueAt: callbackDate,
+    flowStatus: computed.flowStatus,
+    spawnedFlows,
+    explanation: {
+      outcomeLabel: getOutcomeLabel(params.outcome),
+      systemAction: computed.systemAction,
+      whyChosen: computed.whyChosen,
+      stateChanges,
+      flowType: currentFlow.flowType,
+      flowLabel: FLOW_TYPE_LABELS[currentFlow.flowType] || currentFlow.flowType,
+    },
+  };
 }
 
 export async function checkDuplicateFlow(params: {

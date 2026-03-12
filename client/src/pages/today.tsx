@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import {
   Phone, Mail, Linkedin, Target, Play, Clock, AlertCircle,
   ChevronRight, Building2, User, ArrowRight, Loader2,
-  PhoneCall, MessageSquare, Zap, Calendar, TrendingUp, Plus
+  PhoneCall, MessageSquare, Zap, Calendar, TrendingUp, Plus,
+  BarChart3, Users, Handshake, Activity, ChevronDown, ChevronUp,
+  Brain
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -83,6 +85,31 @@ interface FlowStats {
   flowsByType: Record<string, number>;
 }
 
+interface KPIData {
+  fiveDay: {
+    companiesTouched: number;
+    dmsIdentified: number;
+    liveDMConversations: number;
+    qualifiedOpportunities: number;
+    followupsScheduled: number;
+  };
+  sevenDay: {
+    gkBreakthroughRate: number;
+    dmConnectionRate: number;
+    emailReplyRate: number;
+    linkedinConnectionRate: number;
+    nurtureReactivations: number;
+  };
+  thirtyDay: {
+    warmAccounts: number;
+    opportunitiesCreated: number;
+    meetingsTriggered: number;
+    closedWon: number;
+    closedLost: number;
+  };
+  interpretation: string;
+}
+
 interface TodayCompany {
   id: string;
   company_name: string;
@@ -132,6 +159,117 @@ function FlowBadge({ flowType }: { flowType: string }) {
       <Icon className="w-3 h-3" />
       {config.label}
     </span>
+  );
+}
+
+function KPIMetric({ label, value, suffix, target, color, testId }: {
+  label: string; value: number; suffix?: string; target?: number; color: string; testId: string;
+}) {
+  const displayVal = suffix === "%" ? `${value}%` : value.toString();
+  let indicator: "green" | "yellow" | "red" = "green";
+  if (target !== undefined) {
+    const ratio = value / Math.max(target, 1);
+    indicator = ratio >= 0.8 ? "green" : ratio >= 0.4 ? "yellow" : "red";
+  }
+  const indicatorColor = indicator === "green" ? EMERALD : indicator === "yellow" ? AMBER : ERROR_RED;
+
+  return (
+    <div className="flex items-center justify-between py-1.5" data-testid={testId}>
+      <span className="text-xs" style={{ color: MUTED }}>{label}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-bold font-mono" style={{ color }}>{displayVal}</span>
+        {target !== undefined && (
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: indicatorColor }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KPIScoreboard({ kpi }: { kpi: KPIData }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-xl overflow-hidden mb-6" style={{ background: "white", border: `1px solid ${BORDER}` }} data-testid="kpi-scoreboard">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-5 py-3.5 flex items-center justify-between text-left"
+        data-testid="kpi-toggle"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${EMERALD}12` }}>
+            <BarChart3 className="w-4 h-4" style={{ color: EMERALD }} />
+          </div>
+          <div>
+            <div className="text-sm font-bold" style={{ color: TEXT }}>Pipeline Scoreboard</div>
+            <div className="text-xs" style={{ color: MUTED }}>5 / 7 / 30 day performance</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 mr-2">
+            <div className="text-center">
+              <div className="text-lg font-bold" style={{ color: EMERALD }}>{kpi.fiveDay.companiesTouched}</div>
+              <div className="text-[10px]" style={{ color: MUTED }}>Touched</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold" style={{ color: BLUE }}>{kpi.fiveDay.liveDMConversations}</div>
+              <div className="text-[10px]" style={{ color: MUTED }}>DM Convos</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold" style={{ color: AMBER }}>{kpi.thirtyDay.warmAccounts}</div>
+              <div className="text-[10px]" style={{ color: MUTED }}>Warm</div>
+            </div>
+          </div>
+          {expanded ? <ChevronUp className="w-4 h-4" style={{ color: MUTED }} /> : <ChevronDown className="w-4 h-4" style={{ color: MUTED }} />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5">
+          {kpi.interpretation && (
+            <div className="rounded-lg p-3 mb-4 flex items-start gap-2" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15` }}>
+              <Brain className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: EMERALD }} />
+              <span className="text-xs font-medium" style={{ color: TEXT }} data-testid="kpi-interpretation">{kpi.interpretation}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-lg p-4" style={{ background: SUBTLE }}>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: EMERALD }}>
+                Last 5 Days
+              </div>
+              <KPIMetric label="Companies Touched" value={kpi.fiveDay.companiesTouched} color={TEXT} target={10} testId="kpi-companies-touched" />
+              <KPIMetric label="DMs Identified" value={kpi.fiveDay.dmsIdentified} color={TEXT} target={3} testId="kpi-dms-identified" />
+              <KPIMetric label="Live DM Conversations" value={kpi.fiveDay.liveDMConversations} color={EMERALD} target={2} testId="kpi-live-dm" />
+              <KPIMetric label="Qualified Opportunities" value={kpi.fiveDay.qualifiedOpportunities} color={EMERALD} target={1} testId="kpi-qualified" />
+              <KPIMetric label="Follow-Ups Scheduled" value={kpi.fiveDay.followupsScheduled} color={BLUE} testId="kpi-followups" />
+            </div>
+
+            <div className="rounded-lg p-4" style={{ background: SUBTLE }}>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: BLUE }}>
+                Last 7 Days
+              </div>
+              <KPIMetric label="GK Breakthrough" value={kpi.sevenDay.gkBreakthroughRate} suffix="%" color={AMBER} target={25} testId="kpi-gk-rate" />
+              <KPIMetric label="DM Connection" value={kpi.sevenDay.dmConnectionRate} suffix="%" color={EMERALD} target={20} testId="kpi-dm-rate" />
+              <KPIMetric label="Email Reply" value={kpi.sevenDay.emailReplyRate} suffix="%" color={BLUE} target={10} testId="kpi-email-rate" />
+              <KPIMetric label="LinkedIn Connection" value={kpi.sevenDay.linkedinConnectionRate} suffix="%" color="#0A66C2" target={15} testId="kpi-linkedin-rate" />
+              <KPIMetric label="Nurture Reactivations" value={kpi.sevenDay.nurtureReactivations} color={PURPLE} testId="kpi-reactivations" />
+            </div>
+
+            <div className="rounded-lg p-4" style={{ background: SUBTLE }}>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: AMBER }}>
+                Last 30 Days
+              </div>
+              <KPIMetric label="Warm Accounts" value={kpi.thirtyDay.warmAccounts} color={EMERALD} testId="kpi-warm" />
+              <KPIMetric label="Opportunities Created" value={kpi.thirtyDay.opportunitiesCreated} color={EMERALD} testId="kpi-opportunities" />
+              <KPIMetric label="Meetings Triggered" value={kpi.thirtyDay.meetingsTriggered} color={BLUE} testId="kpi-meetings" />
+              <KPIMetric label="Closed Won" value={kpi.thirtyDay.closedWon} color={EMERALD} testId="kpi-closed-won" />
+              <KPIMetric label="Closed Lost" value={kpi.thirtyDay.closedLost} color={ERROR_RED} testId="kpi-closed-lost" />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -206,6 +344,10 @@ export default function TodayPage() {
     queryKey: ["/api/today-list"],
   });
   const todayList = Array.isArray(todayResponse) ? todayResponse : (todayResponse?.companies || []);
+
+  const { data: kpiData } = useQuery<KPIData>({
+    queryKey: ["/api/flows/kpi"],
+  });
 
   const seedMutation = useMutation({
     mutationFn: async (companies: TodayCompany[]) => {
@@ -323,6 +465,8 @@ export default function TodayPage() {
               <StatCard label="Overdue" value={stats?.overdue || 0} icon={AlertCircle} color={ERROR_RED} testId="stat-overdue" />
               <StatCard label="Done This Week" value={stats?.completedThisWeek || 0} icon={Zap} color="#059669" testId="stat-completed" />
             </div>
+
+            {kpiData && <KPIScoreboard kpi={kpiData} />}
 
             {overdueActions.length > 0 && activeFilter !== "overdue" && (
               <div className="rounded-lg p-3 mb-4 flex items-center justify-between" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)" }} data-testid="overdue-banner">
