@@ -1,0 +1,199 @@
+I need you to audit and explain my current system so thoroughly that another architect can redesign it around a highly focused sales operating model.
+
+Context:
+This machine is for Texas Cooldown Trailers.
+Our focus is:
+- 1 Avatar: Gulf Coast industrial contractors working inside refineries / plants
+- 1 Product: Cooldown trailers / mobile cooling stations
+- 1 Channel: Direct outbound relationship-building, primarily phone-first, supported by email and LinkedIn
+
+The system must be redesigned to mirror and guide the real-world sales process, not just store data.
+
+The real sales process has 5 flows:
+1. Gatekeeper Discovery Flow
+2. Decision Maker Direct Call Flow
+3. Email Flow
+4. LinkedIn Flow
+5. Long-Term Nurture Flow
+
+I need you to tell me EXACTLY how the current machine is built so that a redesign can be planned correctly.
+
+Your task:
+Give me a complete system architecture and UX audit of the current app in a structured format.
+
+Return your answer in the following sections and be extremely specific:
+
+SECTION 1 — CURRENT PRODUCT STRUCTURE
+- List every page, tab, module, panel, widget, and workflow currently in the app
+- Explain what each one does
+- Explain what user action each one supports
+- Explain whether each one is operationally necessary, supportive, redundant, or distracting relative to the 1-1-1 sales model
+
+SECTION 2 — CURRENT DATA MODEL
+- List every table, collection, schema, record type, object, state model, status field, and relationship currently used
+- For each one, explain:
+  - purpose
+  - key fields
+  - how records move through the system
+  - what triggers updates
+  - whether it supports lead generation, contact tracking, outreach execution, or reporting
+- Identify anything missing that would be required to support the 5 outreach flows properly
+
+SECTION 3 — CURRENT USER FLOW
+- Describe exactly what happens from the moment I log in
+- Describe the intended operator journey through the app
+- Describe the real journey the UI currently pushes me toward
+- Identify where the current UX is centered on data/analytics instead of action/execution
+- Identify friction, confusion, dead ends, or “nice-looking but not useful” elements
+
+SECTION 4 — CURRENT SALES LOGIC
+- Explain how the app currently thinks about:
+  - companies
+  - contacts
+  - decision makers
+  - outreach
+  - follow-ups
+  - pipeline progression
+- Explain whether the system currently understands:
+  - multiple contact paths per company
+  - gatekeeper attempts
+  - direct line attempts
+  - email sequences
+  - LinkedIn progression
+  - nurture/recycle logic
+- Identify the gap between the current logic and this desired logic:
+  - one company can have multiple parallel or sequential contact flows
+  - gatekeeper can produce DM name, extension, email, transfer, or dead end
+  - DM can then enter direct-call flow
+  - email can run separately
+  - LinkedIn can run separately
+  - after contact, a new post-contact flow begins
+  - non-responsive leads should recycle into nurture
+
+SECTION 5 — CURRENT AUTOMATIONS
+- List every automation, background job, scheduled task, trigger, scoring rule, machine-learning behavior, search generation, enrichment, and workflow currently active
+- Explain what each automation does
+- Explain what data it reads and writes
+- Explain whether it actually helps operator execution or mainly creates passive system activity
+- Mark which automations should likely be:
+  - kept
+  - modified
+  - removed
+  - repurposed
+
+SECTION 6 — UI/UX INVENTORY
+- Describe the current layout in detail:
+  - top nav
+  - side nav
+  - dashboard modules
+  - cards
+  - tab structure
+  - actions
+  - buttons
+  - event log
+  - analytics panels
+  - lead views
+  - outreach views
+- For each major UI area, explain:
+  - what behavior it encourages
+  - whether it helps daily execution
+  - how important it is in the current design
+- Identify what is visually strong but strategically misaligned
+- Identify what should become primary vs secondary in a 1-1-1 model
+
+SECTION 7 — WHAT THE SYSTEM WOULD NEED TO SUPPORT THE 5 FLOWS
+Using the current codebase and architecture, explain what would need to exist for the app to properly support these 5 flows:
+
+FLOW 1 — Gatekeeper Discovery
+- repeated company-level call attempts
+- gatekeeper result logging
+- ability to capture:
+  - gave DM name
+  - gave direct extension
+  - gave email
+  - transferred
+  - voicemail/general mailbox
+  - refused
+  - no answer
+- next-action logic after each result
+
+FLOW 2 — Decision Maker Direct Call
+- DM-specific attempt tracking
+- voicemail logging
+- live conversation logging
+- direct-line retry cadence
+- next action recommendation
+
+FLOW 3 — Email Flow
+- email attempt count
+- sequence step tracking
+- response detection
+- pause/resume logic
+- tie email activity back to company + DM
+
+FLOW 4 — LinkedIn Flow
+- profile found/not found
+- viewed
+- requested
+- connected
+- messaged
+- responded
+- follow-up timing
+
+FLOW 5 — Nurture Flow
+- recycle rules
+- future follow-up dates
+- seasonal/project check-in logic
+- reactivation triggers
+
+SECTION 8 — RECOMMENDED SYSTEM REFRAME
+Based on the current codebase, explain whether the system should be reframed around:
+- companies first
+- contacts second
+- flows third
+- next actions above all else
+
+Then explain:
+- what the ideal primary dashboard should show first
+- what the operator should see the moment they log in
+- what “Focus Mode” should become
+- what the new main navigation should probably be
+- what should be hidden, demoted, or removed from the main experience
+
+SECTION 9 — TECHNICAL CONSTRAINTS
+- List the real technical limitations that would affect a redesign
+- Identify what can be changed quickly vs what requires deeper refactoring
+- Separate:
+  - UI-only changes
+  - workflow logic changes
+  - schema changes
+  - automation changes
+  - major architecture changes
+
+SECTION 10 — HANDOFF FORMAT
+At the end, give me these deliverables in clean bullet format:
+
+A. Current system summary in plain English
+B. Biggest UX misalignment
+C. Biggest workflow gap
+D. Existing strengths worth preserving
+E. Features/modules to remove or demote
+F. Features/modules to elevate
+G. Missing entities or statuses needed
+H. Recommended redesign priority order
+I. Fastest path to turn this into a true operator-guided relationship machine
+
+Important rules:
+- Do not be vague
+- Do not give generic SaaS advice
+- Do not tell me what a CRM usually does
+- Base your answer only on THIS app’s actual structure and logic
+- If you are unsure, inspect the code and say what file or component controls that area
+- Reference actual file names, routes, components, schemas, services, functions, state logic, and automations wherever possible
+- If something appears implied but not actually implemented, clearly label it as “appears intended but not confirmed”
+- I want the answer written so I can hand it to another system architect for redesign planning
+
+Final instruction:
+After completing the audit, end with a final section titled:
+“MINIMUM INFORMATION AN EXTERNAL ARCHITECT WOULD NEED NEXT”
+In that section, list any remaining unknowns, screenshots, code areas, or architecture details that would still be needed for a perfect redesign recommendation.

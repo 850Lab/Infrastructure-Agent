@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "dSoFFQUDb59-gqTHQgbFs"
+uri = "file://attached_assets/SYSTEM_AUDIT_TEXAS_COOLDOWN.md"
+type = "text"
+title = "Complete System Architecture & UX Audit — Texas Cooldown Trailers"
