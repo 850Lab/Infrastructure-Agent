@@ -1,0 +1,190 @@
+We need to pause new feature development and run a full production-readiness audit on Phases 1–8.
+
+Important framing:
+Do NOT assume a phase is complete just because the UI exists or the happy path works once.
+Assume every completed phase may only be 70% built because the shell was created first.
+Your job is to audit for truth, reliability, persistence, and production safety.
+
+GOAL
+Determine what is:
+1. Fully implemented
+2. Partially implemented
+3. Placeholder / mocked / inferred
+4. Vulnerable to real-world failure
+5. Missing for production readiness
+
+SCOPE
+Audit all completed phases 1–8, including:
+- queue behavior
+- Focus Mode
+- outcome logging
+- next-best-action logic
+- machine decision / explanation screen
+- state transitions
+- company detail behavior
+- Twilio call state flow
+- SSE / polling fallback behavior
+- recordings timeline
+- scoreboard calculations
+- KPI health indicators
+- AI interpretation layer
+- persistence after refresh / navigation
+- auth protection
+- duplicate-write protection
+- null / empty / malformed data handling
+
+AUDIT RULES
+1. Try to DISPROVE completion.
+2. Do not trust the frontend alone. Compare frontend behavior to backend/API/database truth.
+3. Do not mark something complete unless:
+   - it works on happy path
+   - it survives refresh/re-entry
+   - it handles empty/error states
+   - it persists correctly
+   - it avoids duplicate or conflicting writes
+   - it behaves correctly during multi-company operator use
+4. Flag all hardcoded values, placeholder logic, fake reasoning, approximate KPI math, and brittle assumptions.
+5. Prefer truth over appearance.
+
+FOR EACH PHASE, RETURN THIS EXACT STRUCTURE:
+
+PHASE X — [name]
+
+A. What is fully implemented
+- list only items that are truly production-safe
+
+B. What is partially implemented
+- list features where shell/UI exists but logic/reliability is incomplete
+
+C. What is placeholder, mocked, or inferred
+- list static text, fake reasoning, stubbed calculations, hardcoded thresholds, temporary fallbacks, sample data, incomplete API assumptions
+
+D. What can break in real usage
+- identify edge cases, race conditions, stale state, refresh issues, auth gaps, duplicate writes, bad queue transitions, time-window errors, null handling failures, slow network failures, webhook delays, SSE disconnect issues, etc.
+
+E. Required fixes
+- exact code-level or architecture-level fixes needed
+
+F. Risk level
+- Critical / High / Medium / Low
+
+G. Production-ready status
+- Yes / No
+
+MANDATORY TEST AREAS
+
+1. UI STATE TESTING
+- loading states
+- empty states
+- error states
+- disabled states
+- mobile behavior
+- button action correctness
+- modal / panel close and reopen behavior
+
+2. LOGIC TESTING
+- outcome -> flow mapping
+- outcome -> next action mapping
+- due-date logic
+- reasoning generation accuracy
+- state transition correctness
+- queue advancement correctness
+- company detail deep-link correctness
+
+3. DATA / PERSISTENCE TESTING
+- refresh page after action
+- leave and return to same company
+- switch companies and come back
+- verify database reflects UI state
+- verify latest action is not lost
+- verify metrics recompute correctly after reload
+
+4. FAILURE TESTING
+- API timeout
+- missing fields
+- malformed data
+- missing recording/transcript
+- delayed webhook
+- SSE never connects
+- SSE connects but no events arrive
+- polling fallback takeover
+- duplicate click / double submit
+- partial write success
+- backend error response
+
+5. WORKFLOW TESTING
+- run realistic 20-company session
+- log mixed outcomes
+- advance queue repeatedly
+- check that scoreboard stays accurate
+- confirm no drift between company state and KPI counts
+- confirm operator never gets trapped or loses context
+
+SPECIAL INSTRUCTIONS FOR PHASE 7 — OUTCOME EXPLANATION LAYER
+Audit whether:
+- explanation content is dynamic and grounded in actual engine decisions
+- outcome shown matches what was actually logged
+- flow label is correct
+- system action displayed matches actual action taken
+- next best action is derived from real decision logic
+- due time is deterministic and correct
+- reasoning is specific rather than generic
+- all listed state changes match actual writes
+- Continue to Next always advances correctly
+- Stay Here preserves context and recent action
+- Company Detail opens with fresh synchronized data
+- refresh/re-entry preserves the post-outcome state correctly
+
+SPECIAL INSTRUCTIONS FOR PHASE 8 — KPI SCOREBOARD
+Audit whether:
+- each KPI uses correct source data
+- each KPI window (5/7/30 day) is calculated correctly
+- duplicate actions inflate counts or not
+- color-coded health thresholds are correct and configurable
+- collapsed headline metrics match expanded detail metrics
+- AI interpretation is generated from real metrics
+- AI interpretation changes when metrics change
+- scoreboard updates after new actions without stale cache
+- mobile/collapsible behavior is stable
+- metrics remain accurate after long operator sessions
+
+DELIVERABLE FORMAT
+After auditing all phases, produce:
+
+1. Executive Summary
+- total number of phases fully ready
+- total number partially built
+- total number with critical issues
+- top 10 production risks across the system
+
+2. Readiness Table
+Columns:
+- Phase
+- Shell Complete?
+- Logic Complete?
+- Persistence Safe?
+- Failure Safe?
+- Production Ready?
+- Risk Level
+
+3. Fix Plan
+Group fixes into:
+- Critical fixes before any live use
+- High-priority fixes this week
+- Medium-priority hardening
+- Cosmetic / UX only
+
+4. Then begin implementing fixes in this order:
+- database truth / persistence issues
+- next-action engine correctness
+- KPI accuracy
+- operator flow reliability
+- UI polish
+
+IMPORTANT:
+Do not add new features.
+Do not optimize appearance first.
+Do not summarize vaguely.
+Be brutally honest and specific.
+
+Start with Phase 1 and continue through Phase 8. After the audit, begin patching the highest-risk issues immediately.

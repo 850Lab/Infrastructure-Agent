@@ -44,3 +44,13 @@ Key features include:
 -   **HubSpot**: Per-client OAuth integration for syncing call outcomes, DMs, qualified deals, and companies. Optional sync for proposals.
 -   **Twilio**: Provides click-to-call, SMS, automatic call recording with AI intelligence pipeline, and real-time call coaching.
 -   **PostgreSQL**: Stores webhook logs, user accounts, client registry, and various system-specific data tables.
+
+## Production Audit (Completed)
+Audit performed across all 8 phases. Key fixes applied:
+- **Focus Mode queue advancement**: Removed index-based advancement after outcome logging. Queue re-fetch naturally advances since completed actions are removed from DB. "Continue to Next" just clears explanation overlay. Removed broken "Stay Here" button.
+- **Safe index clamping**: `safeIndex = Math.min(currentIndex, actions.length - 1)` prevents out-of-bounds access.
+- **Explanation panel navigation**: `companyId` stored in `explanationData` so Company Detail button navigates to correct company even after queue re-fetches.
+- **Session complete detection**: `isSessionComplete = totalActions === 0 && totalDone > 0` replaces index-based check. Empty queue check (`totalDone === 0`) renders first so session summary can display.
+- **stateChanges accuracy**: "Next task queued" only shown for active/paused flows. Removed always-true "Airtable company status updated". Now shows "Attempt #N recorded" instead.
+- **KPI accuracy**: `closedWon30` counts unique companies with `meeting_requested` outcomes (was hardcoded 0). `dmsIdentified` uses Set for unique companies (was counting events). `followupsScheduled` counts only explicit scheduling outcomes (was counting callbackAt-only). Email/LinkedIn KPI uses flowType OR channel for consistency.
+- **Double-click protection**: Synchronous `submitLockRef` prevents duplicate outcome submissions.

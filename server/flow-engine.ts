@@ -619,9 +619,11 @@ export async function logFlowAttempt(params: {
       stateChanges.push(`New ${FLOW_TYPE_LABELS[sf.flowType] || sf.flowType} flow created`);
     }
   }
-  stateChanges.push("New task created in action queue");
+  if (finalStatus === FLOW_STATUS.ACTIVE || finalStatus === FLOW_STATUS.PAUSED) {
+    stateChanges.push("Next task queued");
+  }
   if (params.capturedInfo) stateChanges.push("Contact info captured");
-  stateChanges.push("Airtable company status updated");
+  stateChanges.push(`Attempt #${newAttemptCount} recorded`);
 
   return {
     attempt,

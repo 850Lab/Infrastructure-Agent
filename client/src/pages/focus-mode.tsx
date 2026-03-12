@@ -360,12 +360,16 @@ export default function FocusModePage() {
     return map;
   }, [todayList]);
 
-  const currentAction = actions[currentIndex];
+  const safeIndex = Math.min(currentIndex, Math.max(actions.length - 1, 0));
+  const currentAction = actions[safeIndex];
   const currentCompany = currentAction ? todayMap[currentAction.companyId] : null;
   const totalActions = actions.length;
-  const progress = totalActions > 0 ? ((currentIndex + 1) / totalActions) * 100 : 0;
-  const isSessionComplete = currentIndex >= totalActions && totalActions > 0;
+  const totalDone = sessionLog.length;
+  const totalRemaining = totalActions;
+  const progress = totalDone + totalRemaining > 0 ? (totalDone / (totalDone + totalRemaining)) * 100 : 0;
+  const isSessionComplete = totalActions === 0 && totalDone > 0;
 
+  const submitLockRef = useRef(false);
   const pollFailCountRef = useRef(0);
 
   const handleCallStatusUpdate = useCallback((status: string, duration?: string | null) => {
@@ -546,10 +550,6 @@ export default function FocusModePage() {
         timestamp: Date.now(),
       }]);
 
-      queryClient.invalidateQueries({ queryKey: ["/api/flows/action-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/flows/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/flows/kpi"] });
-
       setCapturedInfo("");
       setNotes("");
       setLoggingOutcome(null);
@@ -567,14 +567,17 @@ export default function FocusModePage() {
           nextAction: data.nextAction,
           nextDueAt: data.nextDueAt,
           companyName: vars.companyName,
+          companyId: vars.companyId,
         });
-      } else {
-        setTimeout(() => {
-          setCurrentIndex(prev => prev + 1);
-        }, 500);
       }
+
+      submitLockRef.current = false;
+      queryClient.invalidateQueries({ queryKey: ["/api/flows/action-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/flows/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/flows/kpi"] });
     },
     onError: () => {
+      submitLockRef.current = false;
       toast({ title: "Error", description: "Failed to log outcome", variant: "destructive" });
       setLoggingOutcome(null);
     },
@@ -590,6 +593,7 @@ export default function FocusModePage() {
     nextAction: string;
     nextDueAt: string;
     companyName: string;
+    companyId: string;
   } | null>(null);
 
   const GK_CAPTURE_OUTCOMES = ["gave_dm_name", "gave_title_only", "gave_direct_extension", "gave_email"];
@@ -598,6 +602,8 @@ export default function FocusModePage() {
 
   const submitOutcome = (outcome: string) => {
     if (!currentAction || !currentAction.flowId) return;
+    if (logMutation.isPending || submitLockRef.current) return;
+    submitLockRef.current = true;
     setLoggingOutcome(outcome);
 
     const channel = currentAction.flowType === "email" ? "email" :
@@ -626,11 +632,15 @@ export default function FocusModePage() {
 
   const handleSkip = () => {
     resetCallState();
-    setCurrentIndex(prev => prev + 1);
     setCapturedInfo("");
     setNotes("");
     setShowScripts(false);
     setSelectedOutcome(null);
+    if (currentIndex < actions.length - 1) {
+      setCurrentIndex(prev => prev + 1);
+    } else {
+      setCurrentIndex(0);
+    }
   };
 
   if (isLoading) {
@@ -641,7 +651,7 @@ export default function FocusModePage() {
     );
   }
 
-  if (totalActions === 0) {
+  if (totalActions === 0 && totalDone === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#F8FAFC" }}>
         <div className="text-center max-w-md mx-auto">
@@ -806,7 +816,7 @@ export default function FocusModePage() {
             className="flex gap-2 pt-2"
           >
             <Button
-              onClick={() => { setExplanationData(null); setCurrentIndex(prev => prev + 1); }}
+              onClick={() => { setExplanationData(null); }}
               className="flex-1 h-10 text-sm font-semibold"
               style={{ background: EMERALD, color: "white" }}
               data-testid="button-continue-next"
@@ -816,16 +826,7 @@ export default function FocusModePage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => { setExplanationData(null); }}
-              className="h-10 text-sm font-semibold"
-              style={{ borderColor: BORDER, color: TEXT }}
-              data-testid="button-stay-company"
-            >
-              Stay Here
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => { setExplanationData(null); navigate(`/machine/company/${currentAction?.companyId}`); }}
+              onClick={() => { const compId = explanationData.companyId; setExplanationData(null); if (compId) navigate(`/machine/company/${compId}`); }}
               className="h-10 text-sm font-semibold"
               style={{ borderColor: BORDER, color: BLUE }}
               data-testid="button-open-detail"
@@ -874,7 +875,7 @@ export default function FocusModePage() {
           </Button>
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold" style={{ color: TEXT }}>
-              {currentIndex + 1} of {totalActions}
+              {totalDone > 0 ? `${totalDone} done` : ""}{totalDone > 0 && totalRemaining > 0 ? " / " : ""}{totalRemaining} left
             </span>
             <div className="w-32 h-1.5 rounded-full overflow-hidden" style={{ background: `${EMERALD}15` }}>
               <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progress}%`, background: EMERALD }} />
