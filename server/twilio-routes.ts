@@ -4,7 +4,7 @@ import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, e
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { twilioRecordings } from "@shared/schema";
+import { twilioRecordings, clients } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 import { registerCoachingSession, subscribeToCoaching, getActiveSessions } from "./realtime-coaching";
 import { validateToken } from "./auth";
@@ -224,9 +224,18 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       const recordingCallbackUrl = `${baseUrl}/api/twilio/webhook/recording`;
       const clientId = (req as any).user?.clientId || null;
 
-      const wsProtocol = baseUrl.startsWith("https") ? "wss" : "ws";
-      const host = baseUrl.replace(/^https?:\/\//, "");
-      const mediaStreamUrl = `${wsProtocol}://${host}/media-stream`;
+      let coachingActive = false;
+      if (clientId) {
+        const [clientRecord] = await db.select({ coachingEnabled: clients.coachingEnabled }).from(clients).where(eq(clients.id, clientId)).limit(1);
+        coachingActive = clientRecord?.coachingEnabled ?? true;
+      }
+
+      let mediaStreamUrl: string | undefined;
+      if (coachingActive) {
+        const wsProtocol = baseUrl.startsWith("https") ? "wss" : "ws";
+        const host = baseUrl.replace(/^https?:\/\//, "");
+        mediaStreamUrl = `${wsProtocol}://${host}/media-stream`;
+      }
 
       const result = await initiateCall(to, statusCallbackUrl, recordingCallbackUrl, mediaStreamUrl);
       if (!result.success) {
@@ -258,16 +267,18 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         };
         activeCallMeta.set(result.sid, sessionMeta);
 
-        registerCoachingSession(
-          result.sid,
-          companyName || "",
-          contactName || "",
-          Array.isArray(talkingPoints) ? talkingPoints : []
-        );
+        if (coachingActive) {
+          registerCoachingSession(
+            result.sid,
+            companyName || "",
+            contactName || "",
+            Array.isArray(talkingPoints) ? talkingPoints : []
+          );
+        }
       }
 
-      log(`Call initiated by user to ${to} (recording + live coaching, SID: ${result.sid}, flow: ${flowId || "none"}, company: ${companyId || "none"})`);
-      res.json({ ok: true, sid: result.sid, recordingEnabled: true, coachingEnabled: true });
+      log(`Call initiated by user to ${to} (recording: yes, coaching: ${coachingActive ? "yes" : "off"}, SID: ${result.sid}, flow: ${flowId || "none"}, company: ${companyId || "none"})`);
+      res.json({ ok: true, sid: result.sid, recordingEnabled: true, coachingEnabled: coachingActive });
     } catch (err: any) {
       log(`Call route error: ${err.message}`);
       res.status(500).json({ error: err.message });

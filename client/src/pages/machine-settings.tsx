@@ -6,7 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, AlertTriangle, Loader2, Check, Link2, Unlink, ExternalLink, Mail } from "lucide-react";
+import { ArrowLeft, Save, AlertTriangle, Loader2, Check, Link2, Unlink, ExternalLink, Mail, Phone, Mic } from "lucide-react";
 
 const EMERALD = "#10B981";
 const TEXT = "#0F172A";
@@ -142,6 +142,116 @@ function HubSpotCard() {
           <Link2 className="w-4 h-4" />
           Connect HubSpot
         </Button>
+      )}
+    </div>
+  );
+}
+
+function CoachingToggleCard() {
+  const { toast } = useToast();
+
+  const { data: coachingStatus, isLoading } = useQuery<{ coachingEnabled: boolean }>({
+    queryKey: ["/api/coaching/status"],
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiRequest("PATCH", "/api/coaching/status", { enabled }),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/coaching/status"] });
+      toast({
+        title: data.coachingEnabled ? "Live coaching enabled" : "Live coaching disabled",
+        description: data.coachingEnabled
+          ? "Calls will include real-time AI coaching (higher cost per call)."
+          : "Calls will still be recorded and transcribed after the call ends.",
+        duration: 4000,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const enabled = coachingStatus?.coachingEnabled ?? true;
+
+  return (
+    <div
+      className="rounded-2xl p-6 mb-6"
+      style={{ background: "#FFF", border: `1px solid ${BORDER}`, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+      data-testid="card-coaching-settings"
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-2 h-2 rounded-full" style={{ background: EMERALD }} />
+        <p className="text-sm font-bold" style={{ color: TEXT }}>Call Settings</p>
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: enabled ? `${EMERALD}10` : `${MUTED}10` }}>
+            <Mic className="w-4 h-4" style={{ color: enabled ? EMERALD : MUTED }} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: TEXT }}>Live AI Coaching</p>
+            <p className="text-xs" style={{ color: MUTED }}>Real-time alerts during calls (uses OpenAI Realtime API)</p>
+          </div>
+        </div>
+        <button
+          onClick={() => toggleMutation.mutate(!enabled)}
+          disabled={isLoading || toggleMutation.isPending}
+          className="relative w-11 h-6 rounded-full transition-colors duration-200"
+          style={{ background: enabled ? EMERALD : "#CBD5E1" }}
+          data-testid="toggle-coaching"
+        >
+          <span
+            className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200"
+            style={{ transform: enabled ? "translateX(22px)" : "translateX(2px)" }}
+          />
+        </button>
+      </div>
+
+      <div className="rounded-lg p-3 space-y-1.5" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: enabled ? EMERALD : MUTED }}>
+          {enabled ? "Active features" : "Always included"}
+        </p>
+        <div className="flex items-center gap-1.5">
+          <Check className="w-3 h-3" style={{ color: EMERALD }} />
+          <span className="text-xs" style={{ color: TEXT }}>Call recording</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Check className="w-3 h-3" style={{ color: EMERALD }} />
+          <span className="text-xs" style={{ color: TEXT }}>Post-call transcription</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Check className="w-3 h-3" style={{ color: EMERALD }} />
+          <span className="text-xs" style={{ color: TEXT }}>Containment analysis</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Check className="w-3 h-3" style={{ color: EMERALD }} />
+          <span className="text-xs" style={{ color: TEXT }}>Follow-up date extraction</span>
+        </div>
+        {enabled && (
+          <>
+            <div className="flex items-center gap-1.5">
+              <Check className="w-3 h-3" style={{ color: EMERALD }} />
+              <span className="text-xs" style={{ color: TEXT }}>Live gatekeeper containment alerts</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Check className="w-3 h-3" style={{ color: EMERALD }} />
+              <span className="text-xs" style={{ color: TEXT }}>Real-time authority detection</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Check className="w-3 h-3" style={{ color: EMERALD }} />
+              <span className="text-xs" style={{ color: TEXT }}>Live transcript streaming</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {!enabled && (
+        <p className="text-xs mt-3" style={{ color: MUTED }}>
+          Coaching is off to reduce cost. Calls are still recorded and analyzed after they end.
+        </p>
       )}
     </div>
   );
@@ -414,6 +524,8 @@ export default function MachineSettingsPage() {
         </div>
 
         <HubSpotCard />
+
+        <CoachingToggleCard />
 
         <div
           className="rounded-2xl p-6 mb-6"

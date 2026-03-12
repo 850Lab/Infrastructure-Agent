@@ -12,6 +12,7 @@ export const clients = pgTable("clients", {
   decisionMakerFocus: text("decision_maker_focus").notNull(),
   status: text("status").notNull().default("active"),
   airtableBaseId: text("airtable_base_id"),
+  coachingEnabled: boolean("coaching_enabled").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastRunAt: timestamp("last_run_at"),
 });

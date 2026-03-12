@@ -54,3 +54,10 @@ Audit performed across all 8 phases. Key fixes applied:
 - **stateChanges accuracy**: "Next task queued" only shown for active/paused flows. Removed always-true "Airtable company status updated". Now shows "Attempt #N recorded" instead.
 - **KPI accuracy**: `closedWon30` counts unique companies with `meeting_requested` outcomes (was hardcoded 0). `dmsIdentified` uses Set for unique companies (was counting events). `followupsScheduled` counts only explicit scheduling outcomes (was counting callbackAt-only). Email/LinkedIn KPI uses flowType OR channel for consistency.
 - **Double-click protection**: Synchronous `submitLockRef` prevents duplicate outcome submissions.
+
+## Coaching Toggle
+Per-client setting to enable/disable live AI coaching during calls. When disabled, calls still get recorded and transcribed post-call (cheaper). Toggle available in Machine Settings under "Call Settings" card.
+- Schema: `clients.coaching_enabled` (boolean, default true)
+- API: `GET/PATCH /api/coaching/status` with `{ enabled: boolean }`
+- Backend: `twilio-routes.ts` checks client setting before attaching media stream; skips `registerCoachingSession` when off
+- UI: Toggle switch in `machine-settings.tsx` with feature list showing what's always included vs coaching-only

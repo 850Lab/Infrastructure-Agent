@@ -13,7 +13,7 @@ import { computeDMAuthorityReport } from "./dm-authority-learning";
 import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { db } from "./db";
-import { manualLeads } from "@shared/schema";
+import { manualLeads, clients } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
@@ -469,6 +469,31 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     } catch (err: any) {
       log(`Machine settings update error: ${err.message}`, "settings");
       res.status(500).json({ error: "Failed to update machine settings" });
+    }
+  });
+
+  app.get("/api/coaching/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.json({ coachingEnabled: true });
+      const [client] = await db.select({ coachingEnabled: clients.coachingEnabled }).from(clients).where(eq(clients.id, clientId)).limit(1);
+      res.json({ coachingEnabled: client?.coachingEnabled ?? true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/coaching/status", authMiddleware, requirePermission("edit_settings"), async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(400).json({ error: "No client context" });
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "'enabled' must be a boolean" });
+      await db.update(clients).set({ coachingEnabled: enabled }).where(eq(clients.id, clientId));
+      log(`Coaching ${enabled ? "enabled" : "disabled"} for client ${clientId}`, "settings");
+      res.json({ success: true, coachingEnabled: enabled });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
