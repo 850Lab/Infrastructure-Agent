@@ -540,3 +540,16 @@ export const actionQueue = pgTable("action_queue", {
 export const insertActionQueueSchema = createInsertSchema(actionQueue).omit({ id: true, createdAt: true, completedAt: true });
 export type InsertActionQueue = z.infer<typeof insertActionQueueSchema>;
 export type ActionQueueItem = typeof actionQueue.$inferSelect;
+
+export const targetProfiles = pgTable("target_profiles", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  name: text("name").notNull(),
+  filters: text("filters").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertTargetProfileSchema = createInsertSchema(targetProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTargetProfile = z.infer<typeof insertTargetProfileSchema>;
+export type TargetProfile = typeof targetProfiles.$inferSelect;

@@ -34,6 +34,7 @@ Key features include:
 -   **My Leads Page** (`/machine/my-leads`): Dedicated page for manually added leads with tool access for call logging, playbooks, enrichment, and proposal creation.
 -   **Multi-Campaign Support**: Allows for multiple active campaigns with isolated data and configurable settings.
 -   **LNG Relationship Intelligence Engine**: A client-specific feature at `/machine/lng-projects` that generates "Operator Cards" with company intelligence, priority people, and recommended actions, utilizing 6 search angles via Outscraper + GPT-4o analysis.
+-   **Targeting Control Panel** (`/machine/targeting`): Operator-controlled lead targeting with Core Filters (industry, territory, role), Signal Filters (warm/stale/fresh toggles), Strictness Controls (broad/balanced/strict match modes), Priority Objectives, Required Field toggles, live Target Summary bar, Results Preview table with match reasons, Coverage Diagnostics (exclusion reasons), Saved Target Profiles, and Action Buttons (Send to Focus Mode, Add to Follow-up, Export CSV). Backend: `POST /api/targeting/query`, `GET/POST/DELETE /api/targeting/profiles`, `POST /api/targeting/send-to-focus`, `POST /api/targeting/add-to-followup`. Data source: `outreach_pipeline` table. Saved profiles stored in `target_profiles` table.
 
 ## External Dependencies
 -   **Airtable**: Primary data store for business logic.

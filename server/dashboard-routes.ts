@@ -13,7 +13,7 @@ import { computeDMAuthorityReport } from "./dm-authority-learning";
 import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { db } from "./db";
-import { manualLeads, clients, companyFlows, flowAttempts, actionQueue } from "@shared/schema";
+import { manualLeads, clients, companyFlows, flowAttempts, actionQueue, outreachPipeline, targetProfiles } from "@shared/schema";
 import { eq, and, gte, lte, inArray, sql, desc } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
@@ -1675,6 +1675,245 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       });
     } catch (err: any) {
       log(`Command center error: ${err.message}`, "dashboard");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/targeting/query", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const f = req.body || {};
+      const conditions: any[] = [];
+      if (clientId) conditions.push(eq(outreachPipeline.clientId, clientId));
+      if (f.industry) conditions.push(sql`LOWER(${outreachPipeline.industry}) LIKE ${"%" + f.industry.toLowerCase() + "%"}`);
+      if (f.territory) {
+        const t = f.territory.toLowerCase();
+        conditions.push(sql`(LOWER(${outreachPipeline.city}) LIKE ${"%" + t + "%"} OR LOWER(${outreachPipeline.state}) LIKE ${"%" + t + "%"})`);
+      }
+      if (f.role) conditions.push(sql`LOWER(${outreachPipeline.title}) LIKE ${"%" + f.role.toLowerCase() + "%"}`);
+      if (f.mustHavePhone || f.hasPhone) conditions.push(sql`${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.phone} != ''`);
+      if (f.mustHaveEmail || f.hasEmail) conditions.push(sql`${outreachPipeline.contactEmail} IS NOT NULL AND ${outreachPipeline.contactEmail} != ''`);
+      if (f.mustHaveDM || f.hasDM) conditions.push(sql`${outreachPipeline.contactName} IS NOT NULL AND ${outreachPipeline.contactName} != ''`);
+      if (f.mustHaveSignal) conditions.push(sql`${outreachPipeline.lastOutcome} IS NOT NULL`);
+      if (f.warmLeads) conditions.push(sql`${outreachPipeline.lastOutcome} IN ('interested','meeting_requested','followup_scheduled','replied','live_answer')`);
+      if (f.staleLeads) conditions.push(sql`${outreachPipeline.updatedAt} < NOW() - INTERVAL '7 days'`);
+      if (f.freshLeads) conditions.push(sql`${outreachPipeline.lastOutcome} IS NULL`);
+      if (f.pipelineStatus) conditions.push(eq(outreachPipeline.pipelineStatus, f.pipelineStatus));
+      if (f.matchMode === "strict") {
+        conditions.push(sql`${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.phone} != ''`);
+        conditions.push(sql`${outreachPipeline.contactName} IS NOT NULL AND ${outreachPipeline.contactName} != ''`);
+        conditions.push(sql`${outreachPipeline.contactEmail} IS NOT NULL AND ${outreachPipeline.contactEmail} != ''`);
+      } else if (f.matchMode === "balanced") {
+        conditions.push(sql`(${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.phone} != '') OR (${outreachPipeline.contactEmail} IS NOT NULL AND ${outreachPipeline.contactEmail} != '')`);
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : sql`1=1`;
+
+      const totalResult = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(whereClause!);
+      const total = totalResult[0]?.count || 0;
+
+      const summaryResult = await db.select({
+        hasPhone: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.phone} != '')::int`,
+        hasEmail: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.contactEmail} IS NOT NULL AND ${outreachPipeline.contactEmail} != '')::int`,
+        hasDM: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.contactName} IS NOT NULL AND ${outreachPipeline.contactName} != '')::int`,
+        warmCount: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.lastOutcome} IN ('interested','meeting_requested','followup_scheduled','replied','live_answer'))::int`,
+      }).from(outreachPipeline).where(whereClause!);
+      const summary = summaryResult[0] || { hasPhone: 0, hasEmail: 0, hasDM: 0, warmCount: 0 };
+
+      let orderClause = desc(outreachPipeline.updatedAt);
+      if (f.priority === "most_likely_to_answer") orderClause = desc(sql`CASE WHEN ${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.phone} != '' THEN 1 ELSE 0 END`);
+      else if (f.priority === "fresh_untouched") orderClause = desc(sql`CASE WHEN ${outreachPipeline.lastOutcome} IS NULL THEN 1 ELSE 0 END`);
+      else if (f.priority === "fastest_to_meeting") orderClause = desc(sql`CASE WHEN ${outreachPipeline.lastOutcome} IN ('interested','meeting_requested','followup_scheduled','replied','live_answer') THEN 2 WHEN ${outreachPipeline.lastOutcome} IS NOT NULL THEN 1 ELSE 0 END`);
+      else if (f.priority === "highest_value") orderClause = desc(sql`CASE WHEN ${outreachPipeline.contactName} IS NOT NULL AND ${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.contactEmail} IS NOT NULL THEN 3 WHEN ${outreachPipeline.contactName} IS NOT NULL AND ${outreachPipeline.phone} IS NOT NULL THEN 2 WHEN ${outreachPipeline.contactName} IS NOT NULL THEN 1 ELSE 0 END`);
+
+      const results = await db.select({
+        id: outreachPipeline.id,
+        companyId: outreachPipeline.companyId,
+        companyName: outreachPipeline.companyName,
+        contactName: outreachPipeline.contactName,
+        contactEmail: outreachPipeline.contactEmail,
+        phone: outreachPipeline.phone,
+        title: outreachPipeline.title,
+        industry: outreachPipeline.industry,
+        city: outreachPipeline.city,
+        state: outreachPipeline.state,
+        lastOutcome: outreachPipeline.lastOutcome,
+        pipelineStatus: outreachPipeline.pipelineStatus,
+        updatedAt: outreachPipeline.updatedAt,
+      }).from(outreachPipeline).where(whereClause!).orderBy(orderClause).limit(50);
+
+      const matchReasons = results.map(r => {
+        const reasons: string[] = [];
+        if (f.industry && r.industry?.toLowerCase().includes(f.industry.toLowerCase())) reasons.push(`Industry: ${r.industry}`);
+        if (f.territory && (r.city?.toLowerCase().includes(f.territory.toLowerCase()) || r.state?.toLowerCase().includes(f.territory.toLowerCase()))) reasons.push(`Territory: ${r.city || ""}, ${r.state || ""}`);
+        if (f.role && r.title?.toLowerCase().includes(f.role.toLowerCase())) reasons.push(`Role: ${r.title}`);
+        if (r.phone) reasons.push("Has phone");
+        if (r.contactEmail) reasons.push("Has email");
+        if (r.contactName) reasons.push("Has DM");
+        if (r.lastOutcome && ["interested","meeting_requested","followup_scheduled","replied","live_answer"].includes(r.lastOutcome)) reasons.push(`Warm: ${r.lastOutcome}`);
+        if (!r.lastOutcome) reasons.push("Fresh lead");
+        return { ...r, matchReasons: reasons };
+      });
+
+      const allClientCount = clientId
+        ? (await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(eq(outreachPipeline.clientId, clientId)))[0]?.count || 0
+        : (await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline))[0]?.count || 0;
+
+      const exclusions: Array<{ reason: string; count: number }> = [];
+      if (total < allClientCount) {
+        const excluded = allClientCount - total;
+        if (f.mustHavePhone) {
+          const noPhone = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`(${outreachPipeline.phone} IS NULL OR ${outreachPipeline.phone} = '')`));
+          if (noPhone[0]?.count) exclusions.push({ reason: "Missing phone", count: noPhone[0].count });
+        }
+        if (f.mustHaveDM) {
+          const noDM = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`(${outreachPipeline.contactName} IS NULL OR ${outreachPipeline.contactName} = '')`));
+          if (noDM[0]?.count) exclusions.push({ reason: "Missing DM", count: noDM[0].count });
+        }
+        if (f.mustHaveEmail) {
+          const noEmail = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`(${outreachPipeline.contactEmail} IS NULL OR ${outreachPipeline.contactEmail} = '')`));
+          if (noEmail[0]?.count) exclusions.push({ reason: "Missing email", count: noEmail[0].count });
+        }
+        if (f.territory) {
+          const t = f.territory.toLowerCase();
+          const outTerritory = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`NOT (LOWER(${outreachPipeline.city}) LIKE ${"%" + t + "%"} OR LOWER(${outreachPipeline.state}) LIKE ${"%" + t + "%"})`));
+          if (outTerritory[0]?.count) exclusions.push({ reason: "Outside territory", count: outTerritory[0].count });
+        }
+        if (f.industry) {
+          const noIndustry = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`NOT LOWER(${outreachPipeline.industry}) LIKE ${"%" + f.industry.toLowerCase() + "%"}`));
+          if (noIndustry[0]?.count) exclusions.push({ reason: "Industry mismatch", count: noIndustry[0].count });
+        }
+        if (exclusions.length === 0 && excluded > 0) exclusions.push({ reason: "Filtered by other criteria", count: excluded });
+      }
+
+      const distinctIndustries = await db.selectDistinct({ industry: outreachPipeline.industry }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`${outreachPipeline.industry} IS NOT NULL AND ${outreachPipeline.industry} != ''`)).limit(50);
+      const distinctStates = await db.selectDistinct({ state: outreachPipeline.state }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`${outreachPipeline.state} IS NOT NULL AND ${outreachPipeline.state} != ''`)).limit(50);
+
+      res.json({
+        total,
+        allCount: allClientCount,
+        summary,
+        results: matchReasons,
+        exclusions,
+        filterOptions: {
+          industries: distinctIndustries.map(r => r.industry).filter(Boolean).sort(),
+          states: distinctStates.map(r => r.state).filter(Boolean).sort(),
+        },
+      });
+    } catch (err: any) {
+      log(`Targeting query error: ${err.message}`, "targeting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/targeting/profiles", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const where = clientId ? eq(targetProfiles.clientId, clientId) : sql`1=1`;
+      const profiles = await db.select().from(targetProfiles).where(where).orderBy(desc(targetProfiles.updatedAt));
+      res.json(profiles);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/targeting/profiles", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId || "global";
+      const { name, filters } = req.body;
+      if (!name || !filters) return res.status(400).json({ error: "name and filters required" });
+      const [profile] = await db.insert(targetProfiles).values({ clientId, name, filters: JSON.stringify(filters) }).returning();
+      res.json(profile);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/targeting/profiles/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const id = parseInt(req.params.id);
+      if (clientId) {
+        await db.delete(targetProfiles).where(and(eq(targetProfiles.id, id), eq(targetProfiles.clientId, clientId)));
+      } else {
+        await db.delete(targetProfiles).where(eq(targetProfiles.id, id));
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/targeting/send-to-focus", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const { companyIds } = req.body;
+      if (!companyIds?.length) return res.status(400).json({ error: "No companies selected" });
+
+      const companies = await db.select().from(outreachPipeline).where(and(eq(outreachPipeline.clientId, clientId), inArray(outreachPipeline.companyId, companyIds)));
+      let created = 0;
+      for (const c of companies) {
+        const existing = await db.select({ id: actionQueue.id }).from(actionQueue).where(and(eq(actionQueue.companyId, c.companyId), eq(actionQueue.clientId, clientId), eq(actionQueue.status, "pending"))).limit(1);
+        if (existing.length > 0) continue;
+        await db.insert(actionQueue).values({
+          clientId,
+          companyId: c.companyId,
+          companyName: c.companyName,
+          contactName: c.contactName || null,
+          flowType: c.contactName ? "dm_call" : "gatekeeper",
+          taskType: "call",
+          dueAt: new Date(),
+          priority: 70,
+          status: "pending",
+          companyPhone: c.phone || null,
+          contactEmail: c.contactEmail || null,
+          companyCity: c.city || null,
+          companyCategory: c.industry || null,
+          attemptNumber: 1,
+        });
+        created++;
+      }
+      res.json({ ok: true, created, skipped: companies.length - created });
+    } catch (err: any) {
+      log(`Targeting send-to-focus error: ${err.message}`, "targeting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/targeting/add-to-followup", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const { companyIds } = req.body;
+      if (!companyIds?.length) return res.status(400).json({ error: "No companies selected" });
+
+      const companies = await db.select().from(outreachPipeline).where(and(eq(outreachPipeline.clientId, clientId), inArray(outreachPipeline.companyId, companyIds)));
+      let created = 0;
+      const followupDate = new Date();
+      followupDate.setDate(followupDate.getDate() + 2);
+      for (const c of companies) {
+        const existing = await db.select({ id: companyFlows.id }).from(companyFlows).where(and(eq(companyFlows.companyId, c.companyId), eq(companyFlows.clientId, clientId), eq(companyFlows.status, "active"))).limit(1);
+        if (existing.length > 0) continue;
+        await db.insert(companyFlows).values({
+          clientId,
+          companyId: c.companyId,
+          companyName: c.companyName,
+          contactName: c.contactName || null,
+          flowType: "nurture",
+          status: "active",
+          stage: 1,
+          attemptCount: 0,
+          maxAttempts: 6,
+          nextAction: "Follow-up call",
+          nextDueAt: followupDate,
+          priority: 50,
+        });
+        created++;
+      }
+      res.json({ ok: true, created, skipped: companies.length - created });
+    } catch (err: any) {
+      log(`Targeting add-to-followup error: ${err.message}`, "targeting");
       res.status(500).json({ error: err.message });
     }
   });

@@ -1,0 +1,79 @@
+Build a new Targeting Control Panel for the lead engine so users can shape targeting instead of being forced into a fixed search recipe.
+
+Goal:
+Make targeting feel operator-controlled, flexible, and easy to understand. The page should let users define who they want, what signals matter, and how strict the match should be, while showing a live preview of the impact.
+
+Build the page with these sections:
+
+1. Core Filters
+Add filter controls for:
+- Industry
+- Territory / region
+- Role / function
+- Company size
+- Campaign / client
+
+2. Signal Filters
+Add toggles or checkboxes for:
+- Hiring activity
+- Expansion signals
+- Turnaround activity
+- New project indicators
+- DM identified
+- Phone found
+- Email found
+- Warm lead / positive outcome
+- Stale lead / reactivation opportunity
+
+3. Strictness and Priority Controls
+Add controls for:
+- Match mode: Broad / Balanced / Strict
+- Priority objective:
+  - Most likely to answer
+  - Most likely to need cooling
+  - Fastest path to meeting
+  - Highest-value accounts
+  - Fresh untouched leads
+- Required field toggles:
+  - Must have phone
+  - Must have DM
+  - Must have email
+  - Must have signal
+
+4. Target Summary Bar
+Show live totals based on current filters:
+- Matching companies
+- DMs found
+- Records with phone
+- Records with email
+- High-priority leads
+
+5. Results Preview
+Show a live-updating preview panel or table of the matching records.
+Include enough metadata for users to understand why each lead matched.
+
+6. Coverage Diagnostics
+Show exclusion reasons when filters are too narrow or when records are being filtered out, such as:
+- missing phone
+- missing DM
+- no matching signal
+- outside territory
+- company size mismatch
+
+7. Saved Target Profiles
+Allow users to save and reload target configurations.
+
+8. Action Buttons
+Add actions to:
+- Send results to Focus Mode
+- Save as segment
+- Add to follow-up queue
+- Export results
+
+Requirements:
+- Filter changes should update the preview live
+- Results should explain why they matched
+- If no results are found, show a helpful warning with suggestions to loosen filters
+- Keep the UI simple and operational, not decorative
+- Reuse existing data models where possible
+- Make this work as a true operator control panel for the machine

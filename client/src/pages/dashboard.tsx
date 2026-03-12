@@ -51,6 +51,7 @@ const SECTION_BUTTONS = [
   { label: "Today", route: "/machine/today" },
   { label: "Pipeline", route: "/machine/pipeline" },
   { label: "Follow-ups", route: "/machine/followups" },
+  { label: "Targeting", route: "/machine/targeting" },
   { label: "Lead Engine", route: "/machine/lead-engine" },
   { label: "Contacts", route: "/machine/contacts" },
   { label: "Analytics", route: "/machine/analytics" },

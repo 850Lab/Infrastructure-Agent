@@ -1,0 +1,658 @@
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/lib/auth";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import AppLayout from "@/components/app-layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Target, Phone, Mail, Users, Search, Filter, Save,
+  ChevronRight, AlertTriangle, CheckCircle2, XCircle,
+  Loader2, Building2, User, MapPin, Briefcase, Zap,
+  Download, Send, Clock, Bookmark, Trash2, Eye,
+  SlidersHorizontal, ToggleLeft, ToggleRight, RefreshCw
+} from "lucide-react";
+
+const EMERALD = "#10B981";
+const TEXT = "#0F172A";
+const MUTED = "#94A3B8";
+const BORDER = "#E2E8F0";
+const BLUE = "#3B82F6";
+const AMBER = "#F59E0B";
+const ERROR = "#EF4444";
+const PURPLE = "#8B5CF6";
+const SUBTLE = "#F8FAFC";
+
+interface TargetFilters {
+  industry: string;
+  territory: string;
+  role: string;
+  matchMode: "broad" | "balanced" | "strict";
+  priority: string;
+  mustHavePhone: boolean;
+  mustHaveDM: boolean;
+  mustHaveEmail: boolean;
+  mustHaveSignal: boolean;
+  warmLeads: boolean;
+  staleLeads: boolean;
+  freshLeads: boolean;
+  hasDM: boolean;
+  hasPhone: boolean;
+  hasEmail: boolean;
+}
+
+interface TargetResult {
+  id: number;
+  companyId: string;
+  companyName: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  phone: string | null;
+  title: string | null;
+  industry: string | null;
+  city: string | null;
+  state: string | null;
+  lastOutcome: string | null;
+  pipelineStatus: string;
+  updatedAt: string;
+  matchReasons: string[];
+}
+
+interface TargetQueryResponse {
+  total: number;
+  allCount: number;
+  summary: { hasPhone: number; hasEmail: number; hasDM: number; warmCount: number };
+  results: TargetResult[];
+  exclusions: Array<{ reason: string; count: number }>;
+  filterOptions: { industries: string[]; states: string[] };
+}
+
+interface SavedProfile {
+  id: number;
+  name: string;
+  filters: string;
+  createdAt: string;
+}
+
+const DEFAULT_FILTERS: TargetFilters = {
+  industry: "",
+  territory: "",
+  role: "",
+  matchMode: "broad",
+  priority: "",
+  mustHavePhone: false,
+  mustHaveDM: false,
+  mustHaveEmail: false,
+  mustHaveSignal: false,
+  warmLeads: false,
+  staleLeads: false,
+  freshLeads: false,
+  hasDM: false,
+  hasPhone: false,
+  hasEmail: false,
+};
+
+function Toggle({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all" style={{
+      background: active ? `${EMERALD}10` : SUBTLE,
+      border: `1px solid ${active ? EMERALD : BORDER}`,
+      color: active ? EMERALD : TEXT,
+    }}>
+      {active ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" style={{ color: MUTED }} />}
+      {label}
+    </button>
+  );
+}
+
+export default function TargetingPage() {
+  const { getToken } = useAuth();
+  const token = getToken();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [filters, setFilters] = useState<TargetFilters>({ ...DEFAULT_FILTERS });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saveName, setSaveName] = useState("");
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [debouncedFilters, setDebouncedFilters] = useState<TargetFilters>({ ...DEFAULT_FILTERS });
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedFilters({ ...filters }), 400);
+    return () => clearTimeout(timer);
+  }, [filters]);
+
+  const { data, isLoading, isError } = useQuery<TargetQueryResponse>({
+    queryKey: ["/api/targeting/query", debouncedFilters],
+    queryFn: async () => {
+      const res = await fetch("/api/targeting/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(debouncedFilters),
+      });
+      if (!res.ok) throw new Error("Query failed");
+      return res.json();
+    },
+    enabled: !!token,
+  });
+
+  const { data: profiles, refetch: refetchProfiles } = useQuery<SavedProfile[]>({
+    queryKey: ["/api/targeting/profiles"],
+    enabled: !!token,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("POST", "/api/targeting/profiles", { name, filters });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Profile saved" });
+      setSaveName("");
+      setShowSaveInput(false);
+      refetchProfiles();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/targeting/profiles/${id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Profile deleted" });
+      refetchProfiles();
+    },
+  });
+
+  const sendToFocusMutation = useMutation({
+    mutationFn: async (companyIds: string[]) => {
+      const res = await apiRequest("POST", "/api/targeting/send-to-focus", { companyIds });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Sent to Focus Mode", description: `${data.created} added, ${data.skipped} already queued` });
+      setSelected(new Set());
+    },
+  });
+
+  const addToFollowupMutation = useMutation({
+    mutationFn: async (companyIds: string[]) => {
+      const res = await apiRequest("POST", "/api/targeting/add-to-followup", { companyIds });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Added to follow-up", description: `${data.created} flows created, ${data.skipped} already active` });
+      setSelected(new Set());
+    },
+  });
+
+  const loadProfile = (profile: SavedProfile) => {
+    try {
+      const parsed = JSON.parse(profile.filters);
+      setFilters({ ...DEFAULT_FILTERS, ...parsed });
+      toast({ title: `Loaded: ${profile.name}` });
+    } catch { }
+  };
+
+  const toggleAll = () => {
+    if (!data?.results) return;
+    if (selected.size === data.results.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(data.results.map(r => r.companyId)));
+    }
+  };
+
+  const toggleOne = (companyId: string) => {
+    const next = new Set(selected);
+    if (next.has(companyId)) next.delete(companyId);
+    else next.add(companyId);
+    setSelected(next);
+  };
+
+  const exportCSV = () => {
+    if (!data?.results) return;
+    const rows = data.results.filter(r => selected.size === 0 || selected.has(r.companyId));
+    const header = "Company,Contact,Title,Phone,Email,Industry,City,State,Last Outcome,Match Reasons";
+    const csv = [header, ...rows.map(r =>
+      `"${r.companyName}","${r.contactName || ""}","${r.title || ""}","${r.phone || ""}","${r.contactEmail || ""}","${r.industry || ""}","${r.city || ""}","${r.state || ""}","${r.lastOutcome || ""}","${r.matchReasons.join("; ")}"`
+    )].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `targeting_export_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const updateFilter = <K extends keyof TargetFilters>(key: K, value: TargetFilters[K]) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const activeFilterCount = [
+    filters.industry, filters.territory, filters.role,
+    filters.mustHavePhone, filters.mustHaveDM, filters.mustHaveEmail, filters.mustHaveSignal,
+    filters.warmLeads, filters.staleLeads, filters.freshLeads,
+    filters.hasDM, filters.hasPhone, filters.hasEmail,
+    filters.matchMode !== "broad",
+    filters.priority,
+  ].filter(Boolean).length;
+
+  const selIds = Array.from(selected);
+
+  return (
+    <AppLayout>
+      <div className="p-4 md:p-6" style={{ minHeight: "calc(100vh - 56px)" }}>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight" style={{ color: TEXT }} data-testid="text-targeting-title">
+              Targeting Control Panel
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: MUTED }}>
+              Shape your targeting. Filter, preview, and deploy leads to outreach.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {activeFilterCount > 0 && (
+              <Button variant="outline" size="sm" onClick={() => setFilters({ ...DEFAULT_FILTERS })} className="gap-1.5 text-xs" style={{ borderColor: BORDER, color: MUTED }} data-testid="button-clear-filters">
+                <RefreshCw className="w-3.5 h-3.5" /> Clear Filters
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
+          <div className="lg:col-span-1 space-y-4">
+            <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Filter className="w-4 h-4" style={{ color: BLUE }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Core Filters</span>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Industry</label>
+                  <Input
+                    placeholder="e.g. HVAC, Industrial"
+                    value={filters.industry}
+                    onChange={e => updateFilter("industry", e.target.value)}
+                    className="mt-1 h-8 text-xs"
+                    list="industry-options"
+                    data-testid="input-industry"
+                  />
+                  {data?.filterOptions?.industries && (
+                    <datalist id="industry-options">
+                      {data.filterOptions.industries.map(i => <option key={i} value={i!} />)}
+                    </datalist>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Territory / Region</label>
+                  <Input
+                    placeholder="e.g. Houston, TX"
+                    value={filters.territory}
+                    onChange={e => updateFilter("territory", e.target.value)}
+                    className="mt-1 h-8 text-xs"
+                    list="state-options"
+                    data-testid="input-territory"
+                  />
+                  {data?.filterOptions?.states && (
+                    <datalist id="state-options">
+                      {data.filterOptions.states.map(s => <option key={s} value={s!} />)}
+                    </datalist>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Role / Function</label>
+                  <Input
+                    placeholder="e.g. Owner, Manager"
+                    value={filters.role}
+                    onChange={e => updateFilter("role", e.target.value)}
+                    className="mt-1 h-8 text-xs"
+                    data-testid="input-role"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Zap className="w-4 h-4" style={{ color: AMBER }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Signal Filters</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Toggle active={filters.warmLeads} onClick={() => updateFilter("warmLeads", !filters.warmLeads)} label="Warm Leads" />
+                <Toggle active={filters.freshLeads} onClick={() => updateFilter("freshLeads", !filters.freshLeads)} label="Fresh / Untouched" />
+                <Toggle active={filters.staleLeads} onClick={() => updateFilter("staleLeads", !filters.staleLeads)} label="Stale (7+ days)" />
+                <Toggle active={filters.hasDM} onClick={() => updateFilter("hasDM", !filters.hasDM)} label="DM Identified" />
+                <Toggle active={filters.hasPhone} onClick={() => updateFilter("hasPhone", !filters.hasPhone)} label="Phone Found" />
+                <Toggle active={filters.hasEmail} onClick={() => updateFilter("hasEmail", !filters.hasEmail)} label="Email Found" />
+              </div>
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <SlidersHorizontal className="w-4 h-4" style={{ color: PURPLE }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Strictness & Priority</span>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Match Mode</label>
+                  <div className="flex gap-1 mt-1">
+                    {(["broad", "balanced", "strict"] as const).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => updateFilter("matchMode", mode)}
+                        className="flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all"
+                        style={{
+                          background: filters.matchMode === mode ? `${PURPLE}12` : SUBTLE,
+                          border: `1px solid ${filters.matchMode === mode ? PURPLE : BORDER}`,
+                          color: filters.matchMode === mode ? PURPLE : MUTED,
+                        }}
+                        data-testid={`match-mode-${mode}`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Priority Objective</label>
+                  <select
+                    value={filters.priority}
+                    onChange={e => updateFilter("priority", e.target.value)}
+                    className="w-full mt-1 h-8 text-xs rounded-lg px-2"
+                    style={{ border: `1px solid ${BORDER}`, background: "white", color: TEXT }}
+                    data-testid="select-priority"
+                  >
+                    <option value="">Default (most recent)</option>
+                    <option value="most_likely_to_answer">Most likely to answer</option>
+                    <option value="fresh_untouched">Fresh untouched leads</option>
+                    <option value="fastest_to_meeting">Fastest path to meeting</option>
+                    <option value="highest_value">Highest-value accounts</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: MUTED }}>Required Fields</label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    <Toggle active={filters.mustHavePhone} onClick={() => updateFilter("mustHavePhone", !filters.mustHavePhone)} label="Phone" />
+                    <Toggle active={filters.mustHaveDM} onClick={() => updateFilter("mustHaveDM", !filters.mustHaveDM)} label="DM" />
+                    <Toggle active={filters.mustHaveEmail} onClick={() => updateFilter("mustHaveEmail", !filters.mustHaveEmail)} label="Email" />
+                    <Toggle active={filters.mustHaveSignal} onClick={() => updateFilter("mustHaveSignal", !filters.mustHaveSignal)} label="Signal" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Bookmark className="w-4 h-4" style={{ color: EMERALD }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>Saved Profiles</span>
+              </div>
+              {showSaveInput ? (
+                <div className="flex gap-2 mb-2">
+                  <Input
+                    placeholder="Profile name..."
+                    value={saveName}
+                    onChange={e => setSaveName(e.target.value)}
+                    className="h-8 text-xs flex-1"
+                    data-testid="input-profile-name"
+                  />
+                  <Button size="sm" className="h-8 text-xs px-3" style={{ background: EMERALD, color: "white" }} onClick={() => saveMutation.mutate(saveName)} disabled={!saveName || saveMutation.isPending} data-testid="button-save-profile">
+                    {saveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-8 text-xs px-2" onClick={() => setShowSaveInput(false)}>
+                    <XCircle className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setShowSaveInput(true)} className="w-full h-8 text-xs gap-1.5 mb-2" style={{ borderColor: BORDER, color: MUTED }} data-testid="button-show-save">
+                  <Save className="w-3.5 h-3.5" /> Save Current Filters
+                </Button>
+              )}
+              {(profiles || []).length > 0 ? (
+                <div className="space-y-1">
+                  {profiles!.map(p => (
+                    <div key={p.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: SUBTLE }} data-testid={`profile-${p.id}`}>
+                      <button onClick={() => loadProfile(p)} className="flex-1 text-left text-xs font-medium truncate" style={{ color: TEXT }}>
+                        {p.name}
+                      </button>
+                      <button onClick={() => deleteMutation.mutate(p.id)} className="flex-shrink-0" data-testid={`delete-profile-${p.id}`}>
+                        <Trash2 className="w-3 h-3" style={{ color: ERROR }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-center py-2" style={{ color: MUTED }}>No saved profiles yet</p>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-3 space-y-4">
+            {data && (
+              <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${BORDER}` }} data-testid="target-summary-bar">
+                <div className="flex items-center gap-2 mb-3">
+                  <Target className="w-4 h-4" style={{ color: EMERALD }} />
+                  <span className="text-sm font-bold" style={{ color: TEXT }}>Target Summary</span>
+                  <span className="text-[10px] font-medium ml-auto" style={{ color: MUTED }}>
+                    {data.total} of {data.allCount} records match
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {[
+                    { label: "Matching", value: data.total, color: EMERALD, icon: Users },
+                    { label: "With Phone", value: data.summary.hasPhone, color: BLUE, icon: Phone },
+                    { label: "With Email", value: data.summary.hasEmail, color: PURPLE, icon: Mail },
+                    { label: "With DM", value: data.summary.hasDM, color: AMBER, icon: User },
+                    { label: "Warm Leads", value: data.summary.warmCount, color: ERROR, icon: Target },
+                  ].map(s => (
+                    <div key={s.label} className="rounded-lg p-3 text-center" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }} data-testid={`summary-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                      <s.icon className="w-4 h-4 mx-auto mb-1" style={{ color: s.color }} />
+                      <div className="text-lg font-bold" style={{ color: TEXT }}>{s.value}</div>
+                      <div className="text-[10px] font-medium" style={{ color: MUTED }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {data && data.exclusions.length > 0 && (
+              <div className="rounded-xl p-4" style={{ background: `${AMBER}06`, border: `1px solid ${AMBER}20` }} data-testid="coverage-diagnostics">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4" style={{ color: AMBER }} />
+                  <span className="text-sm font-bold" style={{ color: TEXT }}>Coverage Diagnostics</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.exclusions.map((ex, i) => (
+                    <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                      <XCircle className="w-3 h-3" style={{ color: AMBER }} />
+                      <span style={{ color: TEXT }}>{ex.reason}</span>
+                      <span className="font-bold" style={{ color: AMBER }}>{ex.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selected.size > 0 && (
+              <div className="rounded-xl p-3" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}30` }} data-testid="action-bar">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-bold" style={{ color: EMERALD }}>{selected.size} selected</span>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    style={{ background: EMERALD, color: "white" }}
+                    onClick={() => sendToFocusMutation.mutate(selIds)}
+                    disabled={sendToFocusMutation.isPending}
+                    data-testid="button-send-to-focus"
+                  >
+                    {sendToFocusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    Send to Focus Mode
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    style={{ borderColor: AMBER, color: AMBER }}
+                    onClick={() => addToFollowupMutation.mutate(selIds)}
+                    disabled={addToFollowupMutation.isPending}
+                    data-testid="button-add-followup"
+                  >
+                    {addToFollowupMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
+                    Add to Follow-up
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" style={{ borderColor: BORDER, color: MUTED }} onClick={exportCSV} data-testid="button-export">
+                    <Download className="w-3 h-3" /> Export CSV
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-xl" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between p-4 pb-2">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4" style={{ color: BLUE }} />
+                  <span className="text-sm font-bold" style={{ color: TEXT }}>Results Preview</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(data?.results?.length || 0) > 0 && (
+                    <>
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1" style={{ borderColor: BORDER, color: MUTED }} onClick={toggleAll} data-testid="button-select-all">
+                        {selected.size === data?.results?.length ? "Deselect All" : "Select All"}
+                      </Button>
+                      {selected.size === 0 && (
+                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" style={{ borderColor: BORDER, color: MUTED }} onClick={exportCSV} data-testid="button-export-all">
+                          <Download className="w-3 h-3" /> Export All
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: EMERALD }} />
+                </div>
+              ) : isError ? (
+                <div className="text-center py-12">
+                  <XCircle className="w-8 h-8 mx-auto mb-2" style={{ color: ERROR }} />
+                  <p className="text-sm font-medium" style={{ color: TEXT }}>Failed to load results</p>
+                </div>
+              ) : data && data.results.length === 0 ? (
+                <div className="text-center py-12 px-6">
+                  <Search className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
+                  <p className="text-sm font-semibold mb-1" style={{ color: TEXT }}>No matching records</p>
+                  <p className="text-xs mb-3" style={{ color: MUTED }}>Try loosening your filters to see more results.</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {filters.matchMode !== "broad" && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => updateFilter("matchMode", "broad")} data-testid="suggestion-broad">
+                        Switch to Broad mode
+                      </Button>
+                    )}
+                    {(filters.mustHavePhone || filters.mustHaveDM || filters.mustHaveEmail) && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { updateFilter("mustHavePhone", false); updateFilter("mustHaveDM", false); updateFilter("mustHaveEmail", false); }} data-testid="suggestion-remove-required">
+                        Remove required field filters
+                      </Button>
+                    )}
+                    {filters.industry && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => updateFilter("industry", "")} data-testid="suggestion-clear-industry">
+                        Clear industry filter
+                      </Button>
+                    )}
+                    {filters.territory && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => updateFilter("territory", "")} data-testid="suggestion-clear-territory">
+                        Clear territory filter
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs" data-testid="results-table">
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED, width: 32 }}></th>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Company</th>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Contact</th>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Location</th>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Data</th>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Status</th>
+                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Match Reasons</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data?.results.map((r, i) => (
+                        <tr
+                          key={r.id}
+                          className="transition-colors"
+                          style={{
+                            borderBottom: `1px solid ${BORDER}`,
+                            background: selected.has(r.companyId) ? `${EMERALD}06` : i % 2 === 0 ? "white" : SUBTLE,
+                          }}
+                          data-testid={`result-row-${i}`}
+                        >
+                          <td className="p-3">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(r.companyId)}
+                              onChange={() => toggleOne(r.companyId)}
+                              className="rounded"
+                              data-testid={`checkbox-${r.companyId}`}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <button onClick={() => navigate(`/machine/company/${r.companyId}`)} className="text-left">
+                              <div className="font-semibold" style={{ color: TEXT }}>{r.companyName}</div>
+                              {r.industry && <div className="text-[10px]" style={{ color: MUTED }}>{r.industry}</div>}
+                            </button>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-medium" style={{ color: r.contactName ? TEXT : MUTED }}>{r.contactName || "No DM"}</div>
+                            {r.title && <div className="text-[10px]" style={{ color: MUTED }}>{r.title}</div>}
+                          </td>
+                          <td className="p-3">
+                            <div style={{ color: MUTED }}>{[r.city, r.state].filter(Boolean).join(", ") || "—"}</div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex gap-1.5">
+                              {r.phone && <Phone className="w-3 h-3" style={{ color: BLUE }} />}
+                              {r.contactEmail && <Mail className="w-3 h-3" style={{ color: PURPLE }} />}
+                              {r.contactName && <User className="w-3 h-3" style={{ color: AMBER }} />}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{
+                              background: r.lastOutcome && ["interested", "meeting_requested", "replied", "live_answer"].includes(r.lastOutcome) ? `${EMERALD}12` : r.lastOutcome ? `${MUTED}12` : `${BLUE}12`,
+                              color: r.lastOutcome && ["interested", "meeting_requested", "replied", "live_answer"].includes(r.lastOutcome) ? EMERALD : r.lastOutcome ? MUTED : BLUE,
+                            }}>
+                              {r.lastOutcome || "New"}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-wrap gap-1">
+                              {r.matchReasons.slice(0, 3).map((reason, ri) => (
+                                <span key={ri} className="px-1.5 py-0.5 rounded text-[9px] font-medium" style={{ background: `${EMERALD}08`, color: EMERALD }}>
+                                  {reason}
+                                </span>
+                              ))}
+                              {r.matchReasons.length > 3 && (
+                                <span className="text-[9px]" style={{ color: MUTED }}>+{r.matchReasons.length - 3}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
