@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +10,8 @@ import {
   ArrowLeft, Phone, PhoneCall, Mail, Linkedin, User, Check, Copy, Loader2,
   X, Calendar, MapPin, Building2, Clock, Target, Zap, Shield, Globe,
   MessageSquare, ChevronDown, ChevronUp, ExternalLink, AlertCircle,
-  Play, SkipForward, Plus, Pencil, RotateCcw, FileText, Send
+  Play, SkipForward, Plus, Pencil, RotateCcw, FileText, Send,
+  Mic, Volume2, Pause
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -135,6 +136,22 @@ interface ActionItem {
   attemptNumber: number;
 }
 
+interface RecordingData {
+  callSid: string;
+  recordingSid: string;
+  duration: number | null;
+  transcription: string | null;
+  analysis: string | null;
+  problemDetected: string | null;
+  noAuthority: boolean | null;
+  authorityReason: string | null;
+  suggestedRole: string | null;
+  followupDate: string | null;
+  status: string | null;
+  contactName: string | null;
+  createdAt: string;
+}
+
 interface DetailResponse {
   company: CompanyDetail;
   contacts: Contact[];
@@ -167,6 +184,76 @@ function StatusBadge({ label, color }: { label: string; color: string }) {
   );
 }
 
+function RecordingCard({ recording }: { recording: RecordingData }) {
+  const [expanded, setExpanded] = useState(false);
+  const duration = recording.duration ? `${Math.floor(recording.duration / 60)}:${String(recording.duration % 60).padStart(2, "0")}` : null;
+
+  return (
+    <div className="mt-2 rounded-lg overflow-hidden" style={{ background: `${BLUE}06`, border: `1px solid ${BLUE}15` }}
+      data-testid={`recording-card-${recording.callSid}`}>
+      <button onClick={() => setExpanded(!expanded)}
+        className="w-full px-3 py-2 flex items-center justify-between text-left"
+        data-testid={`recording-toggle-${recording.callSid}`}>
+        <div className="flex items-center gap-2">
+          <Mic className="w-3.5 h-3.5" style={{ color: BLUE }} />
+          <span className="text-xs font-medium" style={{ color: TEXT }}>Call Recording</span>
+          {duration && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${BLUE}12`, color: BLUE }}>
+              {duration}
+            </span>
+          )}
+          {recording.problemDetected && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${ERROR}10`, color: ERROR }}>
+              Issue Detected
+            </span>
+          )}
+          {recording.noAuthority && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${AMBER}10`, color: AMBER }}>
+              No Authority
+            </span>
+          )}
+        </div>
+        {expanded ? <ChevronUp className="w-3.5 h-3.5" style={{ color: MUTED }} /> : <ChevronDown className="w-3.5 h-3.5" style={{ color: MUTED }} />}
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2">
+          {recording.analysis && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: BLUE }}>AI Analysis</div>
+              <div className="text-xs leading-relaxed" style={{ color: TEXT }}>{recording.analysis}</div>
+            </div>
+          )}
+          {recording.transcription && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: MUTED }}>Transcript</div>
+              <div className="text-xs leading-relaxed max-h-40 overflow-y-auto" style={{ color: TEXT, whiteSpace: "pre-wrap" }}>
+                {recording.transcription}
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {recording.suggestedRole && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${PURPLE}10`, color: PURPLE }}>
+                Role: {recording.suggestedRole}
+              </span>
+            )}
+            {recording.authorityReason && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${AMBER}10`, color: AMBER }}>
+                {recording.authorityReason}
+              </span>
+            )}
+            {recording.followupDate && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${EMERALD}10`, color: EMERALD }}>
+                Follow-up: {new Date(recording.followupDate).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CompanyDetailPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -180,6 +267,37 @@ export default function CompanyDetailPage() {
     queryKey: ["/api/company-detail", companyId],
     enabled: !!companyId,
   });
+
+  const companyName = data?.company?.companyName || "";
+  const { data: recordings = [] } = useQuery<RecordingData[]>({
+    queryKey: ["/api/twilio/recording-by-company", companyName],
+    enabled: !!companyName,
+  });
+
+  const recordingsByDate = useMemo(() => {
+    const map = new Map<string, RecordingData>();
+    for (const rec of recordings) {
+      const dateKey = new Date(rec.createdAt).toISOString().slice(0, 13);
+      if (!map.has(dateKey)) map.set(dateKey, rec);
+    }
+    return map;
+  }, [recordings]);
+
+  const findRecordingForAttempt = useCallback((attempt: FlowAttempt): RecordingData | null => {
+    if (attempt.channel !== "call" && attempt.channel !== "phone") return null;
+    const attemptTime = new Date(attempt.createdAt).getTime();
+    let best: RecordingData | null = null;
+    let bestDiff = Infinity;
+    for (const rec of recordings) {
+      const recTime = new Date(rec.createdAt).getTime();
+      const diff = Math.abs(recTime - attemptTime);
+      if (diff < 3600000 && diff < bestDiff) {
+        best = rec;
+        bestDiff = diff;
+      }
+    }
+    return best;
+  }, [recordings]);
 
   const createFlowMutation = useMutation({
     mutationFn: async (flowType: string) => {
@@ -520,6 +638,7 @@ export default function CompanyDetailPage() {
                     const fc = FLOW_CONFIG[getFlowTypeFromChannel(attempt.channel, flows, attempt.flowId)] || FLOW_CONFIG.gatekeeper;
                     const Icon = fc.icon;
                     const isLast = i === attempts.length - 1;
+                    const recording = findRecordingForAttempt(attempt);
                     return (
                       <div key={attempt.id} className="flex gap-3" data-testid={`timeline-item-${attempt.id}`}>
                         <div className="flex flex-col items-center">
@@ -564,6 +683,7 @@ export default function CompanyDetailPage() {
                               Captured: {attempt.capturedInfo}
                             </div>
                           )}
+                          {recording && <RecordingCard recording={recording} />}
                         </div>
                       </div>
                     );

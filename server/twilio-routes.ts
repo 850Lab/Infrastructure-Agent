@@ -162,6 +162,23 @@ const activeCallMeta = new Map<string, {
   clientId: string | null;
 }>();
 
+const callStatusSSEClients = new Map<string, Set<Response>>();
+
+function broadcastCallStatus(callSid: string, status: string, duration?: string) {
+  const clients = callStatusSSEClients.get(callSid);
+  if (!clients || clients.size === 0) return;
+  const payload = `event: call_status\ndata: ${JSON.stringify({ callSid, status, duration: duration || null, ts: Date.now() })}\n\n`;
+  for (const res of clients) {
+    try { res.write(payload); } catch { clients.delete(res); }
+  }
+  if (["completed", "failed", "busy", "no-answer", "canceled"].includes(status)) {
+    for (const res of clients) {
+      try { res.end(); } catch {}
+    }
+    callStatusSSEClients.delete(callSid);
+  }
+}
+
 export function registerTwilioRoutes(app: Express, authMiddleware: any) {
   app.get("/api/twilio/status", authMiddleware, async (_req: Request, res: Response) => {
     try {
@@ -203,6 +220,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       }
 
       const baseUrl = getBaseUrl(req);
+      const statusCallbackUrl = `${baseUrl}/api/twilio/webhook/status`;
       const recordingCallbackUrl = `${baseUrl}/api/twilio/webhook/recording`;
       const clientId = (req as any).user?.clientId || null;
 
@@ -210,7 +228,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       const host = baseUrl.replace(/^https?:\/\//, "");
       const mediaStreamUrl = `${wsProtocol}://${host}/media-stream`;
 
-      const result = await initiateCall(to, undefined, recordingCallbackUrl, mediaStreamUrl);
+      const result = await initiateCall(to, statusCallbackUrl, recordingCallbackUrl, mediaStreamUrl);
       if (!result.success) {
         return res.status(400).json({ error: result.error });
       }
@@ -265,6 +283,106 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         ...(status || { status: "unknown" }),
         meta,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/twilio/webhook/status", async (req: Request, res: Response) => {
+    try {
+      const { CallSid, CallStatus, CallDuration } = req.body;
+      if (!CallSid || !CallStatus) {
+        return res.status(200).send("<Response></Response>");
+      }
+
+      const statusMap: Record<string, string> = {
+        initiated: "dialing",
+        ringing: "ringing",
+        "in-progress": "in-progress",
+        answered: "in-progress",
+        completed: "completed",
+        busy: "busy",
+        failed: "failed",
+        "no-answer": "no-answer",
+        canceled: "canceled",
+      };
+      const mapped = statusMap[CallStatus] || CallStatus;
+      log(`Status webhook: SID=${CallSid}, Status=${CallStatus} -> ${mapped}, Duration=${CallDuration || "n/a"}`);
+
+      broadcastCallStatus(CallSid, mapped, CallDuration);
+
+      if (["completed", "failed", "busy", "no-answer", "canceled"].includes(mapped)) {
+        activeCallMeta.delete(CallSid);
+      }
+
+      res.status(200).send("<Response></Response>");
+    } catch (err: any) {
+      log(`Status webhook error: ${err.message}`);
+      res.status(200).send("<Response></Response>");
+    }
+  });
+
+  app.get("/api/twilio/call-status-stream/:sid", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!token || !validateToken(token)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { sid } = req.params;
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.write(`event: connected\ndata: ${JSON.stringify({ callSid: sid })}\n\n`);
+
+    if (!callStatusSSEClients.has(sid)) {
+      callStatusSSEClients.set(sid, new Set());
+    }
+    callStatusSSEClients.get(sid)!.add(res);
+
+    const heartbeat = setInterval(() => {
+      try { res.write(`:heartbeat\n\n`); } catch { clearInterval(heartbeat); }
+    }, 15000);
+
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      const clients = callStatusSSEClients.get(sid);
+      if (clients) {
+        clients.delete(res);
+        if (clients.size === 0) callStatusSSEClients.delete(sid);
+      }
+    });
+  });
+
+  app.get("/api/twilio/recording-by-company/:companyName", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const companyName = req.params.companyName;
+      if (!companyName) return res.json([]);
+
+      const recordings = await db.select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.companyName, companyName))
+        .orderBy(desc(twilioRecordings.createdAt))
+        .limit(50);
+
+      res.json(recordings.map(r => ({
+        callSid: r.callSid,
+        recordingSid: r.recordingSid,
+        duration: r.duration,
+        transcription: r.transcription,
+        analysis: r.analysis,
+        problemDetected: r.problemDetected,
+        noAuthority: r.noAuthority,
+        authorityReason: r.authorityReason,
+        suggestedRole: r.suggestedRole,
+        followupDate: r.followupDate,
+        status: r.status,
+        contactName: r.contactName,
+        createdAt: r.createdAt,
+      })));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -1,0 +1,173 @@
+Excellent. The Twilio integration is working and Focus Mode is now a true execution cockpit.
+
+The next priority is improving call responsiveness and operator feedback.
+
+Do not change the working flow engine, queue logic, or Airtable write-back.
+
+We are now implementing two focused improvements:
+
+1) Twilio Call Status Webhook (replace polling with real-time status updates)
+2) Call Recording Playback + Transcript visibility in the Company Detail timeline
+
+These changes should enhance the operator experience without altering the existing data model or flow state logic.
+
+==================================================
+PHASE 5 — TWILIO STATUS WEBHOOK
+==================================================
+
+Goal:
+Replace the current 3-second polling of GET /api/twilio/call-session/:sid with real-time status updates driven by Twilio webhooks.
+
+Current behavior:
+Focus Mode polls every 3 seconds to check call status.
+
+New behavior:
+Twilio pushes call lifecycle updates to the server, which immediately pushes them to the client via SSE.
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+Create endpoint:
+
+POST /api/twilio/webhook/status
+
+This endpoint must handle Twilio call status callbacks including:
+
+- initiated
+- ringing
+- answered
+- completed
+- busy
+- failed
+- no-answer
+- canceled
+
+Steps:
+
+1. Twilio webhook receives status update.
+2. Look up the call SID in activeCallMeta.
+3. Retrieve stored flow context (companyId, contactId, flowId, flowType, taskId).
+4. Update the server-side call session state.
+5. Broadcast the update via SSE to any active Focus Mode session.
+6. Trigger any UI updates immediately (call status panel).
+
+This should eliminate the need for the polling interval.
+
+==================================================
+FOCUS MODE UPDATE
+==================================================
+
+Modify client/src/pages/focus-mode.tsx so that:
+
+- polling stops once webhook-based updates are active
+- Focus Mode subscribes to call status updates through SSE
+- call state transitions are driven by webhook events instead of polling responses
+
+State machine must still support:
+
+idle → dialing → ringing → in-progress → completed / failed / busy / no-answer / canceled
+
+The UI should respond immediately when status events arrive.
+
+Maintain fallback polling logic if webhook events fail.
+
+==================================================
+PHASE 6 — CALL RECORDING PLAYBACK
+==================================================
+
+Goal:
+Allow operators to review call recordings and transcripts directly in the Company Detail timeline.
+
+When a Twilio recording is completed:
+
+- the recording URL
+- transcript (when available)
+- coaching analysis
+
+should appear in the company attempt timeline.
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+Extend attempt history entries so they can include:
+
+- recordingUrl
+- transcriptText
+- transcriptSummary
+- callDuration
+- callSid
+
+Modify the Company Detail page timeline so that call attempts show:
+
+Call Attempt
+- timestamp
+- outcome
+- contact
+- flow type
+- duration
+- recording playback button
+- transcript toggle
+- coaching highlights (if available)
+
+Playback behavior:
+
+Clicking the recording should open an inline audio player.
+
+Transcript behavior:
+
+Clicking transcript expands a panel showing:
+- full transcript
+- coaching analysis summary
+- notable moments detected by the system.
+
+Do not block timeline rendering if transcripts are still processing.
+
+==================================================
+DATA FLOW
+==================================================
+
+Call lifecycle:
+
+Focus Mode initiates call
+→ Twilio call session created
+→ webhook status events drive call state
+→ recording webhook fires
+→ recording stored in DB
+→ transcript pipeline processes audio
+→ transcript + analysis saved
+→ timeline updated
+
+==================================================
+RESPONSE FORMAT
+==================================================
+
+Reply in the following format once complete:
+
+SECTION 1 — FILES CHANGED
+List every file changed.
+
+SECTION 2 — TWILIO STATUS WEBHOOK IMPLEMENTED
+Explain how call status updates now flow from Twilio to the UI.
+
+SECTION 3 — FOCUS MODE REAL-TIME UPDATE
+Explain how polling was replaced or reduced.
+
+SECTION 4 — RECORDING PLAYBACK IMPLEMENTED
+Explain how recordings appear in the Company Detail timeline.
+
+SECTION 5 — TRANSCRIPT VISIBILITY
+Explain how transcripts and coaching analysis are displayed.
+
+SECTION 6 — TEST INSTRUCTIONS
+Explain exactly how to test:
+- call status webhook
+- recording playback
+- transcript visibility
+
+SECTION 7 — NEXT BUILD STEP
+Recommend the next highest-value improvement.
+
+Do not remain in planning mode.
+Implement the webhook and recording playback features now.

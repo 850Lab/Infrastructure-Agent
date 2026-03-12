@@ -325,7 +325,9 @@ export default function FocusModePage() {
   const [callStartTime, setCallStartTime] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState<number | null>(null);
   const [twilioReady, setTwilioReady] = useState<boolean | null>(null);
+  const [sseConnected, setSSEConnected] = useState(false);
   const callPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callSSERef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     apiRequest("GET", "/api/twilio/status")
@@ -337,6 +339,7 @@ export default function FocusModePage() {
   useEffect(() => {
     return () => {
       if (callPollRef.current) clearInterval(callPollRef.current);
+      if (callSSERef.current) { callSSERef.current.close(); callSSERef.current = null; }
     };
   }, []);
 
@@ -364,6 +367,22 @@ export default function FocusModePage() {
 
   const pollFailCountRef = useRef(0);
 
+  const handleCallStatusUpdate = useCallback((status: string, duration?: string | null) => {
+    if (status === "ringing" || status === "queued" || status === "dialing") {
+      setCallState(status === "dialing" ? "dialing" : "ringing");
+    } else if (status === "in-progress" || status === "answered") {
+      setCallState(prev => {
+        if (prev !== "in-progress") setCallStartTime(Date.now());
+        return "in-progress";
+      });
+    } else if (["completed", "canceled", "failed", "no-answer", "busy"].includes(status)) {
+      setCallState(status as CallState);
+      if (duration) setCallDuration(parseInt(duration, 10));
+      if (callPollRef.current) { clearInterval(callPollRef.current); callPollRef.current = null; }
+      if (callSSERef.current) { callSSERef.current.close(); callSSERef.current = null; }
+    }
+  }, []);
+
   const startCallPoll = useCallback((sid: string) => {
     if (callPollRef.current) clearInterval(callPollRef.current);
     pollFailCountRef.current = 0;
@@ -383,23 +402,7 @@ export default function FocusModePage() {
         }
         pollFailCountRef.current = 0;
         const data = await res.json();
-        const s = data.status as string;
-
-        if (s === "ringing" || s === "queued") {
-          setCallState("ringing");
-        } else if (s === "in-progress") {
-          setCallState(prev => {
-            if (prev !== "in-progress") setCallStartTime(Date.now());
-            return "in-progress";
-          });
-        } else if (s === "completed" || s === "canceled" || s === "failed" || s === "no-answer" || s === "busy") {
-          setCallState(s as CallState);
-          if (data.duration) setCallDuration(parseInt(data.duration, 10));
-          if (callPollRef.current) {
-            clearInterval(callPollRef.current);
-            callPollRef.current = null;
-          }
-        }
+        handleCallStatusUpdate(data.status, data.duration);
       } catch {
         pollFailCountRef.current++;
         if (pollFailCountRef.current >= 10) {
@@ -407,8 +410,37 @@ export default function FocusModePage() {
           if (callPollRef.current) { clearInterval(callPollRef.current); callPollRef.current = null; }
         }
       }
-    }, 3000);
-  }, [getToken]);
+    }, 5000);
+  }, [getToken, handleCallStatusUpdate]);
+
+  const startCallStatusSSE = useCallback((sid: string) => {
+    if (callSSERef.current) { callSSERef.current.close(); callSSERef.current = null; }
+    const token = getToken();
+    if (!token) return;
+
+    const url = `/api/twilio/call-status-stream/${sid}?token=${encodeURIComponent(token)}`;
+    const es = new EventSource(url);
+    callSSERef.current = es;
+
+    es.addEventListener("connected", () => {
+      setSSEConnected(true);
+    });
+
+    es.addEventListener("call_status", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (callPollRef.current) { clearInterval(callPollRef.current); callPollRef.current = null; }
+        handleCallStatusUpdate(data.status, data.duration);
+      } catch {}
+    });
+
+    es.onerror = () => {
+      setSSEConnected(false);
+      es.close();
+      callSSERef.current = null;
+      startCallPoll(sid);
+    };
+  }, [getToken, handleCallStatusUpdate, startCallPoll]);
 
   const callActionIdRef = useRef<number | null>(null);
 
@@ -437,7 +469,13 @@ export default function FocusModePage() {
         setCallState("dialing");
         setCallStartTime(null);
         setCallDuration(null);
-        startCallPoll(data.sid);
+        setSSEConnected(false);
+        startCallStatusSSE(data.sid);
+        setTimeout(() => {
+          if (!callSSERef.current || callSSERef.current.readyState !== EventSource.OPEN) {
+            startCallPoll(data.sid);
+          }
+        }, 3000);
         toast({ title: "Call initiated", description: "Dialing agent phone..." });
       } else {
         setCallState("failed");
@@ -483,10 +521,15 @@ export default function FocusModePage() {
       clearInterval(callPollRef.current);
       callPollRef.current = null;
     }
+    if (callSSERef.current) {
+      callSSERef.current.close();
+      callSSERef.current = null;
+    }
     setCallState("idle");
     setCallSid(null);
     setCallStartTime(null);
     setCallDuration(null);
+    setSSEConnected(false);
   };
 
   const logMutation = useMutation({
