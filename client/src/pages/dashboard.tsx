@@ -33,6 +33,9 @@ interface CommandCenterData {
   hotLeadsList: Array<{ companyName: string; companyId: string; lastOutcome: string; flowType: string }>;
   recentActivity: Array<{ companyName: string; outcome: string; channel: string; createdAt: string }>;
   aiRecommendations: Array<{ type: string; title: string; description: string; action: string; route: string }>;
+  staleLeads: number;
+  bottleneck: { stage: string; count: number; pct: number; nextStage: string } | null;
+  paceToGoal: { calls: { current: number; goal: number; pct: number }; emails: { current: number; goal: number; pct: number } };
 }
 
 interface MachineConfigData {
@@ -267,7 +270,7 @@ export default function DashboardPage() {
                   <StatCard icon={Flame} label="Hot Leads" value={cmd?.revenue.hotLeads || 0} color={ERROR} onClick={() => navigate("/machine/pipeline")} subtitle={cmd?.revenue.hotLeads ? "Ready to close" : undefined} />
                   <StatCard icon={Phone} label="Calls Due Today" value={cmd?.revenue.callsDue || 0} color={BLUE} onClick={() => navigate("/machine/focus")} subtitle={cmd?.revenue.callsDue ? "Start calling" : undefined} />
                   <StatCard icon={AlertTriangle} label="Overdue Follow-ups" value={cmd?.revenue.overdueFollowups || 0} color={AMBER} onClick={() => navigate("/machine/followups")} subtitle={cmd?.revenue.overdueFollowups ? "Need attention" : undefined} />
-                  <StatCard icon={Briefcase} label="Pipeline Value" value={cmd?.revenue.pipelineValue || 0} color={EMERALD} onClick={() => navigate("/machine/pipeline")} subtitle="Active opportunities" />
+                  <StatCard icon={Briefcase} label="Active Opportunities" value={cmd?.revenue.pipelineValue || 0} color={EMERALD} onClick={() => navigate("/machine/pipeline")} subtitle="Interested + Proposal + Closed" />
                 </div>
               </div>
             </motion.div>
@@ -278,8 +281,30 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 mb-4">
                     <BarChart3 className="w-4 h-4" style={{ color: BLUE }} />
                     <span className="text-sm font-bold" style={{ color: TEXT }}>Pipeline Snapshot</span>
+                    <button onClick={() => navigate("/machine/pipeline")} className="ml-auto flex items-center gap-1 text-[10px] font-semibold" style={{ color: EMERALD }} data-testid="pipeline-view-all">
+                      View All <ChevronRight className="w-3 h-3" />
+                    </button>
                   </div>
                   <PipelineBar stages={pipelineStages} />
+                  {cmd?.bottleneck && (
+                    <button
+                      onClick={() => navigate("/machine/pipeline")}
+                      className="mt-3 w-full flex items-center gap-2 p-2.5 rounded-lg text-left"
+                      style={{ background: `${ERROR}06`, border: `1px solid ${ERROR}20` }}
+                      data-testid="bottleneck-insight"
+                    >
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: ERROR }} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[11px] font-semibold" style={{ color: ERROR }}>
+                          Bottleneck: {cmd.bottleneck.pct}% of leads stuck at "{cmd.bottleneck.stage}"
+                        </span>
+                        <span className="text-[10px] ml-1" style={{ color: MUTED }}>
+                          {cmd.bottleneck.count} not converting to {cmd.bottleneck.nextStage}
+                        </span>
+                      </div>
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: ERROR }} />
+                    </button>
+                  )}
                 </div>
               </motion.div>
 
@@ -297,23 +322,69 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </div>
+
+                  {cmd?.paceToGoal && (
+                    <div className="space-y-2 mb-3 pb-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                      {[
+                        { label: "Calls", ...cmd.paceToGoal.calls, color: BLUE, route: "/machine/focus" },
+                        { label: "Emails", ...cmd.paceToGoal.emails, color: PURPLE, route: "/machine/email-queue" },
+                      ].map((g) => (
+                        <button key={g.label} onClick={() => navigate(g.route)} className="w-full text-left" data-testid={`pace-${g.label.toLowerCase()}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-semibold" style={{ color: MUTED }}>{g.label} Goal</span>
+                            <span className="text-[10px] font-bold" style={{ color: g.pct >= 100 ? EMERALD : g.pct >= 50 ? g.color : AMBER }}>
+                              {g.current}/{g.goal} ({g.pct}%)
+                            </span>
+                          </div>
+                          <div className="w-full h-2 rounded-full" style={{ background: `${g.color}15` }}>
+                            <div className="h-full rounded-full transition-all duration-700" style={{
+                              width: `${g.pct}%`,
+                              background: g.pct >= 100 ? EMERALD : g.pct >= 50 ? g.color : AMBER,
+                            }} />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     {[
-                      { label: "Calls Made", value: cmd?.activity.callsMade || 0, icon: Phone, color: BLUE },
-                      { label: "Emails Sent", value: cmd?.activity.emailsSent || 0, icon: Mail, color: PURPLE },
-                      { label: "Leads Found", value: cmd?.activity.leadsFound || 0, icon: Search, color: EMERALD },
-                      { label: "Conversations", value: cmd?.activity.conversationsStarted || 0, icon: MessageSquare, color: AMBER },
-                      { label: "Meetings Booked", value: cmd?.activity.meetingsBooked || 0, icon: Calendar, color: "#059669" },
+                      { label: "Calls Made", value: cmd?.activity.callsMade || 0, icon: Phone, color: BLUE, route: "/machine/focus" },
+                      { label: "Emails Sent", value: cmd?.activity.emailsSent || 0, icon: Mail, color: PURPLE, route: "/machine/email-queue" },
+                      { label: "Leads Found", value: cmd?.activity.leadsFound || 0, icon: Search, color: EMERALD, route: "/machine/lead-engine" },
+                      { label: "Conversations", value: cmd?.activity.conversationsStarted || 0, icon: MessageSquare, color: AMBER, route: "/machine/pipeline" },
+                      { label: "Meetings Booked", value: cmd?.activity.meetingsBooked || 0, icon: Calendar, color: "#059669", route: "/machine/pipeline" },
                     ].map((m) => (
-                      <div key={m.label} className="flex items-center justify-between py-1.5" data-testid={`activity-${m.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                      <button key={m.label} onClick={() => navigate(m.route)} className="w-full flex items-center justify-between py-1.5 text-left" data-testid={`activity-${m.label.toLowerCase().replace(/\s+/g, "-")}`}>
                         <div className="flex items-center gap-2">
                           <m.icon className="w-3.5 h-3.5" style={{ color: m.color }} />
                           <span className="text-xs font-medium" style={{ color: TEXT }}>{m.label}</span>
                         </div>
-                        <span className="text-sm font-bold" style={{ color: m.value > 0 ? m.color : MUTED }}>{m.value}</span>
-                      </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm font-bold" style={{ color: m.value > 0 ? m.color : MUTED }}>{m.value}</span>
+                          <ChevronRight className="w-3 h-3" style={{ color: MUTED }} />
+                        </div>
+                      </button>
                     ))}
                   </div>
+
+                  {(cmd?.staleLeads || 0) > 0 && (
+                    <button
+                      onClick={() => navigate("/machine/pipeline")}
+                      className="w-full mt-3 pt-3 flex items-center justify-between text-left"
+                      style={{ borderTop: `1px solid ${BORDER}` }}
+                      data-testid="stale-leads-warning"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5" style={{ color: AMBER }} />
+                        <span className="text-xs font-medium" style={{ color: AMBER }}>Stale Leads (7+ days)</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm font-bold" style={{ color: AMBER }}>{cmd?.staleLeads}</span>
+                        <ChevronRight className="w-3 h-3" style={{ color: AMBER }} />
+                      </div>
+                    </button>
+                  )}
                 </div>
               </motion.div>
             </div>

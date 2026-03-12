@@ -1528,25 +1528,102 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         createdAt: flowAttempts.createdAt,
       }).from(flowAttempts).where(and(attemptFilter, gte(flowAttempts.createdAt, todayStart))).orderBy(desc(flowAttempts.createdAt)).limit(8);
 
+      const staleFlows = await db.select({ count: sql<number>`count(*)::int` })
+        .from(companyFlows)
+        .where(and(
+          flowFilter,
+          eq(companyFlows.status, "active"),
+          sql`${companyFlows.lastAttemptAt} IS NOT NULL`,
+          lte(companyFlows.lastAttemptAt, sevenDaysAgo),
+        ));
+      const staleLeads = staleFlows[0]?.count || 0;
+
+      const leadsFoundToday = await db.select({ count: sql<number>`count(*)::int` })
+        .from(companyFlows)
+        .where(and(flowFilter, gte(companyFlows.createdAt, todayStart)));
+      const leadsFoundTodayCount = leadsFoundToday[0]?.count || 0;
+
+      const hotFlowDetails = await Promise.all(
+        hotFlows.slice(0, 3).map(async (hot) => {
+          const attempts = await db.select({ count: sql<number>`count(*)::int` })
+            .from(flowAttempts)
+            .where(and(eq(flowAttempts.companyId, hot.companyId), attemptFilter));
+          const lastAttempt = await db.select({ createdAt: flowAttempts.createdAt })
+            .from(flowAttempts)
+            .where(and(eq(flowAttempts.companyId, hot.companyId), attemptFilter))
+            .orderBy(desc(flowAttempts.createdAt))
+            .limit(1);
+          const totalAttempts = attempts[0]?.count || 0;
+          const lastDate = lastAttempt[0]?.createdAt;
+          const daysAgo = lastDate ? Math.floor((now.getTime() - new Date(lastDate).getTime()) / 86400000) : null;
+          return { ...hot, totalAttempts, daysAgo };
+        })
+      );
+
+      const totalActive = newLeads + dmIdentified + contacted + interested + proposalSent;
+      let bottleneck: { stage: string; count: number; pct: number; nextStage: string } | null = null;
+      if (totalActive > 0) {
+        const stages = [
+          { stage: "New", count: newLeads, nextStage: "DM Found" },
+          { stage: "DM Found", count: dmIdentified, nextStage: "Contacted" },
+          { stage: "Contacted", count: contacted, nextStage: "Interested" },
+          { stage: "Interested", count: interested, nextStage: "Proposal" },
+          { stage: "Proposal", count: proposalSent, nextStage: "Closed" },
+        ];
+        const largest = stages.reduce((a, b) => b.count > a.count ? b : a, stages[0]);
+        const pct = Math.round((largest.count / totalActive) * 100);
+        if (pct >= 40 && largest.count > 2) {
+          bottleneck = { stage: largest.stage, count: largest.count, pct, nextStage: largest.nextStage };
+        }
+      }
+
+      const DAILY_CALL_GOAL = 25;
+      const DAILY_EMAIL_GOAL = 15;
+
       const aiRecommendations: Array<{ type: string; title: string; description: string; action: string; route: string }> = [];
 
       if (overdue > 0) {
         aiRecommendations.push({
           type: "urgent",
           title: `${overdue} overdue follow-up${overdue > 1 ? "s" : ""}`,
-          description: "These leads are waiting for a callback. Don't let them go cold.",
+          description: `${overdue} lead${overdue > 1 ? "s have" : " has"} a callback date that already passed. These are warm contacts going cold.`,
           action: "View Follow-ups",
           route: "/machine/followups",
         });
       }
 
-      for (const hot of hotFlows.slice(0, 3)) {
+      if (bottleneck) {
+        aiRecommendations.push({
+          type: "urgent",
+          title: `Bottleneck: ${bottleneck.pct}% stuck at "${bottleneck.stage}"`,
+          description: `${bottleneck.count} leads are piling up at ${bottleneck.stage} and not converting to ${bottleneck.nextStage}. Focus outreach here.`,
+          action: "View Pipeline",
+          route: "/machine/pipeline",
+        });
+      }
+
+      for (const hot of hotFlowDetails) {
+        const reason = hot.daysAgo !== null && hot.daysAgo === 0
+          ? `Contacted today (${hot.totalAttempts} total attempts). Last outcome: ${hot.lastOutcome}.`
+          : hot.daysAgo !== null
+            ? `Last contact ${hot.daysAgo} day${hot.daysAgo !== 1 ? "s" : ""} ago after ${hot.totalAttempts} attempts. Outcome: ${hot.lastOutcome}.`
+            : `${hot.totalAttempts} attempt${hot.totalAttempts !== 1 ? "s" : ""} total. Last outcome: ${hot.lastOutcome}.`;
         aiRecommendations.push({
           type: "hot_lead",
           title: `${hot.companyName} is warm`,
-          description: `Last outcome: ${hot.lastOutcome}. Strike while the iron is hot.`,
+          description: reason,
           action: "View Company",
           route: `/machine/company/${hot.companyId}`,
+        });
+      }
+
+      if (staleLeads > 0) {
+        aiRecommendations.push({
+          type: "urgent",
+          title: `${staleLeads} stale lead${staleLeads > 1 ? "s" : ""} (7+ days idle)`,
+          description: `These leads haven't been touched in over a week. Re-engage or disqualify them.`,
+          action: "View Pipeline",
+          route: "/machine/pipeline",
         });
       }
 
@@ -1581,7 +1658,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         activity: {
           callsMade,
           emailsSent,
-          leadsFound: newLeads,
+          leadsFound: leadsFoundTodayCount,
           conversationsStarted,
           meetingsBooked,
           streak,
@@ -1589,6 +1666,12 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         hotLeadsList: hotFlows,
         recentActivity,
         aiRecommendations,
+        staleLeads,
+        bottleneck,
+        paceToGoal: {
+          calls: { current: callsMade, goal: DAILY_CALL_GOAL, pct: Math.min(100, Math.round((callsMade / DAILY_CALL_GOAL) * 100)) },
+          emails: { current: emailsSent, goal: DAILY_EMAIL_GOAL, pct: Math.min(100, Math.round((emailsSent / DAILY_EMAIL_GOAL) * 100)) },
+        },
       });
     } catch (err: any) {
       log(`Command center error: ${err.message}`, "dashboard");
