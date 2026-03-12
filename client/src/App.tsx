@@ -26,6 +26,10 @@ import LandingPage from "@/pages/landing";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
 import SmsConsentPage from "@/pages/sms-consent";
+import CompaniesPage from "@/pages/companies";
+import CallQueuePage from "@/pages/call-queue";
+import EmailQueuePage from "@/pages/email-queue";
+import LinkedInQueuePage from "@/pages/linkedin-queue";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -59,7 +63,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
     return <Redirect to="/login" />;
   }
   if (role !== "platform_admin") {
-    return <Redirect to="/machine/dashboard" />;
+    return <Redirect to="/machine/today" />;
   }
   return <>{children}</>;
 }
@@ -113,7 +117,7 @@ function RoleRedirect() {
   const { isAuthenticated, role } = useAuth();
   if (!isAuthenticated) return <Redirect to="/login" />;
   if (role === "platform_admin") return <Redirect to="/admin/dashboard" />;
-  return <Redirect to="/machine/dashboard" />;
+  return <Redirect to="/machine/today" />;
 }
 
 function Router() {
@@ -137,6 +141,10 @@ function Router() {
         <Route path="/machine/cinematic"><MachineRoute><CinematicPage /></MachineRoute></Route>
         <Route path="/machine/dashboard"><MachineRoute><Dashboard /></MachineRoute></Route>
         <Route path="/machine/today"><MachineRoute><TodayPage /></MachineRoute></Route>
+        <Route path="/machine/companies"><MachineRoute><CompaniesPage /></MachineRoute></Route>
+        <Route path="/machine/call-queue"><MachineRoute><CallQueuePage /></MachineRoute></Route>
+        <Route path="/machine/email-queue"><MachineRoute><EmailQueuePage /></MachineRoute></Route>
+        <Route path="/machine/linkedin-queue"><MachineRoute><LinkedInQueuePage /></MachineRoute></Route>
         <Route path="/machine/followups"><MachineRoute><FollowupsPage /></MachineRoute></Route>
         <Route path="/machine/lead-engine"><MachineRoute><LeadEnginePage /></MachineRoute></Route>
         <Route path="/machine/contacts"><MachineRoute><ContactsPage /></MachineRoute></Route>
@@ -149,7 +157,6 @@ function Router() {
         <Route path="/machine/my-leads"><MachineRoute><MyLeadsPage /></MachineRoute></Route>
         <Route path="/machine/lng-projects"><MachineRoute><LngProjectsPage /></MachineRoute></Route>
 
-        {/* Legacy routes redirect to new paths */}
         <Route path="/dashboard"><RoleRedirect /></Route>
         <Route path="/onboarding"><Redirect to="/machine/onboarding" /></Route>
         <Route path="/briefing"><Redirect to="/machine/briefing" /></Route>

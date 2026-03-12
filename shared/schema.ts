@@ -458,3 +458,81 @@ export const twilioRecordings = pgTable("twilio_recordings", {
 export const insertTwilioRecordingSchema = createInsertSchema(twilioRecordings).omit({ id: true, createdAt: true, processedAt: true });
 export type InsertTwilioRecording = z.infer<typeof insertTwilioRecordingSchema>;
 export type TwilioRecording = typeof twilioRecordings.$inferSelect;
+
+export const companyFlows = pgTable("company_flows", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name").notNull(),
+  contactId: varchar("contact_id"),
+  contactName: text("contact_name"),
+  flowType: text("flow_type").notNull(),
+  status: text("status").notNull().default("active"),
+  stage: integer("stage").notNull().default(1),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(6),
+  nextAction: text("next_action"),
+  nextDueAt: timestamp("next_due_at"),
+  lastOutcome: text("last_outcome"),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  priority: integer("priority").notNull().default(50),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertCompanyFlowSchema = createInsertSchema(companyFlows).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyFlow = z.infer<typeof insertCompanyFlowSchema>;
+export type CompanyFlow = typeof companyFlows.$inferSelect;
+
+export const flowAttempts = pgTable("flow_attempts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  flowId: integer("flow_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name").notNull(),
+  contactId: varchar("contact_id"),
+  contactName: text("contact_name"),
+  channel: text("channel").notNull(),
+  attemptNumber: integer("attempt_number").notNull().default(1),
+  outcome: text("outcome").notNull(),
+  notes: text("notes"),
+  callbackAt: timestamp("callback_at"),
+  capturedInfo: text("captured_info"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: text("created_by"),
+});
+
+export const insertFlowAttemptSchema = createInsertSchema(flowAttempts).omit({ id: true, createdAt: true });
+export type InsertFlowAttempt = z.infer<typeof insertFlowAttemptSchema>;
+export type FlowAttempt = typeof flowAttempts.$inferSelect;
+
+export const actionQueue = pgTable("action_queue", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name").notNull(),
+  contactId: varchar("contact_id"),
+  contactName: text("contact_name"),
+  flowId: integer("flow_id"),
+  flowType: text("flow_type").notNull(),
+  taskType: text("task_type").notNull(),
+  dueAt: timestamp("due_at").notNull(),
+  priority: integer("priority").notNull().default(50),
+  status: text("status").notNull().default("pending"),
+  recommendationText: text("recommendation_text"),
+  lastOutcome: text("last_outcome"),
+  attemptNumber: integer("attempt_number").notNull().default(1),
+  companyPhone: text("company_phone"),
+  contactPhone: text("contact_phone"),
+  contactEmail: text("contact_email"),
+  companyCity: text("company_city"),
+  companyCategory: text("company_category"),
+  bucket: text("bucket"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertActionQueueSchema = createInsertSchema(actionQueue).omit({ id: true, createdAt: true, completedAt: true });
+export type InsertActionQueue = z.infer<typeof insertActionQueueSchema>;
+export type ActionQueueItem = typeof actionQueue.$inferSelect;

@@ -1,0 +1,711 @@
+I need you to redesign and reframe this Texas Cooldown Trailers system from a lead-intelligence dashboard into an operator-guided relationship execution machine.
+
+This is not a generic CRM redesign.
+
+This app must become the epitome of the 1-1-1 model:
+
+- 1 Avatar: Gulf Coast industrial contractors working inside refineries / chemical plants / turnarounds
+- 1 Product: Cooldown trailers / mobile cooling stations
+- 1 Primary Channel: Phone-first outbound relationship building
+- Supporting Channels: Email and LinkedIn
+- Core Mission: Tell the operator exactly what to do next to move real companies toward contact, conversation, and revenue
+
+The current app already has useful strengths:
+- lead generation
+- enrichment
+- territory targeting
+- company/contact intelligence
+- automation
+- workflow infrastructure
+
+Do NOT throw away working foundations unless necessary.
+Instead, reframe the app so execution becomes primary and analytics/intelligence become secondary.
+
+==================================================
+PRIMARY REDESIGN GOAL
+==================================================
+
+The app must answer this question every time the operator logs in:
+
+“What are the next highest-value actions I should take right now?”
+
+The system should no longer feel like:
+- a machine activity dashboard
+- a passive lead engine
+- an analytics-heavy control panel
+
+It should feel like:
+- a relationship command center
+- a call execution cockpit
+- an industrial sales operating system
+
+==================================================
+CORE CONCEPTUAL MODEL
+==================================================
+
+The new app should be structured around:
+
+Company
+  -> Target Roles / Decision Makers
+  -> Contact Flows
+  -> Attempts
+  -> Outcomes
+  -> Next Action
+  -> Pipeline Progression
+  -> Nurture / Reactivation
+
+Everything must start from the company record.
+
+Contacts exist in the context of a company.
+Flows exist in the context of a company and/or a company-contact pair.
+Next actions must always be generated from actual flow state.
+
+==================================================
+THE 5 CORE FLOWS THE APP MUST SUPPORT
+==================================================
+
+FLOW 1 — Gatekeeper Discovery Flow
+Purpose:
+- identify the right decision maker
+- get name, title, extension, email, transfer, or routing clue
+
+This flow is company-level first, before direct DM contact is confirmed.
+
+Track repeated attempts such as:
+- no answer
+- receptionist answered
+- voicemail/general mailbox
+- refused / blocked
+- transferred
+- gave name
+- gave title only
+- gave direct extension
+- gave email
+- asked to send info
+- promised to pass message
+
+This flow should support 6+ attempts over time.
+
+==================================================
+
+FLOW 2 — Decision Maker Direct Call Flow
+Purpose:
+- reach the decision maker directly
+- log voicemail/live answer/conversation
+- move toward qualification or meeting
+
+Track:
+- direct call attempt count
+- live answer
+- voicemail left
+- asked to call back later
+- unavailable
+- wrong person
+- referral to other person
+- not relevant
+- interested
+- conversation happened
+- meeting requested
+- follow-up date given
+
+This flow should support 6+ attempts over time.
+
+==================================================
+
+FLOW 3 — Email Flow
+Purpose:
+- reinforce legitimacy
+- maintain contact when phone doesn’t connect
+- document relevance
+- give additional touchpoints
+
+Track:
+- email found / not found
+- email sequence step
+- sent date/time
+- opened if available
+- clicked if available
+- replied
+- bounced
+- paused
+- completed
+- not relevant
+- interested
+- follow-up needed
+
+This flow should support 4–6 emails over time.
+
+==================================================
+
+FLOW 4 — LinkedIn Flow
+Purpose:
+- establish familiarity and identity
+- support the phone/email outreach
+- add another path to the same DM
+
+Track:
+- profile not found
+- profile found
+- viewed
+- connection requested
+- connected
+- message sent
+- responded
+- no response
+- follow-up sent
+
+==================================================
+
+FLOW 5 — Long-Term Nurture Flow
+Purpose:
+- keep viable but non-responsive or non-timing-ready companies alive
+- recycle companies back into active outreach when appropriate
+
+Track:
+- nurture start date
+- nurture reason
+- next check-in date
+- seasonal/project-based reactivation
+- quarterly follow-up
+- refinery/turnaround season check
+- reactivated into active flow
+
+==================================================
+PRIMARY UX / INFORMATION ARCHITECTURE
+==================================================
+
+The new main navigation should prioritize execution.
+
+Recommended primary nav:
+
+1. Today
+2. Companies
+3. Call Queue
+4. Email Queue
+5. LinkedIn Queue
+6. Pipeline
+7. Analytics
+8. Settings
+
+If a different structure is better based on current code, explain why and implement the closest execution-first structure.
+
+Analytics, machine events, run logs, and system status should be secondary.
+Daily action and next steps should be primary.
+
+==================================================
+TODAY PAGE — THIS MUST BECOME THE MAIN DASHBOARD
+==================================================
+
+When I log in, the Today page should immediately show action.
+
+Required sections:
+
+SECTION A — Today’s Priorities
+Show the highest-value tasks due today.
+Examples:
+- Gatekeeper Call #3 for ABC Industrial
+- DM Call #2 for Turner Mechanical
+- Email Step 2 for Mike at Baytown Scaffold
+- LinkedIn Request for John at Gulf Coast Maintenance
+- Nurture Reactivation for Delta Industrial
+
+Each row should show:
+- company
+- person if known
+- flow type
+- attempt/stage number
+- last result
+- recommended next action
+- due date/time
+- priority
+
+SECTION B — Quick Metrics That Actually Matter
+Show:
+- Calls due today
+- Emails due today
+- LinkedIn touches due today
+- Companies in active outreach
+- Companies waiting on follow-up
+- Companies moved to nurture this week
+- Live conversations this week
+- Decision makers identified this week
+
+SECTION C — Focus Mode Entry
+A large “Start Call Session” or “Focus Mode” button should begin guided execution.
+
+==================================================
+FOCUS MODE / CALL SESSION
+==================================================
+
+This must become a guided work mode.
+
+When activated:
+- show one company/task at a time
+- show company summary
+- show current flow
+- show attempt history
+- show suggested call opener
+- show quick outcome buttons after each touch
+- automatically advance to next best task after logging outcome
+
+For a Gatekeeper task, show:
+- company name
+- location
+- trade/category
+- known plant/refinery relevance
+- previous call attempts
+- previous gatekeeper outcomes
+- recommended goal for this call
+- example opener
+
+Quick outcome buttons should include:
+- No answer
+- General voicemail
+- Receptionist answered
+- Gave DM name
+- Gave title only
+- Gave direct extension
+- Gave email
+- Transferred
+- Refused
+- Asked to send info
+- Message taken
+
+For a DM direct call, show:
+- company
+- DM name
+- title
+- direct line if known
+- previous call attempts
+- previous email/LinkedIn touches
+- last known result
+- suggested opener
+- quick outcome buttons
+
+DM quick outcomes:
+- No answer
+- Voicemail left
+- Live answer
+- Asked to call later
+- Wrong person
+- Referred me elsewhere
+- Not relevant
+- Interested
+- Meeting requested
+- Follow-up scheduled
+
+After logging, the system must:
+- update attempt history
+- update flow state
+- generate next recommended action
+- move to next task
+
+==================================================
+COMPANIES PAGE
+==================================================
+
+This should become the core operating table.
+
+Each company row should show:
+- company name
+- trade/category
+- location
+- plant/refinery relevance status
+- target role status
+- DM identified yes/no
+- active flows count
+- next action
+- last touch date
+- pipeline stage
+- priority score
+
+Filter options should include:
+- no DM identified
+- active gatekeeper flow
+- active DM call flow
+- active email flow
+- active LinkedIn flow
+- nurture
+- by territory
+- by trade
+- by status
+- by priority
+- by last touch
+- by due today
+
+==================================================
+COMPANY DETAIL PAGE — RELATIONSHIP CONTROL PANEL
+==================================================
+
+Each company page should become a mission control page.
+
+Required sections:
+
+1. Company Summary
+- company name
+- trade/category
+- location
+- website
+- phone
+- refinery/plant relevance
+- notes
+- status
+- priority
+
+2. Target Roles
+List likely buyer/influencer roles such as:
+- operations manager
+- superintendent
+- project manager
+- safety manager
+- field operations lead
+- branch manager
+
+3. Decision Makers / Contacts
+For each contact:
+- name
+- title
+- phone
+- extension
+- email
+- LinkedIn
+- contact confidence / source
+- contact status
+
+4. Flow Progress
+Visually show the 5 flows and current stage.
+For example:
+- Gatekeeper Discovery: 3/6 attempts
+- DM Calls: 1/6 attempts
+- Email: Step 2/5
+- LinkedIn: Requested
+- Nurture: inactive or active with next date
+
+5. Attempt History / Timeline
+One chronological log of all touches across channels:
+- gatekeeper calls
+- DM calls
+- emails
+- LinkedIn actions
+- notes
+- outcomes
+- follow-up dates
+
+6. Next Best Action
+This should be obvious and pinned near the top.
+Examples:
+- Call gatekeeper again tomorrow morning
+- Send email step 2 today
+- Call Mike direct on Thursday at 7:30 AM
+- Move to nurture for 90 days
+
+7. Action Buttons
+Examples:
+- Log Gatekeeper Call
+- Log DM Call
+- Send Email Step
+- Log LinkedIn Touch
+- Schedule Follow-Up
+- Move to Nurture
+- Reactivate
+
+==================================================
+CALL QUEUE PAGE
+==================================================
+
+This page should show all phone-related tasks due and upcoming.
+
+Group by:
+- Gatekeeper Calls
+- DM Calls
+- Callback Appointments
+- High-priority companies
+
+Show:
+- company
+- person if known
+- flow type
+- attempt number
+- last result
+- recommended time window
+- next action
+
+Include fast logging actions directly from the queue if possible.
+
+==================================================
+EMAIL QUEUE PAGE
+==================================================
+
+This page should show all email-related tasks.
+
+Each row:
+- company
+- contact
+- email sequence stage
+- due date
+- previous email outcome
+- next template / message suggestion
+- status
+
+System should support:
+- pause sequence if live conversation happens
+- pause if reply received
+- pause if not relevant
+- continue if no response
+
+==================================================
+LINKEDIN QUEUE PAGE
+==================================================
+
+This page should show:
+- profiles to find
+- profiles found but not viewed
+- viewed but not requested
+- requested but not connected
+- connected but not messaged
+- message follow-up due
+
+==================================================
+PIPELINE PAGE
+==================================================
+
+Pipeline should no longer be vague or purely lead-centric.
+It should reflect relationship progression.
+
+Recommended pipeline stages:
+- Target Company Identified
+- Gatekeeper Flow Active
+- DM Identified
+- DM Contact Flow Active
+- Live Conversation Happened
+- Qualified Opportunity
+- Follow-Up Active
+- Proposal / Demo / Presentation
+- Nurture
+- Closed Won
+- Closed Lost
+
+Use the current system’s architecture if needed, but this is the logic the UX should reflect.
+
+==================================================
+ANALYTICS PAGE
+==================================================
+
+Analytics should still exist, but should support execution rather than distract from it.
+
+Useful analytics:
+- gatekeeper-to-DM identification rate
+- DM connection rate
+- live conversation rate
+- email reply rate
+- LinkedIn connection rate
+- average touches to conversation
+- conversations by trade
+- conversations by territory
+- nurture reactivation rate
+- meetings generated
+
+De-emphasize:
+- machine self-activity
+- abstract run logs
+- passive system noise
+
+==================================================
+DATA MODEL / SCHEMA CHANGES NEEDED
+==================================================
+
+Add or adapt schema to support the new execution-first model.
+
+At minimum, I need the app to clearly support these concepts:
+
+ENTITY: Company
+Fields may include:
+- id
+- name
+- trade/category
+- territory
+- city/state
+- website
+- main phone
+- plant/refinery relevance
+- company status
+- priority score
+- pipeline stage
+- next action
+- next action due at
+- nurture status
+- last touch at
+
+ENTITY: Contact
+Fields may include:
+- id
+- company_id
+- name
+- title
+- phone
+- extension
+- email
+- linkedin_url
+- contact_type
+- decision_maker_flag
+- confidence/source
+- status
+
+ENTITY: Flow
+Fields may include:
+- id
+- company_id
+- contact_id nullable
+- flow_type (gatekeeper, dm_call, email, linkedin, nurture)
+- status
+- stage
+- attempt_count
+- max_attempts
+- next_action
+- next_due_at
+- last_outcome
+- owner
+- active_flag
+
+ENTITY: Touch / Attempt / Interaction
+Fields may include:
+- id
+- company_id
+- contact_id nullable
+- flow_id
+- channel
+- attempt_number
+- outcome
+- notes
+- timestamp
+- callback_at nullable
+- created_by
+
+ENTITY: Task / Next Action
+Fields may include:
+- id
+- company_id
+- contact_id nullable
+- flow_id nullable
+- task_type
+- due_at
+- priority
+- status
+- recommendation_text
+
+If your current codebase already has equivalent models, map them instead of duplicating them.
+If not, implement the cleanest path that fits existing architecture.
+
+==================================================
+BUSINESS LOGIC / NEXT ACTION ENGINE
+==================================================
+
+This is critical.
+
+Build or adapt logic so the app can recommend the next best action based on outcomes.
+
+Examples:
+
+If Gatekeeper outcome = "gave DM name"
+-> create/update contact
+-> start DM Call flow
+-> recommend direct call attempt #1
+
+If Gatekeeper outcome = "gave email"
+-> create or update contact/email
+-> activate Email flow
+-> recommend Email Step 1
+
+If Gatekeeper outcome = "message taken"
+-> schedule follow-up gatekeeper call in X days
+
+If DM call outcome = "voicemail left"
+-> schedule DM call retry
+-> optionally suggest email if email exists
+
+If DM call outcome = "live answer - not relevant"
+-> close active flows or move to nurture/closed lost based on logic
+
+If DM call outcome = "interested"
+-> raise priority
+-> recommend follow-up / meeting / presentation stage
+
+If no response after max attempts across major channels
+-> move to Nurture with next reactivation date
+
+This logic should be visible and deterministic, not hidden black-box behavior.
+
+==================================================
+DESIGN / UX DIRECTION
+==================================================
+
+Keep anything visually strong that still serves execution.
+But redesign the layout so the operator’s eye always goes to action.
+
+Design priorities:
+- very clear hierarchy
+- low cognitive load
+- obvious next step
+- minimal clutter
+- fast logging
+- strong progress visibility
+- execution over decoration
+
+The interface should feel:
+- industrial
+- focused
+- operator-grade
+- practical
+- clean
+- decisive
+
+Avoid making it feel like:
+- a generic startup dashboard
+- a noisy analytics portal
+- a passive admin panel
+
+==================================================
+IMPLEMENTATION REQUEST
+==================================================
+
+I do NOT want theory only.
+
+I want you to do the following:
+
+1. Inspect the current codebase and identify the real files/components/routes/state/services that must change
+2. Explain your redesign plan in terms of actual implementation
+3. Then begin implementing the redesign in the existing app
+
+Return your response in this format:
+
+SECTION A — CURRENT FILES / COMPONENTS TO CHANGE
+List the exact files, routes, components, schemas, services, and state logic that should be modified.
+
+SECTION B — REDESIGN PLAN
+Explain how you will transform the current UI/UX and data flow into this 5-flow execution-first system.
+
+SECTION C — SCHEMA / LOGIC CHANGES
+List the actual model changes and business logic changes required.
+
+SECTION D — IMPLEMENTATION PHASES
+Break the build into phases such as:
+- Phase 1: Today dashboard + Next Action engine
+- Phase 2: Company detail relationship control panel
+- Phase 3: Flow tracking + attempt logging
+- Phase 4: Call queue / email queue / LinkedIn queue
+- Phase 5: Pipeline + nurture + analytics refinement
+
+SECTION E — START BUILDING
+After the audit/plan, begin implementing the highest-value first phase immediately.
+
+Important rules:
+- Do not give vague CRM advice
+- Do not tell me what a sales process is
+- Use the actual codebase
+- Preserve existing strengths where possible
+- Prioritize the fastest path to a working execution-first operator machine
+- If something is implied but not implemented, label it clearly
+- If a file/component appears unnecessary after redesign, say so
+
+Final instruction:
+Build this app so that when I log in, it feels like a guided industrial sales machine telling me exactly who to call, what flow they are in, and what to do next.
