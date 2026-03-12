@@ -378,6 +378,9 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
     ? new Date(recording.updatedFlowDueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     : null;
   const liveNotes = recording?.processedAt && recording?.updatedFlowNotes ? recording.updatedFlowNotes : null;
+  const leadScore = recording?.processedAt ? recording?.leadQualityScore : null;
+  const leadLabel = recording?.processedAt ? recording?.leadQualityLabel : null;
+  const leadSignals: string[] = recording?.processedAt && recording?.leadQualitySignals ? recording.leadQualitySignals : [];
 
   return (
     <div className="min-h-screen" style={{ background: "#F8FAFC" }}>
@@ -557,6 +560,45 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
                   </div>
                 )}
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {leadScore != null && leadLabel && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+            <div className="rounded-xl p-4" style={{ background: "white", border: `1px solid ${leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR}20` }}>
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: `${leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR}15` }}>
+                    <Target className="w-3 h-3" style={{ color: leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR }} />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR }}>Lead Quality</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: `${PURPLE}12`, color: PURPLE }}>LIVE</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold" style={{ color: leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR }} data-testid="text-lead-score">{leadScore}/10</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{
+                    background: `${leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR}12`,
+                    color: leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR,
+                  }} data-testid="text-lead-label">{leadLabel}</span>
+                </div>
+              </div>
+              <div className="w-full h-1.5 rounded-full overflow-hidden mb-2" style={{ background: `${BORDER}` }}>
+                <div className="h-full rounded-full transition-all duration-700" style={{
+                  width: `${leadScore * 10}%`,
+                  background: leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR,
+                }} />
+              </div>
+              {leadSignals.length > 0 && (
+                <div className="space-y-1">
+                  {leadSignals.map((signal: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs" style={{ color: TEXT }}>
+                      <div className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0" style={{ background: leadScore >= 8 ? EMERALD : leadScore >= 6 ? BLUE : leadScore >= 4 ? AMBER : ERROR }} />
+                      <span data-testid={`text-lead-signal-${i}`}>{signal}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </motion.div>
         )}

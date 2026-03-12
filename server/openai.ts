@@ -329,6 +329,66 @@ function parseExplicitDate(match: RegExpExecArray, ref: Date): { date: Date; con
   return null;
 }
 
+export async function analyzeLeadQuality(transcription: string, companyName?: string): Promise<{
+  score: number;
+  label: string;
+  signals: string[];
+}> {
+  log("Analyzing lead quality from transcript...", "openai");
+
+  try {
+    const response = await proxyClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert B2B lead qualification analyst for industrial service companies. Analyze call transcripts to score lead quality.
+
+Score leads 1-10 based on these factors:
+- NEED: Does the prospect have a real need for the service? (equipment issues, upcoming projects, pain points mentioned)
+- BUDGET: Any signals about budget, company size, spending authority?
+- TIMELINE: Is there urgency or a specific timeline mentioned?
+- FIT: Does the company type match B2B industrial services? (NOT residential, NOT retail)
+- ENGAGEMENT: How engaged was the prospect? (asked questions, showed interest, vs. dismissive/rushed)
+- AUTHORITY: Was the person a decision-maker or influencer?
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "score": <1-10>,
+  "label": "<Hot Lead|Warm Lead|Cool Lead|Cold Lead|Not Qualified>",
+  "signals": ["signal 1", "signal 2", "signal 3"]
+}
+
+Scoring guide:
+- 8-10: Hot Lead — clear need, budget signals, decision-maker, timeline
+- 6-7: Warm Lead — interest shown, some qualifying signals
+- 4-5: Cool Lead — lukewarm, unclear need or authority
+- 2-3: Cold Lead — dismissive, no interest, wrong contact
+- 1: Not Qualified — residential, wrong industry, hostile`,
+        },
+        {
+          role: "user",
+          content: `Analyze lead quality from this call transcript${companyName ? ` (company: ${companyName})` : ""}:\n\n${transcription}`,
+        },
+      ],
+      max_tokens: 300,
+    });
+
+    const raw = response.choices[0]?.message?.content || "";
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    const score = Math.max(1, Math.min(10, Number(parsed.score) || 5));
+    const label = String(parsed.label || "Cool Lead");
+    const signals = Array.isArray(parsed.signals) ? parsed.signals.map(String).slice(0, 5) : [];
+
+    log(`Lead quality: ${score}/10 (${label}) — ${signals.length} signals`, "openai");
+    return { score, label, signals };
+  } catch (err: any) {
+    log(`Lead quality analysis failed: ${err.message}`, "openai");
+    return { score: 5, label: "Unknown", signals: ["Analysis failed — manual review needed"] };
+  }
+}
+
 export async function analyzeContainment(transcription: string): Promise<string> {
   log("Analyzing containment language...", "openai");
 

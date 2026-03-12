@@ -70,7 +70,8 @@ Key files: `focus-mode.tsx` (UI), `flow-engine.ts` (computeNextAction + handleDq
 After a call recording is transcribed and analyzed, the Explanation Screen updates live:
 - **Next Action card**: If the AI extracts a follow-up date from the transcript, the Next Action card transitions from green to purple with a "LIVE" badge and shows the AI-updated recommendation. The flow's `callbackAt` and `nextAction` are also updated in the database.
 - **AI Notes section**: A new card appears below the recording section showing AI-extracted insights (follow-up dates, authority issues, detected problems) parsed from the transcript analysis.
-- **Backend**: `processRecording` in `twilio-routes.ts` now updates the active `companyFlows` record and `actionQueue` entry after analysis completes. The `recording-by-callsid` endpoint returns `updatedFlowAction`, `updatedFlowNotes`, and `updatedFlowDueAt` alongside recording data.
+- **Lead Quality Scoring**: GPT-4o analyzes each transcript to score lead quality 1-10 (Hot/Warm/Cool/Cold/Not Qualified). Evaluates need, budget signals, timeline, fit, engagement, and authority. Shows as a color-coded card with progress bar and bullet-pointed signals on the Explanation Screen. Stored in `twilio_recordings` table (`lead_quality_score`, `lead_quality_label`, `lead_quality_signals`). Colors: green (8-10), blue (6-7), amber (4-5), red (1-3). Function: `analyzeLeadQuality()` in `openai.ts`.
+- **Backend**: `processRecording` in `twilio-routes.ts` now updates the active `companyFlows` record and `actionQueue` entry after analysis completes. The `recording-by-callsid` endpoint returns `updatedFlowAction`, `updatedFlowNotes`, `updatedFlowDueAt`, and lead quality data alongside recording data.
 - The polling mechanism (every 5s until `processedAt` is set) naturally picks up these updates when analysis completes.
 
 ## Coaching Toggle

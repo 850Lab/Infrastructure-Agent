@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { sendSms, initiateCall, getCallStatus, isTwilioConnected, listRecentCalls, listRecentMessages, downloadRecording, getRecordingsForCall } from "./twilio-service";
-import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, extractFollowupDate } from "./openai";
+import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, extractFollowupDate, analyzeLeadQuality } from "./openai";
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 import { db } from "./db";
@@ -53,6 +53,9 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       extractedFollowupDate = followupExtraction.isoDate;
     }
 
+    log(`Running lead quality analysis for ${recordingSid}...`);
+    const leadQuality = await analyzeLeadQuality(transcription);
+
     await db.update(twilioRecordings)
       .set({
         transcription,
@@ -66,6 +69,9 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
         suggestedRole: authorityResult.suggestedRole || null,
         followupDate: extractedFollowupDate,
         followupSource: followupExtraction.rawPhrase || null,
+        leadQualityScore: leadQuality.score,
+        leadQualityLabel: leadQuality.label,
+        leadQualitySignals: JSON.stringify(leadQuality.signals),
         duration: recording.duration,
         status: "analyzed",
         processedAt: new Date(),
@@ -86,6 +92,9 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       suggestedRole: authorityResult.suggestedRole || null,
       extractedFollowupDate,
       followupSource: followupExtraction.rawPhrase || null,
+      leadQualityScore: leadQuality.score,
+      leadQualityLabel: leadQuality.label,
+      leadQualitySignals: leadQuality.signals,
       ts: Date.now(),
     }, clientId || undefined);
 
@@ -643,6 +652,9 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         status: recording.status,
         createdAt: recording.createdAt,
         processedAt: recording.processedAt,
+        leadQualityScore: recording.leadQualityScore,
+        leadQualityLabel: recording.leadQualityLabel,
+        leadQualitySignals: recording.leadQualitySignals ? JSON.parse(recording.leadQualitySignals) : null,
         updatedFlowAction,
         updatedFlowNotes,
         updatedFlowDueAt,
