@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, ChevronDown, ChevronUp, AlertTriangle, Calendar, FileText,
   MessageSquare, Phone, Mail, ArrowRight, Clock, User, MapPin, Flame,
-  CheckCircle2, XCircle, Send, Handshake, Target, Activity, Brain,
+  CheckCircle2, XCircle, Send, Handshake, Target, Activity, Brain, RefreshCw,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -463,6 +463,22 @@ export default function WarmLeadsPage() {
     },
   });
 
+  const [syncResult, setSyncResult] = useState<any>(null);
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/twilio/sync-recordings", { daysBack: 7 });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setSyncResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/warm-leads"] });
+      toast({ title: `Synced ${data.transcribed} recordings`, description: `${data.totalInTwilio} total in Twilio, ${data.matched} matched to companies` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const leads = data?.leads || [];
   const stats = data?.stats || { total: 0, overdue: 0, meetingsToday: 0, needsProposal: 0, activeDeals: 0 };
 
@@ -477,7 +493,18 @@ export default function WarmLeadsPage() {
               <h1 className="text-xl font-bold" style={{ color: TEXT }} data-testid="page-title">Warm Leads</h1>
               <p className="text-sm mt-0.5" style={{ color: MUTED }}>Active deals and relationship management</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="text-[11px] h-8 gap-1.5"
+                style={{ background: BLUE, color: "white" }}
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                data-testid="sync-recordings-btn"
+              >
+                {syncMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                {syncMutation.isPending ? "Syncing..." : "Sync Recordings"}
+              </Button>
               <Button
                 size="sm"
                 className="text-[11px] h-8 gap-1.5"
@@ -487,9 +514,9 @@ export default function WarmLeadsPage() {
                 data-testid="deep-analysis-btn"
               >
                 {deepAnalysisMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
-                {deepAnalysisMutation.isPending ? "Analyzing..." : "Analyze All Transcripts"}
+                {deepAnalysisMutation.isPending ? "Analyzing..." : "Deep Analysis"}
               </Button>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-1">
                 <Flame className="w-5 h-5" style={{ color: AMBER }} />
                 <span className="text-sm font-bold" style={{ color: TEXT }}>{stats.activeDeals} active</span>
               </div>
@@ -550,6 +577,55 @@ export default function WarmLeadsPage() {
               )}
               {analysisResult.errors.length > 0 && (
                 <div className="mt-2 text-[10px]" style={{ color: ERROR }}>{analysisResult.errors.length} errors: {analysisResult.errors.slice(0, 3).join("; ")}</div>
+              )}
+            </div>
+          )}
+
+          {syncResult && (
+            <div className="rounded-xl p-4 mb-6" style={{ background: `${BLUE}04`, border: `1px solid ${BLUE}20` }} data-testid="sync-results">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4" style={{ color: BLUE }} />
+                  <span className="text-sm font-bold" style={{ color: TEXT }}>Recording Sync Results</span>
+                </div>
+                <button onClick={() => setSyncResult(null)} className="text-xs px-2 py-0.5 rounded" style={{ color: MUTED }}>Dismiss</button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: TEXT }}>{syncResult.totalInTwilio}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>In Twilio</div>
+                </div>
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: EMERALD }}>{syncResult.transcribed}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Transcribed</div>
+                </div>
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: BLUE }}>{syncResult.matched}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Matched</div>
+                </div>
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: MUTED }}>{syncResult.alreadySynced}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Already Synced</div>
+                </div>
+              </div>
+              {syncResult.results?.length > 0 && (
+                <div className="space-y-1.5">
+                  {syncResult.results.map((r: any, i: number) => (
+                    <div key={i} className="flex items-center gap-3 p-2 rounded-lg text-xs" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                      <span className="font-bold flex-shrink-0" style={{ color: r.companyName ? TEXT : MUTED }}>{r.companyName || r.leadPhone || r.to || "Unknown"}</span>
+                      <span className="text-[10px] shrink-0" style={{ color: MUTED }}>{r.duration}s</span>
+                      {r.qualityScore !== undefined && (
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0" style={{
+                          background: r.qualityScore >= 7 ? EMERALD : r.qualityScore >= 4 ? AMBER : ERROR, color: "white",
+                        }}>{r.qualityScore}</span>
+                      )}
+                      <span className="text-[10px] flex-1 truncate" style={{ color: MUTED }}>{r.transcriptPreview || r.summary || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {syncResult.errors?.length > 0 && (
+                <div className="mt-2 text-[10px]" style={{ color: ERROR }}>{syncResult.errors.length} errors: {syncResult.errors.slice(0, 3).join("; ")}</div>
               )}
             </div>
           )}

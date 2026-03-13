@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { sendSms, initiateCall, getCallStatus, isTwilioConnected, listRecentCalls, listRecentMessages, downloadRecording, getRecordingsForCall } from "./twilio-service";
+import { sendSms, initiateCall, getCallStatus, isTwilioConnected, listRecentCalls, listRecentMessages, downloadRecording, getRecordingsForCall, listAllRecordings, getCallDetails } from "./twilio-service";
 import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, extractFollowupDate, analyzeLeadQuality } from "./openai";
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
@@ -875,6 +875,286 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.get("/api/twilio/coaching-sessions", authMiddleware, (_req: Request, res: Response) => {
     res.json(getActiveSessions());
+  });
+
+  app.post("/api/twilio/sync-recordings", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const daysBack = Math.min(parseInt(req.body?.daysBack || "3", 10), 14);
+      const since = new Date();
+      since.setDate(since.getDate() - daysBack);
+
+      log(`[sync] Starting Twilio recording sync (last ${daysBack} days, since ${since.toISOString()})...`);
+
+      const recordings = await listAllRecordings(since, 200);
+      log(`[sync] Found ${recordings.length} recordings in Twilio`);
+
+      const existingRecordings = await db.select({ recordingSid: twilioRecordings.recordingSid })
+        .from(twilioRecordings);
+      const existingSids = new Set(existingRecordings.map(r => r.recordingSid));
+      const existingPendingSids = new Set(
+        existingRecordings
+          .filter(r => r.recordingSid.startsWith("pending-"))
+          .map(r => r.recordingSid.replace("pending-", ""))
+      );
+
+      const newRecordings = recordings.filter(r =>
+        r.duration >= 5 &&
+        !existingSids.has(r.sid) &&
+        !existingPendingSids.has(r.callSid)
+      );
+
+      log(`[sync] ${newRecordings.length} new recordings to process (filtered out ${recordings.length - newRecordings.length} existing/short)`);
+
+      const airtableRecords: any[] = [];
+      if (process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID) {
+        let offset: string | undefined;
+        do {
+          const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent("Calls")}?pageSize=100${offset ? `&offset=${offset}` : ""}`;
+          const atRes = await fetch(url, {
+            headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` },
+          });
+          if (atRes.ok) {
+            const atData = await atRes.json();
+            airtableRecords.push(...(atData.records || []));
+            offset = atData.offset;
+          } else {
+            offset = undefined;
+          }
+        } while (offset);
+        log(`[sync] Loaded ${airtableRecords.length} Airtable call records for phone matching`);
+      }
+
+      const phoneToCompany = new Map<string, string>();
+      for (const rec of airtableRecords) {
+        const phone = rec.fields.phone || rec.fields.Phone || "";
+        const company = rec.fields.company_name || rec.fields.Company_Name || rec.fields.Company || "";
+        if (phone && company) {
+          const digits = phone.replace(/[^0-9]/g, "").slice(-10);
+          if (digits.length === 10) {
+            phoneToCompany.set(digits, company);
+          }
+        }
+      }
+
+      const pipelineRecords = await db.select({
+        companyName: outreachPipeline.companyName,
+        phone: outreachPipeline.phone,
+      }).from(outreachPipeline);
+
+      for (const pr of pipelineRecords) {
+        if (pr.phone && pr.companyName) {
+          const digits = pr.phone.replace(/[^0-9]/g, "").slice(-10);
+          if (digits.length === 10 && !phoneToCompany.has(digits)) {
+            phoneToCompany.set(digits, pr.companyName);
+          }
+        }
+      }
+
+      log(`[sync] Phone-to-company map: ${phoneToCompany.size} entries`);
+
+      const results: any[] = [];
+      let processed = 0;
+      let transcribed = 0;
+      let matched = 0;
+      const errors: string[] = [];
+
+      for (const rec of newRecordings) {
+        try {
+          const callDetails = await getCallDetails(rec.callSid);
+          if (!callDetails) {
+            errors.push(`Could not fetch call details for ${rec.callSid}`);
+            continue;
+          }
+
+          const agentDigits = (process.env.AGENT_PHONE || "+14093387109").replace(/[^0-9]/g, "").slice(-10);
+          const toDigits = (callDetails.to || "").replace(/[^0-9]/g, "").slice(-10);
+          const fromDigits = (callDetails.from || "").replace(/[^0-9]/g, "").slice(-10);
+
+          const childDigits = (callDetails.childNumbers || []).map((n: string) => n.replace(/[^0-9]/g, "").slice(-10));
+
+          let leadNumber = "";
+          if (childDigits.length > 0) {
+            leadNumber = childDigits.find((d: string) => d !== agentDigits) || childDigits[0];
+          } else if (toDigits === agentDigits) {
+            leadNumber = fromDigits;
+          } else if (fromDigits === agentDigits) {
+            leadNumber = toDigits;
+          } else {
+            leadNumber = toDigits;
+          }
+
+          let companyName = phoneToCompany.get(leadNumber) || null;
+          if (!companyName) {
+            for (const cd of childDigits) {
+              companyName = phoneToCompany.get(cd) || null;
+              if (companyName) break;
+            }
+          }
+          if (!companyName) {
+            companyName = phoneToCompany.get(toDigits) || phoneToCompany.get(fromDigits) || null;
+          }
+
+          const leadPhone = leadNumber ? `+1${leadNumber}` : (callDetails.to || null);
+          await db.insert(twilioRecordings).values({
+            callSid: rec.callSid,
+            recordingSid: rec.sid,
+            toNumber: leadPhone,
+            fromNumber: callDetails.from || null,
+            companyName,
+            duration: rec.duration,
+            status: "recording_ready",
+          }).onConflictDoNothing();
+
+          processed++;
+          if (companyName) matched++;
+
+          log(`[sync] ${processed}/${newRecordings.length}: ${rec.sid} (${rec.duration}s) → ${companyName || "unmatched"} [lead:+1${leadNumber}] [to:${callDetails.to}] [children:${childDigits.join(",")}]`);
+
+          const recording = await downloadRecording(rec.sid);
+          if (!recording || !recording.buffer || recording.buffer.length < 1000) {
+            log(`[sync] Skipping ${rec.sid} — download failed or too small`);
+            continue;
+          }
+
+          log(`[sync] Transcribing ${rec.sid} (${(recording.buffer.length / 1024).toFixed(0)}KB)...`);
+          const transcription = await transcribeAudio(recording.buffer, `${rec.sid}.mp3`);
+          if (!transcription || transcription.length < 10) {
+            log(`[sync] Transcription empty for ${rec.sid}`);
+            await db.update(twilioRecordings)
+              .set({ status: "transcription_empty", processedAt: new Date() })
+              .where(eq(twilioRecordings.recordingSid, rec.sid));
+            continue;
+          }
+
+          transcribed++;
+          log(`[sync] Transcribed ${rec.sid}: "${transcription.substring(0, 80)}..."`);
+
+          if (!companyName && transcription.length > 30) {
+            const firstWords = transcription.substring(0, 300).toLowerCase();
+            for (const [digits, name] of phoneToCompany.entries()) {
+              if (firstWords.includes(name.toLowerCase().split(/[\s,]+/)[0].toLowerCase()) && name.length > 4) {
+                companyName = name;
+                log(`[sync] Transcript-matched to "${name}" by keyword`);
+                break;
+              }
+            }
+            if (!companyName) {
+              for (const atRec of airtableRecords) {
+                const atName = atRec.fields.company_name || atRec.fields.Company_Name || atRec.fields.Company || "";
+                if (atName.length > 4) {
+                  const keyword = atName.split(/[\s,]+/)[0].toLowerCase();
+                  if (keyword.length > 3 && firstWords.includes(keyword)) {
+                    companyName = atName;
+                    log(`[sync] Transcript-matched to "${atName}" by Airtable keyword "${keyword}"`);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          const deterministicResult = analyzeContainmentDeterministic(transcription);
+          const analysis = await analyzeContainment(transcription);
+          const transcriptAuthority = detectNoAuthority(transcription);
+          const analysisAuthority = detectNoAuthorityFromAnalysis(analysis);
+          const authorityDetected = transcriptAuthority.detected || analysisAuthority.detected;
+          const authorityResult = transcriptAuthority.detected ? transcriptAuthority : analysisAuthority;
+          const followupExtraction = extractFollowupDate(transcription);
+          const extractedFollowupDate = followupExtraction.detected && followupExtraction.isoDate ? followupExtraction.isoDate : null;
+          const leadQuality = await analyzeLeadQuality(transcription);
+
+          await db.update(twilioRecordings)
+            .set({
+              transcription,
+              analysis,
+              analysisJson: JSON.stringify(deterministicResult),
+              problemDetected: deterministicResult.problem_detected || null,
+              proposedPatchType: deterministicResult.proposed_patch_type || null,
+              analysisConfidence: deterministicResult.confidence || null,
+              noAuthority: authorityDetected,
+              authorityReason: authorityResult.reason || null,
+              suggestedRole: authorityResult.suggestedRole || null,
+              followupDate: extractedFollowupDate,
+              followupSource: followupExtraction.rawPhrase || null,
+              leadQualityScore: leadQuality.score,
+              leadQualityLabel: leadQuality.label,
+              leadQualitySignals: JSON.stringify(leadQuality.signals),
+              companyName: companyName,
+              duration: rec.duration,
+              status: "analyzed",
+              processedAt: new Date(),
+            })
+            .where(eq(twilioRecordings.recordingSid, rec.sid));
+
+          if (companyName) {
+            const [activeFlow] = await db.select()
+              .from(companyFlows)
+              .where(and(
+                sql`LOWER(${companyFlows.companyName}) = LOWER(${companyName})`,
+                eq(companyFlows.status, "active"),
+              ))
+              .orderBy(desc(companyFlows.updatedAt))
+              .limit(1);
+
+            if (activeFlow) {
+              const flowUpdates: Record<string, any> = {
+                verifiedQualityScore: leadQuality.score,
+                verifiedQualityLabel: leadQuality.label,
+                qualitySignals: JSON.stringify({
+                  buyingSignals: leadQuality.buyingSignals,
+                  objections: leadQuality.objections,
+                  signals: leadQuality.signals,
+                  nextStepReason: leadQuality.nextStepReason,
+                }),
+                transcriptSummary: leadQuality.summary,
+                updatedAt: new Date(),
+              };
+              if (leadQuality.nextStepReason) {
+                flowUpdates.nextAction = leadQuality.nextStepReason;
+              }
+              if (extractedFollowupDate) {
+                flowUpdates.callbackAt = new Date(extractedFollowupDate);
+              }
+              await db.update(companyFlows).set(flowUpdates).where(eq(companyFlows.id, activeFlow.id));
+              log(`[sync] Updated flow for ${companyName}: quality=${leadQuality.score}/10`);
+            }
+          }
+
+          results.push({
+            recordingSid: rec.sid,
+            callSid: rec.callSid,
+            duration: rec.duration,
+            companyName,
+            leadPhone: leadPhone,
+            to: callDetails.to,
+            from: callDetails.from,
+            qualityScore: leadQuality.score,
+            qualityLabel: leadQuality.label,
+            summary: leadQuality.summary?.substring(0, 150),
+            followupDate: extractedFollowupDate,
+            transcriptPreview: transcription.substring(0, 100),
+          });
+        } catch (err: any) {
+          errors.push(`${rec.sid}: ${err.message}`);
+          log(`[sync] Error processing ${rec.sid}: ${err.message}`);
+        }
+      }
+
+      log(`[sync] Complete: ${processed} processed, ${transcribed} transcribed, ${matched} matched to companies, ${errors.length} errors`);
+
+      res.json({
+        totalInTwilio: recordings.length,
+        alreadySynced: recordings.length - newRecordings.length,
+        processed,
+        transcribed,
+        matched,
+        results,
+        errors,
+      });
+    } catch (err: any) {
+      log(`[sync] Sync error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   log("Twilio routes registered (with recording intelligence pipeline + live coaching)");

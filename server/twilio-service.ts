@@ -289,6 +289,56 @@ export async function getRecordingsForCall(callSid: string): Promise<any[]> {
   }
 }
 
+export async function listAllRecordings(dateCreatedAfter?: Date, limit: number = 100): Promise<any[]> {
+  try {
+    const client = await getTwilioClient();
+    const params: any = { limit };
+    if (dateCreatedAfter) {
+      params.dateCreatedAfter = dateCreatedAfter;
+    }
+    const recordings = await client.recordings.list(params);
+    return recordings.map(r => ({
+      sid: r.sid,
+      callSid: r.callSid,
+      duration: parseInt(r.duration || "0", 10),
+      status: r.status,
+      dateCreated: r.dateCreated,
+      channels: r.channels,
+    }));
+  } catch (err: any) {
+    log(`List all recordings error: ${err.message}`);
+    return [];
+  }
+}
+
+export async function getCallDetails(callSid: string): Promise<any | null> {
+  try {
+    const client = await getTwilioClient();
+    const call = await client.calls(callSid).fetch();
+    const result: any = {
+      sid: call.sid,
+      from: call.from,
+      to: call.to,
+      status: call.status,
+      direction: call.direction,
+      duration: call.duration,
+      startTime: call.startTime,
+      endTime: call.endTime,
+      childNumbers: [] as string[],
+    };
+
+    try {
+      const childCalls = await client.calls.list({ parentCallSid: callSid, limit: 5 });
+      result.childNumbers = childCalls.map(c => c.to).filter(Boolean);
+    } catch {}
+
+    return result;
+  } catch (err: any) {
+    log(`Get call details error for ${callSid}: ${err.message}`);
+    return null;
+  }
+}
+
 function normalizePhone(phone: string): string | null {
   if (!phone) return null;
   const digits = phone.replace(/[^\d+]/g, "");
