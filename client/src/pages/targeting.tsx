@@ -199,6 +199,25 @@ export default function TargetingPage() {
     },
   });
 
+  const syncTranscriptsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/targeting/sync-transcripts", {});
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const desc = [];
+      if (data.analyzed) desc.push(`${data.analyzed} transcripts analyzed`);
+      if (data.outcomesUpdated) desc.push(`${data.outcomesUpdated} outcomes updated`);
+      if (data.downgraded) desc.push(`${data.downgraded} downgraded`);
+      if (data.synced) desc.push(`${data.synced} already synced`);
+      toast({ title: "Transcript sync complete", description: desc.join(", ") || "No new data to sync" });
+      queryClient.invalidateQueries({ queryKey: ["/api/targeting/query"] });
+    },
+    onError: () => {
+      toast({ title: "Sync failed", variant: "destructive" });
+    },
+  });
+
   const loadProfile = (profile: SavedProfile) => {
     try {
       const parsed = JSON.parse(profile.filters);
@@ -301,6 +320,10 @@ export default function TargetingPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => syncTranscriptsMutation.mutate()} disabled={syncTranscriptsMutation.isPending} className="gap-1.5 text-xs" style={{ borderColor: BORDER, color: syncTranscriptsMutation.isPending ? MUTED : BLUE }} data-testid="button-sync-transcripts">
+              <RefreshCw className={`w-3.5 h-3.5 ${syncTranscriptsMutation.isPending ? "animate-spin" : ""}`} />
+              {syncTranscriptsMutation.isPending ? "Syncing..." : "Sync Transcripts"}
+            </Button>
             {activeFilterCount > 0 && (
               <Button variant="outline" size="sm" onClick={() => setFilters({ ...DEFAULT_FILTERS })} className="gap-1.5 text-xs" style={{ borderColor: BORDER, color: MUTED }} data-testid="button-clear-filters">
                 <RefreshCw className="w-3.5 h-3.5" /> Clear Filters

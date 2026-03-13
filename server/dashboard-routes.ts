@@ -20,6 +20,7 @@ import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
 import { storage } from "./storage";
 import { getTimeWeight, getSignalAge, getDecayConstant } from "./time-weight";
+import { analyzeLeadQuality } from "./openai";
 
 export { authMiddleware } from "./auth";
 
@@ -2017,6 +2018,160 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       res.json({ ok: true, created, skipped: companies.length - created });
     } catch (err: any) {
       log(`Targeting add-to-followup error: ${err.message}`, "targeting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  async function syncTranscriptQuality(clientId?: string): Promise<{ synced: number; analyzed: number; downgraded: number; outcomesUpdated: number; errors: string[] }> {
+    const result = { synced: 0, analyzed: 0, downgraded: 0, outcomesUpdated: 0, errors: [] as string[] };
+    const apiKey = AIRTABLE_API_KEY();
+    const baseId = AIRTABLE_BASE_ID();
+    if (!apiKey || !baseId) {
+      result.errors.push("Airtable not configured");
+      return result;
+    }
+
+    const WARM_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"];
+    const AIRTABLE_OUTCOME_MAP: Record<string, string> = {
+      "qualified": "interested",
+      "decision maker": "interested",
+      "meeting set": "meeting_requested",
+      "interested": "interested",
+      "callback": "followup_scheduled",
+      "follow up": "followup_scheduled",
+      "no answer": "no_answer",
+      "voicemail": "voicemail",
+      "gatekeeper": "gatekeeper",
+      "not interested": "not_interested",
+      "wrong number": "wrong_number",
+    };
+
+    try {
+      const formula = encodeURIComponent('OR(company_name!="",Company!="")');
+      const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent("Calls")}?filterByFormula=${formula}&pageSize=100`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+      if (!res.ok) {
+        result.errors.push(`Airtable fetch failed: ${res.status}`);
+        return result;
+      }
+      const data = await res.json() as any;
+      const records = data.records || [];
+      log(`[transcript-sync] Found ${records.length} Airtable call records with company names`, "targeting");
+
+      const processedCompanies = new Set<string>();
+
+      for (const rec of records) {
+        const f = rec.fields || {};
+        const companyName = (f.company_name || f.Company || "").trim();
+        const transcript = (f.Transcription || "").trim();
+        const airtableOutcome = (f.Outcome || "").toLowerCase().trim();
+        if (!companyName) continue;
+
+        const companyKey = companyName.toLowerCase();
+        if (processedCompanies.has(companyKey)) continue;
+        processedCompanies.add(companyKey);
+
+        const flows = await db.select()
+          .from(companyFlows)
+          .where(and(
+            sql`LOWER(${companyFlows.companyName}) = LOWER(${companyName})`,
+            eq(companyFlows.status, "active"),
+            ...(clientId ? [eq(companyFlows.clientId, clientId)] : []),
+          ))
+          .orderBy(desc(companyFlows.updatedAt))
+          .limit(1);
+
+        if (flows.length === 0) continue;
+        const flow = flows[0];
+
+        const updates: Record<string, any> = { updatedAt: new Date() };
+        let changed = false;
+
+        if (airtableOutcome && AIRTABLE_OUTCOME_MAP[airtableOutcome]) {
+          const mappedOutcome = AIRTABLE_OUTCOME_MAP[airtableOutcome];
+          if (!flow.lastOutcome || flow.lastOutcome === "no_answer" || flow.lastOutcome === "voicemail") {
+            updates.lastOutcome = mappedOutcome;
+            changed = true;
+            result.outcomesUpdated++;
+            log(`[transcript-sync] Outcome update: ${companyName} "${flow.lastOutcome}" → "${mappedOutcome}" (from Airtable: "${f.Outcome}")`, "targeting");
+          }
+        }
+
+        if (transcript && flow.verifiedQualityScore === null) {
+          try {
+            const quality = await analyzeLeadQuality(transcript, companyName);
+            updates.verifiedQualityScore = quality.score;
+            updates.verifiedQualityLabel = quality.label;
+            changed = true;
+            result.analyzed++;
+
+            const effectiveOutcome = updates.lastOutcome || flow.lastOutcome;
+            if (quality.score <= 3 && effectiveOutcome && WARM_OUTCOMES.includes(effectiveOutcome)) {
+              updates.lastOutcome = "not_qualified_by_transcript";
+              updates.priority = Math.min(flow.priority, 20);
+              result.downgraded++;
+              log(`[transcript-sync] DOWNGRADE: ${companyName} was "${effectiveOutcome}" → scored ${quality.score}/10 (${quality.label})`, "targeting");
+            }
+
+            log(`[transcript-sync] Analyzed ${companyName}: ${quality.score}/10 (${quality.label})`, "targeting");
+          } catch (err: any) {
+            result.errors.push(`${companyName}: ${err.message}`);
+          }
+        } else if (!transcript && flow.verifiedQualityScore !== null) {
+          result.synced++;
+        }
+
+        if (changed) {
+          await db.update(companyFlows).set(updates).where(eq(companyFlows.id, flow.id));
+
+          const pipelineRows = await db.select({ id: outreachPipeline.id })
+            .from(outreachPipeline)
+            .where(sql`LOWER(${outreachPipeline.companyName}) = LOWER(${companyName})`)
+            .limit(1);
+
+          if (pipelineRows.length > 0 && updates.lastOutcome) {
+            await db.update(outreachPipeline)
+              .set({ lastOutcome: updates.lastOutcome, updatedAt: new Date() })
+              .where(eq(outreachPipeline.id, pipelineRows[0].id));
+          } else if (pipelineRows.length === 0) {
+            const f2 = rec.fields || {};
+            try {
+              await db.insert(outreachPipeline).values({
+                clientId: flow.clientId,
+                companyId: flow.companyId || `flow-${flow.id}`,
+                companyName: companyName,
+                phone: f2.phone || null,
+                contactName: flow.contactName || null,
+                contactEmail: null,
+                city: f2.city || null,
+                state: f2.state || null,
+                industry: null,
+                lastOutcome: updates.lastOutcome || flow.lastOutcome || null,
+                pipelineStatus: "active",
+                nextTouchDate: new Date(),
+              });
+              log(`[transcript-sync] Inserted ${companyName} into outreach_pipeline`, "targeting");
+            } catch (insertErr: any) {
+              log(`[transcript-sync] Pipeline insert failed for ${companyName}: ${insertErr.message}`, "targeting");
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      result.errors.push(`Sync failed: ${err.message}`);
+    }
+
+    return result;
+  }
+
+  app.post("/api/targeting/sync-transcripts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const result = await syncTranscriptQuality(clientId || undefined);
+      log(`[transcript-sync] Complete: ${result.analyzed} analyzed, ${result.downgraded} downgraded, ${result.synced} already synced, ${result.errors.length} errors`, "targeting");
+      res.json(result);
+    } catch (err: any) {
+      log(`Transcript sync error: ${err.message}`, "targeting");
       res.status(500).json({ error: err.message });
     }
   });
