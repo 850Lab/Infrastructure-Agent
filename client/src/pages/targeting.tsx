@@ -63,6 +63,8 @@ interface TargetResult {
   priorityReasons: string[];
   recommendedAction: string;
   recommendedActionType: string;
+  verifiedQualityScore: number | null;
+  verifiedQualityLabel: string | null;
 }
 
 interface TargetQueryResponse {
@@ -733,6 +735,32 @@ export default function TargetingPage() {
 
                         {isExpanded && (
                           <div className="px-12 pb-4 space-y-3" data-testid={`expanded-${r.id}`}>
+                            {r.verifiedQualityScore !== null && (
+                              <div className="rounded-lg p-3 flex items-center gap-3" style={{
+                                background: r.verifiedQualityScore <= 3 ? `${ERROR}08` : r.verifiedQualityScore >= 7 ? `${EMERALD}08` : `${AMBER}08`,
+                                border: `1px solid ${r.verifiedQualityScore <= 3 ? ERROR : r.verifiedQualityScore >= 7 ? EMERALD : AMBER}20`,
+                              }} data-testid={`quality-banner-${r.companyId}`}>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{
+                                    background: r.verifiedQualityScore <= 3 ? ERROR : r.verifiedQualityScore >= 7 ? EMERALD : AMBER,
+                                    color: "white",
+                                  }}>
+                                    {r.verifiedQualityScore}
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-bold" style={{ color: TEXT }}>
+                                      Transcript Verified: {r.verifiedQualityLabel}
+                                    </div>
+                                    <div className="text-[10px]" style={{ color: MUTED }}>
+                                      {r.verifiedQualityScore <= 3 ? "This lead was scored low after transcript analysis — the conversation was not productive" :
+                                       r.verifiedQualityScore <= 5 ? "Moderate quality — some signals but unclear fit" :
+                                       r.verifiedQualityScore <= 7 ? "Good quality — interest signals detected in conversation" :
+                                       "High quality — strong buying signals in conversation"}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                               <div className="rounded-lg p-3" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15` }}>
                                 <div className="flex items-center gap-1.5 mb-2">

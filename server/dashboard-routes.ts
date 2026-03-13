@@ -1716,7 +1716,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         hasPhone: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.phone} IS NOT NULL AND ${outreachPipeline.phone} != '')::int`,
         hasEmail: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.contactEmail} IS NOT NULL AND ${outreachPipeline.contactEmail} != '')::int`,
         hasDM: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.contactName} IS NOT NULL AND ${outreachPipeline.contactName} != '')::int`,
-        warmCount: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.lastOutcome} IN ('interested','meeting_requested','followup_scheduled','replied','live_answer'))::int`,
+        warmCount: sql<number>`count(*) FILTER (WHERE ${outreachPipeline.lastOutcome} IN ('interested','meeting_requested','followup_scheduled','replied','live_answer') AND ${outreachPipeline.lastOutcome} != 'not_qualified_by_transcript')::int`,
       }).from(outreachPipeline).where(whereClause!);
       const summary = summaryResult[0] || { hasPhone: 0, hasEmail: 0, hasDM: 0, warmCount: 0 };
 
@@ -1742,8 +1742,20 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         updatedAt: outreachPipeline.updatedAt,
       }).from(outreachPipeline).where(whereClause!).orderBy(orderClause).limit(50);
 
+      const flowQualityData = await db.select({
+        companyId: companyFlows.companyId,
+        verifiedQualityScore: companyFlows.verifiedQualityScore,
+        verifiedQualityLabel: companyFlows.verifiedQualityLabel,
+      }).from(companyFlows)
+        .where(and(
+          clientId ? eq(companyFlows.clientId, clientId) : sql`1=1`,
+          sql`${companyFlows.verifiedQualityScore} IS NOT NULL`,
+        ));
+      const qualityMap = new Map(flowQualityData.map(q => [q.companyId, q]));
+
       const WARM_OUTCOMES = ["interested","meeting_requested","followup_scheduled","replied","live_answer"];
       const enrichedResults = results.map(r => {
+        const qualityData = qualityMap.get(r.companyId);
         const matchReasons: string[] = [];
         if (f.industry && r.industry?.toLowerCase().includes(f.industry.toLowerCase())) matchReasons.push(`Industry: ${r.industry}`);
         if (f.territory && (r.city?.toLowerCase().includes(f.territory.toLowerCase()) || r.state?.toLowerCase().includes(f.territory.toLowerCase()))) matchReasons.push(`Territory: ${[r.city, r.state].filter(Boolean).join(", ")}`);
@@ -1752,7 +1764,13 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         if ((f.hasEmail || f.mustHaveEmail) && r.contactEmail) matchReasons.push("Email found");
         if ((f.hasDM || f.mustHaveDM) && r.contactName) matchReasons.push("DM identified");
         if (f.mustHaveSignal && r.lastOutcome) matchReasons.push("Has signal activity");
-        if (f.warmLeads && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) matchReasons.push("Warm lead");
+        const isVerifiedCold = qualityData && qualityData.verifiedQualityScore !== null && qualityData.verifiedQualityScore <= 3;
+        const isVerifiedWarm = qualityData && qualityData.verifiedQualityScore !== null && qualityData.verifiedQualityScore >= 6;
+        if (isVerifiedCold && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
+          matchReasons.push(`Transcript override: scored ${qualityData!.verifiedQualityScore}/10 (${qualityData!.verifiedQualityLabel})`);
+        } else if (f.warmLeads && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
+          matchReasons.push("Warm lead");
+        }
         if (f.freshLeads && !r.lastOutcome) matchReasons.push("Fresh lead");
         if (f.staleLeads && r.updatedAt) {
           const daysSince = Math.floor((Date.now() - new Date(r.updatedAt).getTime()) / 86400000);
@@ -1767,22 +1785,32 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         if (r.contactName && !f.hasDM && !f.mustHaveDM) dataSignals.push("DM available");
 
         const priorityReasons: string[] = [];
+        if (qualityData && qualityData.verifiedQualityScore !== null) {
+          priorityReasons.push(`Transcript verified: ${qualityData.verifiedQualityScore}/10 (${qualityData.verifiedQualityLabel})`);
+        }
+        if (isVerifiedCold) {
+          priorityReasons.push("Conversation was not productive — downgraded");
+        }
         if (r.phone) priorityReasons.push("Has direct phone");
         if (r.contactName) priorityReasons.push("Has named DM");
-        if (r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push(`Recent positive outcome: ${r.lastOutcome.replace(/_/g, " ")}`);
+        if (!isVerifiedCold && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push(`Recent positive outcome: ${r.lastOutcome.replace(/_/g, " ")}`);
+        if (isVerifiedCold && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push(`Outcome "${r.lastOutcome.replace(/_/g, " ")}" — but transcript says otherwise`);
         if (r.updatedAt) {
           const daysSince = Math.floor((Date.now() - new Date(r.updatedAt).getTime()) / 86400000);
           if (daysSince >= 7 && daysSince <= 30) priorityReasons.push("Stale but recoverable");
           else if (daysSince > 30) priorityReasons.push("Cold — needs re-engagement");
         }
         if (!r.lastOutcome) priorityReasons.push("Fresh untouched lead");
-        if (r.phone && r.contactName && r.contactEmail) priorityReasons.push("Highest-value account");
-        if (f.priority === "fastest_to_meeting" && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push("Fastest path to meeting");
+        if (!isVerifiedCold && r.phone && r.contactName && r.contactEmail) priorityReasons.push("Highest-value account");
+        if (f.priority === "fastest_to_meeting" && !isVerifiedCold && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push("Fastest path to meeting");
         if (f.priority === "most_likely_to_answer" && r.phone) priorityReasons.push("Most likely to answer");
 
         let recommendedAction = "";
         let recommendedActionType = "";
-        if (r.phone && r.contactName && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
+        if (isVerifiedCold && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
+          recommendedAction = "Review transcript — lead was not productive";
+          recommendedActionType = "review";
+        } else if (r.phone && r.contactName && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
           recommendedAction = `Call ${r.contactName} now — warm lead`;
           recommendedActionType = "call";
         } else if (r.phone && r.contactName && !r.lastOutcome) {
@@ -1814,7 +1842,12 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           recommendedActionType = "review";
         }
 
-        return { ...r, matchReasons, dataSignals, priorityReasons, recommendedAction, recommendedActionType };
+        return {
+          ...r,
+          matchReasons, dataSignals, priorityReasons, recommendedAction, recommendedActionType,
+          verifiedQualityScore: qualityData?.verifiedQualityScore ?? null,
+          verifiedQualityLabel: qualityData?.verifiedQualityLabel ?? null,
+        };
       });
 
       const allClientCount = clientId

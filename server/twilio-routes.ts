@@ -196,6 +196,21 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
           .limit(1);
 
         if (activeFlow) {
+          flowUpdates.verifiedQualityScore = leadQuality.score;
+          flowUpdates.verifiedQualityLabel = leadQuality.label;
+
+          if (leadQuality.score <= 3) {
+            const WARM_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"];
+            if (activeFlow.lastOutcome && WARM_OUTCOMES.includes(activeFlow.lastOutcome)) {
+              flowUpdates.lastOutcome = "not_qualified_by_transcript";
+              flowUpdates.priority = Math.min(activeFlow.priority, 20);
+              aiNotes.push(`Transcript override: outcome "${activeFlow.lastOutcome}" downgraded — lead scored ${leadQuality.score}/10 (${leadQuality.label})`);
+              log(`TRANSCRIPT OVERRIDE: ${rec.companyName} was "${activeFlow.lastOutcome}" but transcript analysis scored ${leadQuality.score}/10 — downgrading`, "quality-check");
+            }
+          } else if (leadQuality.score <= 5 && activeFlow.lastOutcome === "live_answer") {
+            aiNotes.push(`Transcript caution: live answer scored only ${leadQuality.score}/10 (${leadQuality.label}) — may not be a real opportunity`);
+          }
+
           await db.update(companyFlows).set(flowUpdates).where(eq(companyFlows.id, activeFlow.id));
 
           if (extractedFollowupDate && flowUpdates.nextAction) {
@@ -208,7 +223,7 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
             ));
           }
 
-          log(`Post-analysis flow update for ${rec.companyName}: ${aiNotes.join("; ")}`);
+          log(`Post-analysis flow update for ${rec.companyName}: quality=${leadQuality.score}/10 (${leadQuality.label}), ${aiNotes.join("; ")}`);
         }
       }
     } catch (flowErr: any) {
