@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import {
   LogOut, Shield, Cog, Phone, Mail, Linkedin,
-  Building2, BarChart3, Target, Calendar, ChevronRight
+  Building2, BarChart3, Target, Calendar, ChevronRight, Flame
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
@@ -40,6 +40,7 @@ const cameraIn = {
 const NAV_ITEMS = [
   { href: "/machine/today", label: "Today", icon: Target, testId: "nav-today" },
   { href: "/machine/companies", label: "Companies", icon: Building2, testId: "nav-companies" },
+  { href: "/machine/warm-leads", label: "Warm Leads", icon: Flame, testId: "nav-warm-leads" },
   { href: "/machine/call-queue", label: "Call Queue", icon: Phone, testId: "nav-call-queue" },
   { href: "/machine/email-queue", label: "Email Queue", icon: Mail, testId: "nav-email-queue" },
   { href: "/machine/linkedin-queue", label: "LinkedIn", icon: Linkedin, testId: "nav-linkedin" },

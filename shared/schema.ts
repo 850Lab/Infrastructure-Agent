@@ -486,6 +486,8 @@ export const companyFlows = pgTable("company_flows", {
   outcomeSource: text("outcome_source"),
   qualitySignals: text("quality_signals"),
   transcriptSummary: text("transcript_summary"),
+  warmStage: text("warm_stage"),
+  warmStageUpdatedAt: timestamp("warm_stage_updated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -13,8 +13,8 @@ import { computeDMAuthorityReport } from "./dm-authority-learning";
 import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { db } from "./db";
-import { manualLeads, clients, companyFlows, flowAttempts, actionQueue, outreachPipeline, targetProfiles } from "@shared/schema";
-import { eq, and, gte, lte, inArray, sql, desc } from "drizzle-orm";
+import { manualLeads, clients, companyFlows, flowAttempts, actionQueue, outreachPipeline, targetProfiles, emailSends, emailReplies, twilioRecordings, inboundMessages } from "@shared/schema";
+import { eq, and, gte, lte, inArray, sql, desc, or, asc } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
@@ -2266,6 +2266,264 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       });
     } catch (err: any) {
       log(`Lead intelligence error: ${err.message}`, "targeting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const WARM_LEAD_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer", "callback"];
+  const WARM_STAGES = ["initial_interest", "proposal_sent", "meeting_scheduled", "negotiating", "verbal_commit", "closed_won", "closed_lost"];
+
+  app.get("/api/warm-leads", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+
+      const flows = await db.select().from(companyFlows)
+        .where(and(
+          clientId ? eq(companyFlows.clientId, clientId) : sql`1=1`,
+          or(
+            sql`${companyFlows.lastOutcome} IN (${sql.join(WARM_LEAD_OUTCOMES.map(o => sql`${o}`), sql`, `)})`,
+            sql`${companyFlows.warmStage} IS NOT NULL`,
+          ),
+        ))
+        .orderBy(asc(companyFlows.nextDueAt));
+
+      const companyIds = [...new Set(flows.map(f => f.companyId))];
+
+      let pipelineMap = new Map<string, any>();
+      if (companyIds.length > 0) {
+        const pipelineRows = await db.select().from(outreachPipeline)
+          .where(sql`${outreachPipeline.companyId} IN (${sql.join(companyIds.map(id => sql`${id}`), sql`, `)})`);
+        pipelineRows.forEach(p => { pipelineMap.set(p.companyId, p); });
+      }
+
+      const now = new Date();
+      const leads = flows.map(f => {
+        const pipeline = pipelineMap.get(f.companyId);
+        const isOverdue = f.nextDueAt && new Date(f.nextDueAt) < now;
+        const daysSinceActivity = f.lastAttemptAt
+          ? Math.floor((now.getTime() - new Date(f.lastAttemptAt).getTime()) / 86400000)
+          : null;
+
+        let urgency: "critical" | "high" | "normal" | "low" = "normal";
+        if (isOverdue && daysSinceActivity !== null && daysSinceActivity > 3) urgency = "critical";
+        else if (isOverdue) urgency = "high";
+        else if (f.warmStage === "closed_won" || f.warmStage === "closed_lost") urgency = "low";
+
+        let parsedSignals: any = null;
+        try { if (f.qualitySignals) parsedSignals = JSON.parse(f.qualitySignals); } catch {}
+
+        return {
+          flowId: f.id,
+          companyId: f.companyId,
+          companyName: f.companyName,
+          contactName: f.contactName || pipeline?.contactName || null,
+          contactEmail: pipeline?.contactEmail || null,
+          contactPhone: pipeline?.phone || null,
+          flowType: f.flowType,
+          lastOutcome: f.lastOutcome,
+          outcomeSource: f.outcomeSource,
+          warmStage: f.warmStage || "initial_interest",
+          warmStageUpdatedAt: f.warmStageUpdatedAt,
+          nextAction: f.nextAction,
+          nextDueAt: f.nextDueAt,
+          lastAttemptAt: f.lastAttemptAt,
+          priority: f.priority,
+          verifiedQualityScore: f.verifiedQualityScore,
+          verifiedQualityLabel: f.verifiedQualityLabel,
+          transcriptSummary: f.transcriptSummary,
+          buyingSignals: parsedSignals?.buyingSignals || [],
+          objections: parsedSignals?.objections || [],
+          nextStepReason: parsedSignals?.nextStepReason || null,
+          notes: f.notes,
+          urgency,
+          isOverdue: !!isOverdue,
+          daysSinceActivity,
+          city: pipeline?.city || null,
+          state: pipeline?.state || null,
+          industry: pipeline?.industry || null,
+          attemptCount: f.attemptCount,
+        };
+      });
+
+      leads.sort((a, b) => {
+        const urgencyOrder = { critical: 0, high: 1, normal: 2, low: 3 };
+        return urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
+      });
+
+      const overdue = leads.filter(l => l.isOverdue && l.warmStage !== "closed_won" && l.warmStage !== "closed_lost").length;
+      const meetingsToday = leads.filter(l => l.warmStage === "meeting_scheduled" && l.nextDueAt && new Date(l.nextDueAt).toDateString() === now.toDateString()).length;
+      const needsProposal = leads.filter(l => l.warmStage === "initial_interest" && l.daysSinceActivity !== null && l.daysSinceActivity >= 2).length;
+      const activeDeals = leads.filter(l => l.warmStage !== "closed_won" && l.warmStage !== "closed_lost").length;
+
+      res.json({
+        leads,
+        stats: { total: leads.length, overdue, meetingsToday, needsProposal, activeDeals },
+      });
+    } catch (err: any) {
+      log(`Warm leads error: ${err.message}`, "warm-leads");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/warm-leads/:flowId/stage", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const flowId = parseInt(req.params.flowId);
+      const { stage, notes } = req.body;
+
+      if (!WARM_STAGES.includes(stage)) {
+        return res.status(400).json({ error: `Invalid stage. Must be one of: ${WARM_STAGES.join(", ")}` });
+      }
+
+      const updates: any = {
+        warmStage: stage,
+        warmStageUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      if (stage === "closed_won") {
+        updates.status = "completed";
+        updates.lastOutcome = "won";
+      } else if (stage === "closed_lost") {
+        updates.status = "completed";
+        updates.lastOutcome = "lost";
+      }
+
+      if (notes) {
+        const existing = await db.select({ notes: companyFlows.notes }).from(companyFlows).where(eq(companyFlows.id, flowId));
+        const prev = existing[0]?.notes || "";
+        const timestamp = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        updates.notes = prev ? `${prev}\n[${timestamp}] Stage → ${stage}${notes ? `: ${notes}` : ""}` : `[${timestamp}] Stage → ${stage}${notes ? `: ${notes}` : ""}`;
+      }
+
+      await db.update(companyFlows).set(updates).where(eq(companyFlows.id, flowId));
+      log(`Warm lead ${flowId} stage updated to ${stage}`, "warm-leads");
+      res.json({ success: true, stage });
+    } catch (err: any) {
+      log(`Warm lead stage update error: ${err.message}`, "warm-leads");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/warm-leads/:companyId/timeline", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const companyId = req.params.companyId;
+      const clientId = (req as any).user?.clientId;
+      const events: any[] = [];
+
+      const attempts = await db.select().from(flowAttempts)
+        .where(and(
+          eq(flowAttempts.companyId, companyId),
+          clientId ? eq(flowAttempts.clientId, clientId) : sql`1=1`,
+        )).orderBy(desc(flowAttempts.createdAt));
+
+      attempts.forEach(a => {
+        events.push({
+          type: "attempt",
+          channel: a.channel,
+          outcome: a.outcome,
+          notes: a.notes,
+          contactName: a.contactName,
+          capturedInfo: a.capturedInfo,
+          timestamp: a.createdAt,
+        });
+      });
+
+      const emails = await db.select().from(emailSends)
+        .where(and(
+          eq(emailSends.companyId, companyId),
+          clientId ? eq(emailSends.clientId, clientId) : sql`1=1`,
+        )).orderBy(desc(emailSends.sentAt));
+
+      emails.forEach(e => {
+        events.push({
+          type: "email_sent",
+          channel: "email",
+          subject: e.subject,
+          contactEmail: e.contactEmail,
+          contactName: e.contactName,
+          status: e.status,
+          openCount: e.openCount,
+          clickCount: e.clickCount,
+          replyDetectedAt: e.replyDetectedAt,
+          touchNumber: e.touchNumber,
+          timestamp: e.sentAt,
+        });
+      });
+
+      const companyNameForRecordings = await db.select({ companyName: companyFlows.companyName }).from(companyFlows).where(eq(companyFlows.companyId, companyId)).limit(1);
+      const cName = companyNameForRecordings[0]?.companyName;
+
+      const recordings = cName ? await db.select().from(twilioRecordings)
+        .where(eq(twilioRecordings.companyName, cName))
+        .orderBy(desc(twilioRecordings.createdAt)) : [];
+
+      recordings.forEach(r => {
+        events.push({
+          type: "call_recording",
+          channel: "call",
+          duration: r.duration,
+          transcription: r.transcription ? r.transcription.substring(0, 500) : null,
+          analysis: r.analysis,
+          outcome: r.callOutcome,
+          timestamp: r.createdAt,
+        });
+      });
+
+      const sms = await db.select().from(inboundMessages)
+        .where(eq(inboundMessages.matchedCompany, companyId))
+        .orderBy(desc(inboundMessages.createdAt));
+
+      sms.forEach(m => {
+        events.push({
+          type: "sms_inbound",
+          channel: "sms",
+          body: m.body,
+          fromNumber: m.fromNumber,
+          timestamp: m.createdAt,
+        });
+      });
+
+      const emailIds = emails.map(e => e.id);
+      if (emailIds.length > 0) {
+        const replies = await db.select().from(emailReplies)
+          .where(sql`${emailReplies.emailSendId} IN (${sql.join(emailIds.map(id => sql`${id}`), sql`, `)})`)
+          .orderBy(desc(emailReplies.receivedAt));
+
+        replies.forEach(r => {
+          events.push({
+            type: "email_reply",
+            channel: "email",
+            fromEmail: r.fromEmail,
+            subject: r.subject,
+            snippet: r.snippet,
+            timestamp: r.receivedAt,
+          });
+        });
+      }
+
+      events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      res.json({ companyId, events });
+    } catch (err: any) {
+      log(`Timeline error for ${req.params.companyId}: ${err.message}`, "warm-leads");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/warm-leads/:flowId/notes", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const flowId = parseInt(req.params.flowId);
+      const { note } = req.body;
+      if (!note) return res.status(400).json({ error: "Note is required" });
+
+      const existing = await db.select({ notes: companyFlows.notes }).from(companyFlows).where(eq(companyFlows.id, flowId));
+      const prev = existing[0]?.notes || "";
+      const timestamp = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      const updated = prev ? `${prev}\n[${timestamp}] ${note}` : `[${timestamp}] ${note}`;
+
+      await db.update(companyFlows).set({ notes: updated, updatedAt: new Date() }).where(eq(companyFlows.id, flowId));
+      res.json({ success: true, notes: updated });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
