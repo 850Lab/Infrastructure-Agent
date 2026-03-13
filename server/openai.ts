@@ -333,6 +333,10 @@ export async function analyzeLeadQuality(transcription: string, companyName?: st
   score: number;
   label: string;
   signals: string[];
+  summary: string;
+  buyingSignals: string[];
+  objections: string[];
+  nextStepReason: string;
 }> {
   log("Analyzing lead quality from transcript...", "openai");
 
@@ -342,7 +346,9 @@ export async function analyzeLeadQuality(transcription: string, companyName?: st
       messages: [
         {
           role: "system",
-          content: `You are an expert B2B lead qualification analyst for industrial service companies. Analyze call transcripts to score lead quality.
+          content: `You are an expert B2B lead qualification analyst for Gulf Coast industrial service companies (insulation, trailers, mechanical contractors, maintenance). Analyze call transcripts to deeply understand lead quality.
+
+Your job is to explain WHY a lead is good or bad based on what was actually said in the conversation — specific quotes, behaviors, and signals. This data trains the system to recognize patterns across all calls.
 
 Score leads 1-10 based on these factors:
 - NEED: Does the prospect have a real need for the service? (equipment issues, upcoming projects, pain points mentioned)
@@ -356,7 +362,11 @@ Respond ONLY with valid JSON, no markdown:
 {
   "score": <1-10>,
   "label": "<Hot Lead|Warm Lead|Cool Lead|Cold Lead|Not Qualified>",
-  "signals": ["signal 1", "signal 2", "signal 3"]
+  "summary": "<2-3 sentence plain-English summary of what happened in this conversation and why it matters for sales>",
+  "buyingSignals": ["<specific things they said or did that indicate interest, e.g. 'Asked about pricing for 20 units', 'Mentioned Q2 expansion project'>"],
+  "objections": ["<specific pushback, deflection, or disqualifying signals, e.g. 'Said just email it over — classic gatekeeper deflection', 'Not the decision maker — receptionist'>"],
+  "signals": ["<general qualification signals: engaged, authority, timeline, budget, fit>"],
+  "nextStepReason": "<What should happen next and why, based on what was said. e.g. 'Follow up Thursday — they said the ops manager is back then' or 'Move on — this is a residential company, not our market'>"
 }
 
 Scoring guide:
@@ -364,14 +374,16 @@ Scoring guide:
 - 6-7: Warm Lead — interest shown, some qualifying signals
 - 4-5: Cool Lead — lukewarm, unclear need or authority
 - 2-3: Cold Lead — dismissive, no interest, wrong contact
-- 1: Not Qualified — residential, wrong industry, hostile`,
+- 1: Not Qualified — residential, wrong industry, hostile
+
+Be SPECIFIC. Reference what was actually said. Don't be vague.`,
         },
         {
           role: "user",
           content: `Analyze lead quality from this call transcript${companyName ? ` (company: ${companyName})` : ""}:\n\n${transcription}`,
         },
       ],
-      max_tokens: 300,
+      max_tokens: 600,
     });
 
     const raw = response.choices[0]?.message?.content || "";
@@ -380,12 +392,16 @@ Scoring guide:
     const score = Math.max(1, Math.min(10, Number(parsed.score) || 5));
     const label = String(parsed.label || "Cool Lead");
     const signals = Array.isArray(parsed.signals) ? parsed.signals.map(String).slice(0, 5) : [];
+    const summary = String(parsed.summary || "");
+    const buyingSignals = Array.isArray(parsed.buyingSignals) ? parsed.buyingSignals.map(String).slice(0, 5) : [];
+    const objections = Array.isArray(parsed.objections) ? parsed.objections.map(String).slice(0, 5) : [];
+    const nextStepReason = String(parsed.nextStepReason || "");
 
-    log(`Lead quality: ${score}/10 (${label}) — ${signals.length} signals`, "openai");
-    return { score, label, signals };
+    log(`Lead quality: ${score}/10 (${label}) — ${signals.length} signals, ${buyingSignals.length} buying, ${objections.length} objections`, "openai");
+    return { score, label, signals, summary, buyingSignals, objections, nextStepReason };
   } catch (err: any) {
     log(`Lead quality analysis failed: ${err.message}`, "openai");
-    return { score: 5, label: "Unknown", signals: ["Analysis failed — manual review needed"] };
+    return { score: 5, label: "Unknown", signals: ["Analysis failed — manual review needed"], summary: "", buyingSignals: [], objections: [], nextStepReason: "" };
   }
 }
 

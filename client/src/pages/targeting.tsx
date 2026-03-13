@@ -66,6 +66,11 @@ interface TargetResult {
   verifiedQualityScore: number | null;
   verifiedQualityLabel: string | null;
   outcomeSource: string | null;
+  transcriptSummary: string | null;
+  buyingSignals: string[];
+  objections: string[];
+  transcriptSignals: string[];
+  nextStepReason: string | null;
 }
 
 interface TargetQueryResponse {
@@ -759,30 +764,71 @@ export default function TargetingPage() {
 
                         {isExpanded && (
                           <div className="px-12 pb-4 space-y-3" data-testid={`expanded-${r.id}`}>
-                            {r.verifiedQualityScore !== null && (
-                              <div className="rounded-lg p-3 flex items-center gap-3" style={{
-                                background: r.verifiedQualityScore <= 3 ? `${ERROR}08` : r.verifiedQualityScore >= 7 ? `${EMERALD}08` : `${AMBER}08`,
-                                border: `1px solid ${r.verifiedQualityScore <= 3 ? ERROR : r.verifiedQualityScore >= 7 ? EMERALD : AMBER}20`,
-                              }} data-testid={`quality-banner-${r.companyId}`}>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{
-                                    background: r.verifiedQualityScore <= 3 ? ERROR : r.verifiedQualityScore >= 7 ? EMERALD : AMBER,
-                                    color: "white",
-                                  }}>
-                                    {r.verifiedQualityScore}
-                                  </div>
-                                  <div>
+                            {(r.verifiedQualityScore !== null || r.transcriptSummary) && (
+                              <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }} data-testid={`quality-banner-${r.companyId}`}>
+                                <div className="p-3 flex items-center gap-3" style={{
+                                  background: r.verifiedQualityScore !== null
+                                    ? r.verifiedQualityScore <= 3 ? `${ERROR}06` : r.verifiedQualityScore >= 7 ? `${EMERALD}06` : `${AMBER}06`
+                                    : SUBTLE,
+                                  borderBottom: `1px solid ${BORDER}`,
+                                }}>
+                                  {r.verifiedQualityScore !== null && (
+                                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{
+                                      background: r.verifiedQualityScore <= 3 ? ERROR : r.verifiedQualityScore >= 7 ? EMERALD : AMBER,
+                                      color: "white",
+                                    }}>
+                                      {r.verifiedQualityScore}
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
                                     <div className="text-xs font-bold" style={{ color: TEXT }}>
-                                      Transcript Verified: {r.verifiedQualityLabel}
+                                      Transcript Intelligence{r.verifiedQualityLabel ? `: ${r.verifiedQualityLabel}` : ""}
                                     </div>
-                                    <div className="text-[10px]" style={{ color: MUTED }}>
-                                      {r.verifiedQualityScore <= 3 ? "This lead was scored low after transcript analysis — the conversation was not productive" :
-                                       r.verifiedQualityScore <= 5 ? "Moderate quality — some signals but unclear fit" :
-                                       r.verifiedQualityScore <= 7 ? "Good quality — interest signals detected in conversation" :
-                                       "High quality — strong buying signals in conversation"}
-                                    </div>
+                                    {r.transcriptSummary && (
+                                      <div className="text-[11px] mt-0.5 leading-relaxed" style={{ color: MUTED }}>
+                                        {r.transcriptSummary}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
+                                {(r.buyingSignals.length > 0 || r.objections.length > 0 || r.nextStepReason) && (
+                                  <div className="p-3 grid grid-cols-1 md:grid-cols-3 gap-3" style={{ background: "white" }}>
+                                    {r.buyingSignals.length > 0 && (
+                                      <div>
+                                        <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: EMERALD }}>
+                                          Buying Signals
+                                        </div>
+                                        {r.buyingSignals.map((s, i) => (
+                                          <div key={i} className="flex items-start gap-1.5 mb-1">
+                                            <div className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: EMERALD }} />
+                                            <span className="text-[10px] leading-snug" style={{ color: TEXT }}>{s}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {r.objections.length > 0 && (
+                                      <div>
+                                        <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: ERROR }}>
+                                          Objections / Red Flags
+                                        </div>
+                                        {r.objections.map((s, i) => (
+                                          <div key={i} className="flex items-start gap-1.5 mb-1">
+                                            <div className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: ERROR }} />
+                                            <span className="text-[10px] leading-snug" style={{ color: TEXT }}>{s}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {r.nextStepReason && (
+                                      <div>
+                                        <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: BLUE }}>
+                                          Recommended Next Step
+                                        </div>
+                                        <div className="text-[10px] leading-snug" style={{ color: TEXT }}>{r.nextStepReason}</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

@@ -198,6 +198,16 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
         if (activeFlow) {
           flowUpdates.verifiedQualityScore = leadQuality.score;
           flowUpdates.verifiedQualityLabel = leadQuality.label;
+          flowUpdates.qualitySignals = JSON.stringify({
+            buyingSignals: leadQuality.buyingSignals,
+            objections: leadQuality.objections,
+            signals: leadQuality.signals,
+            nextStepReason: leadQuality.nextStepReason,
+          });
+          flowUpdates.transcriptSummary = leadQuality.summary;
+          if (leadQuality.nextStepReason) {
+            flowUpdates.nextAction = leadQuality.nextStepReason;
+          }
 
           if (leadQuality.score <= 3) {
             const WARM_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"];

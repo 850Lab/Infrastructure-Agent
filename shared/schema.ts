@@ -484,6 +484,8 @@ export const companyFlows = pgTable("company_flows", {
   verifiedQualityScore: integer("verified_quality_score"),
   verifiedQualityLabel: text("verified_quality_label"),
   outcomeSource: text("outcome_source"),
+  qualitySignals: text("quality_signals"),
+  transcriptSummary: text("transcript_summary"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

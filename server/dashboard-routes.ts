@@ -1749,6 +1749,8 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         verifiedQualityScore: companyFlows.verifiedQualityScore,
         verifiedQualityLabel: companyFlows.verifiedQualityLabel,
         outcomeSource: companyFlows.outcomeSource,
+        qualitySignals: companyFlows.qualitySignals,
+        transcriptSummary: companyFlows.transcriptSummary,
       }).from(companyFlows)
         .where(and(
           clientId ? eq(companyFlows.clientId, clientId) : sql`1=1`,
@@ -1846,12 +1848,22 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           recommendedActionType = "review";
         }
 
+        let parsedSignals: any = null;
+        try {
+          if (qualityData?.qualitySignals) parsedSignals = JSON.parse(qualityData.qualitySignals);
+        } catch {}
+
         return {
           ...r,
           matchReasons, dataSignals, priorityReasons, recommendedAction, recommendedActionType,
           verifiedQualityScore: qualityData?.verifiedQualityScore ?? null,
           verifiedQualityLabel: qualityData?.verifiedQualityLabel ?? null,
           outcomeSource: qualityData?.outcomeSource ?? null,
+          transcriptSummary: qualityData?.transcriptSummary ?? null,
+          buyingSignals: parsedSignals?.buyingSignals ?? [],
+          objections: parsedSignals?.objections ?? [],
+          transcriptSignals: parsedSignals?.signals ?? [],
+          nextStepReason: parsedSignals?.nextStepReason ?? null,
         };
       });
 
@@ -2107,6 +2119,16 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
             const quality = await analyzeLeadQuality(transcript, companyName);
             updates.verifiedQualityScore = quality.score;
             updates.verifiedQualityLabel = quality.label;
+            updates.qualitySignals = JSON.stringify({
+              buyingSignals: quality.buyingSignals,
+              objections: quality.objections,
+              signals: quality.signals,
+              nextStepReason: quality.nextStepReason,
+            });
+            updates.transcriptSummary = quality.summary;
+            if (quality.nextStepReason) {
+              updates.nextAction = quality.nextStepReason;
+            }
             changed = true;
             result.analyzed++;
 
@@ -2118,7 +2140,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
               log(`[transcript-sync] DOWNGRADE: ${companyName} was "${effectiveOutcome}" → scored ${quality.score}/10 (${quality.label})`, "targeting");
             }
 
-            log(`[transcript-sync] Analyzed ${companyName}: ${quality.score}/10 (${quality.label})`, "targeting");
+            log(`[transcript-sync] Analyzed ${companyName}: ${quality.score}/10 (${quality.label}) — ${quality.buyingSignals.length} buying signals, ${quality.objections.length} objections`, "targeting");
           } catch (err: any) {
             result.errors.push(`${companyName}: ${err.message}`);
           }
@@ -2177,6 +2199,73 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       res.json(result);
     } catch (err: any) {
       log(`Transcript sync error: ${err.message}`, "targeting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/targeting/lead-intelligence", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const analyzed = await db.select({
+        companyName: companyFlows.companyName,
+        verifiedQualityScore: companyFlows.verifiedQualityScore,
+        verifiedQualityLabel: companyFlows.verifiedQualityLabel,
+        qualitySignals: companyFlows.qualitySignals,
+        transcriptSummary: companyFlows.transcriptSummary,
+        lastOutcome: companyFlows.lastOutcome,
+        outcomeSource: companyFlows.outcomeSource,
+      }).from(companyFlows)
+        .where(and(
+          clientId ? eq(companyFlows.clientId, clientId) : sql`1=1`,
+          sql`${companyFlows.verifiedQualityScore} IS NOT NULL`,
+        ))
+        .orderBy(desc(companyFlows.verifiedQualityScore));
+
+      const allBuyingSignals: string[] = [];
+      const allObjections: string[] = [];
+      const allSignals: string[] = [];
+      let hotCount = 0, warmCount = 0, coldCount = 0;
+
+      const leads = analyzed.map(a => {
+        let parsed: any = {};
+        try { if (a.qualitySignals) parsed = JSON.parse(a.qualitySignals); } catch {}
+
+        if ((a.verifiedQualityScore || 0) >= 7) hotCount++;
+        else if ((a.verifiedQualityScore || 0) >= 4) warmCount++;
+        else coldCount++;
+
+        if (parsed.buyingSignals) allBuyingSignals.push(...parsed.buyingSignals);
+        if (parsed.objections) allObjections.push(...parsed.objections);
+        if (parsed.signals) allSignals.push(...parsed.signals);
+
+        return {
+          company: a.companyName,
+          score: a.verifiedQualityScore,
+          label: a.verifiedQualityLabel,
+          summary: a.transcriptSummary,
+          buyingSignals: parsed.buyingSignals || [],
+          objections: parsed.objections || [],
+          nextStep: parsed.nextStepReason || null,
+          outcome: a.outcomeSource || a.lastOutcome,
+        };
+      });
+
+      const signalFrequency = (arr: string[]) => {
+        const freq: Record<string, number> = {};
+        arr.forEach(s => { freq[s] = (freq[s] || 0) + 1; });
+        return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([signal, count]) => ({ signal, count }));
+      };
+
+      res.json({
+        totalAnalyzed: analyzed.length,
+        breakdown: { hot: hotCount, warm: warmCount, cold: coldCount },
+        topBuyingSignals: signalFrequency(allBuyingSignals),
+        topObjections: signalFrequency(allObjections),
+        topSignals: signalFrequency(allSignals),
+        leads,
+      });
+    } catch (err: any) {
+      log(`Lead intelligence error: ${err.message}`, "targeting");
       res.status(500).json({ error: err.message });
     }
   });
