@@ -20,7 +20,7 @@ import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
 import { storage } from "./storage";
 import { getTimeWeight, getSignalAge, getDecayConstant } from "./time-weight";
-import { analyzeLeadQuality } from "./openai";
+import { analyzeLeadQuality, extractContactInfo } from "./openai";
 
 export { authMiddleware } from "./auth";
 
@@ -2524,6 +2524,188 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       await db.update(companyFlows).set({ notes: updated, updatedAt: new Date() }).where(eq(companyFlows.id, flowId));
       res.json({ success: true, notes: updated });
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/warm-leads/deep-analysis", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId;
+      const apiKey = AIRTABLE_API_KEY();
+      const baseId = AIRTABLE_BASE_ID();
+
+      if (!apiKey || !baseId) {
+        return res.status(400).json({ error: "Airtable not configured" });
+      }
+
+      const result = {
+        totalRecords: 0,
+        analyzed: 0,
+        contactsExtracted: 0,
+        qualityAnalyzed: 0,
+        pipelineUpdated: 0,
+        flowsUpdated: 0,
+        newCompaniesAdded: 0,
+        details: [] as { company: string; contactName: string | null; contactEmail: string | null; contactPhone: string | null; extractedNotes: string; qualityScore: number | null; }[],
+        errors: [] as string[],
+      };
+
+      const formula = encodeURIComponent('OR(company_name!="",Company!="")');
+      const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent("Calls")}?filterByFormula=${formula}&pageSize=100`;
+      const airtableRes = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+      if (!airtableRes.ok) {
+        return res.status(500).json({ error: `Airtable fetch failed: ${airtableRes.status}` });
+      }
+      const airtableData = await airtableRes.json() as any;
+      const records = airtableData.records || [];
+      result.totalRecords = records.length;
+
+      const processedCompanies = new Set<string>();
+
+      for (const rec of records) {
+        const f = rec.fields || {};
+        const companyName = (f.company_name || f.Company || "").trim();
+        if (!companyName) continue;
+
+        const companyKey = companyName.toLowerCase();
+        if (processedCompanies.has(companyKey)) continue;
+        processedCompanies.add(companyKey);
+
+        const allRecordsForCompany = records.filter((r: any) => {
+          const cn = (r.fields?.company_name || r.fields?.Company || "").trim().toLowerCase();
+          return cn === companyKey;
+        });
+
+        let combinedText = "";
+        allRecordsForCompany.forEach((r: any) => {
+          const rf = r.fields || {};
+          if (rf.Transcription) combinedText += `\n[TRANSCRIPT]: ${rf.Transcription}`;
+          if (rf.Notes) combinedText += `\n[CALL NOTES]: ${rf.Notes}`;
+          if (rf.Analysis) combinedText += `\n[CALL ANALYSIS]: ${rf.Analysis}`;
+          if (rf.Gatekeeper_Name) combinedText += `\n[GATEKEEPER]: ${rf.Gatekeeper_Name}`;
+          if (rf.Outcome) combinedText += `\n[OUTCOME]: ${rf.Outcome}`;
+          if (rf.phone) combinedText += `\n[PHONE ON FILE]: ${rf.phone}`;
+        });
+
+        combinedText = combinedText.trim();
+        if (!combinedText || combinedText.length < 10) continue;
+
+        result.analyzed++;
+        let contactInfo: Awaited<ReturnType<typeof extractContactInfo>> | null = null;
+        let qualityResult: Awaited<ReturnType<typeof analyzeLeadQuality>> | null = null;
+
+        try {
+          contactInfo = await extractContactInfo(combinedText, companyName);
+          result.contactsExtracted++;
+          log(`[deep-analysis] ${companyName}: contact=${contactInfo.contactName}, email=${contactInfo.contactEmail}, phone=${contactInfo.contactPhone}`, "warm-leads");
+        } catch (err: any) {
+          result.errors.push(`${companyName} contact extraction: ${err.message}`);
+        }
+
+        const transcriptText = allRecordsForCompany
+          .map((r: any) => r.fields?.Transcription || "")
+          .filter((t: string) => t.length > 30)
+          .join("\n\n");
+
+        if (transcriptText.length > 30) {
+          try {
+            qualityResult = await analyzeLeadQuality(transcriptText, companyName);
+            result.qualityAnalyzed++;
+            log(`[deep-analysis] ${companyName}: quality=${qualityResult.score}/10 (${qualityResult.label})`, "warm-leads");
+          } catch (err: any) {
+            result.errors.push(`${companyName} quality analysis: ${err.message}`);
+          }
+        }
+
+        const pipelineUpdates: any = {};
+        if (contactInfo?.contactName) pipelineUpdates.contactName = contactInfo.contactName;
+        if (contactInfo?.contactEmail) pipelineUpdates.contactEmail = contactInfo.contactEmail;
+        if (contactInfo?.contactPhone) pipelineUpdates.phone = contactInfo.contactPhone;
+        if (contactInfo?.contactTitle) pipelineUpdates.title = contactInfo.contactTitle;
+
+        const noteParts: string[] = [];
+        if (contactInfo?.extractedNotes && contactInfo.extractedNotes !== "No actionable info found" && contactInfo.extractedNotes !== "Extraction failed") {
+          noteParts.push(contactInfo.extractedNotes);
+        }
+        if (contactInfo?.gatekeeperName) noteParts.push(`Gatekeeper: ${contactInfo.gatekeeperName}`);
+        if (contactInfo?.companyDetails) noteParts.push(contactInfo.companyDetails);
+        if (contactInfo?.directExtension) noteParts.push(`Ext: ${contactInfo.directExtension}`);
+
+        const existingPipeline = await db.select().from(outreachPipeline)
+          .where(sql`LOWER(${outreachPipeline.companyName}) = LOWER(${companyName})`)
+          .limit(1);
+
+        if (existingPipeline.length > 0) {
+          const pipe = existingPipeline[0];
+          const mergedUpdates: any = { ...pipelineUpdates, updatedAt: new Date() };
+          if (pipe.contactName && pipelineUpdates.contactName) mergedUpdates.contactName = pipelineUpdates.contactName;
+          if (!pipe.contactEmail && pipelineUpdates.contactEmail) mergedUpdates.contactEmail = pipelineUpdates.contactEmail;
+          if (!pipe.phone && pipelineUpdates.phone) mergedUpdates.phone = pipelineUpdates.phone;
+          if (!pipe.title && pipelineUpdates.title) mergedUpdates.title = pipelineUpdates.title;
+          if (noteParts.length > 0) {
+            const existingNotes = pipe.notes || "";
+            const newNote = `[AI Extract] ${noteParts.join(" | ")}`;
+            if (!existingNotes.includes("[AI Extract]")) {
+              mergedUpdates.notes = existingNotes ? `${existingNotes}\n${newNote}` : newNote;
+            }
+          }
+          await db.update(outreachPipeline).set(mergedUpdates).where(eq(outreachPipeline.id, pipe.id));
+          result.pipelineUpdated++;
+        }
+
+        const existingFlows = await db.select().from(companyFlows)
+          .where(and(
+            sql`LOWER(${companyFlows.companyName}) = LOWER(${companyName})`,
+            ...(clientId ? [eq(companyFlows.clientId, clientId)] : []),
+          ))
+          .orderBy(desc(companyFlows.updatedAt))
+          .limit(1);
+
+        if (existingFlows.length > 0) {
+          const flow = existingFlows[0];
+          const flowUpdates: any = { updatedAt: new Date() };
+
+          if (contactInfo?.contactName && !flow.contactName) flowUpdates.contactName = contactInfo.contactName;
+
+          if (qualityResult && flow.verifiedQualityScore === null) {
+            flowUpdates.verifiedQualityScore = qualityResult.score;
+            flowUpdates.verifiedQualityLabel = qualityResult.label;
+            flowUpdates.qualitySignals = JSON.stringify({
+              buyingSignals: qualityResult.buyingSignals,
+              objections: qualityResult.objections,
+              signals: qualityResult.signals,
+              nextStepReason: qualityResult.nextStepReason,
+            });
+            flowUpdates.transcriptSummary = qualityResult.summary;
+            if (qualityResult.nextStepReason) flowUpdates.nextAction = qualityResult.nextStepReason;
+          }
+
+          if (noteParts.length > 0) {
+            const existingNotes = flow.notes || "";
+            const newNote = `[AI Extract] ${noteParts.join(" | ")}`;
+            if (!existingNotes.includes("[AI Extract]")) {
+              flowUpdates.notes = existingNotes ? `${existingNotes}\n${newNote}` : newNote;
+            }
+          }
+
+          await db.update(companyFlows).set(flowUpdates).where(eq(companyFlows.id, flow.id));
+          result.flowsUpdated++;
+        }
+
+        result.details.push({
+          company: companyName,
+          contactName: contactInfo?.contactName || null,
+          contactEmail: contactInfo?.contactEmail || null,
+          contactPhone: contactInfo?.contactPhone || null,
+          extractedNotes: contactInfo?.extractedNotes || "",
+          qualityScore: qualityResult?.score || null,
+        });
+      }
+
+      log(`[deep-analysis] Complete: ${result.analyzed} analyzed, ${result.contactsExtracted} contacts extracted, ${result.pipelineUpdated} pipeline updated, ${result.flowsUpdated} flows updated`, "warm-leads");
+      res.json(result);
+    } catch (err: any) {
+      log(`Deep analysis error: ${err.message}`, "warm-leads");
       res.status(500).json({ error: err.message });
     }
   });

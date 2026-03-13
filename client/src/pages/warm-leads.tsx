@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, ChevronDown, ChevronUp, AlertTriangle, Calendar, FileText,
   MessageSquare, Phone, Mail, ArrowRight, Clock, User, MapPin, Flame,
-  CheckCircle2, XCircle, Send, Handshake, Target, Activity,
+  CheckCircle2, XCircle, Send, Handshake, Target, Activity, Brain,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -428,11 +428,39 @@ function WarmLeadRow({ lead }: { lead: WarmLead }) {
   );
 }
 
+interface DeepAnalysisResult {
+  totalRecords: number;
+  analyzed: number;
+  contactsExtracted: number;
+  qualityAnalyzed: number;
+  pipelineUpdated: number;
+  flowsUpdated: number;
+  details: { company: string; contactName: string | null; contactEmail: string | null; contactPhone: string | null; extractedNotes: string; qualityScore: number | null }[];
+  errors: string[];
+}
+
 export default function WarmLeadsPage() {
   const [stageFilter, setStageFilter] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<DeepAnalysisResult | null>(null);
+  const { toast } = useToast();
 
   const { data, isLoading } = useQuery<WarmLeadsResponse>({
     queryKey: ["/api/warm-leads"],
+  });
+
+  const deepAnalysisMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/warm-leads/deep-analysis");
+      return res.json();
+    },
+    onSuccess: (data: DeepAnalysisResult) => {
+      setAnalysisResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/warm-leads"] });
+      toast({ title: `Analyzed ${data.analyzed} records`, description: `${data.contactsExtracted} contacts extracted, ${data.pipelineUpdated} pipeline records updated` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Analysis failed", description: err.message, variant: "destructive" });
+    },
   });
 
   const leads = data?.leads || [];
@@ -449,9 +477,22 @@ export default function WarmLeadsPage() {
               <h1 className="text-xl font-bold" style={{ color: TEXT }} data-testid="page-title">Warm Leads</h1>
               <p className="text-sm mt-0.5" style={{ color: MUTED }}>Active deals and relationship management</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Flame className="w-5 h-5" style={{ color: AMBER }} />
-              <span className="text-sm font-bold" style={{ color: TEXT }}>{stats.activeDeals} active</span>
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                className="text-[11px] h-8 gap-1.5"
+                style={{ background: PURPLE, color: "white" }}
+                onClick={() => deepAnalysisMutation.mutate()}
+                disabled={deepAnalysisMutation.isPending}
+                data-testid="deep-analysis-btn"
+              >
+                {deepAnalysisMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                {deepAnalysisMutation.isPending ? "Analyzing..." : "Analyze All Transcripts"}
+              </Button>
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5" style={{ color: AMBER }} />
+                <span className="text-sm font-bold" style={{ color: TEXT }}>{stats.activeDeals} active</span>
+              </div>
             </div>
           </div>
 
@@ -461,6 +502,57 @@ export default function WarmLeadsPage() {
             <StatCard label="Needs Proposal" value={stats.needsProposal} color={PURPLE} icon={FileText} />
             <StatCard label="Active Deals" value={stats.activeDeals} color={EMERALD} icon={Activity} />
           </div>
+
+          {analysisResult && (
+            <div className="rounded-xl p-4 mb-6" style={{ background: `${PURPLE}04`, border: `1px solid ${PURPLE}20` }} data-testid="analysis-results">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-4 h-4" style={{ color: PURPLE }} />
+                  <span className="text-sm font-bold" style={{ color: TEXT }}>Deep Analysis Results</span>
+                </div>
+                <button onClick={() => setAnalysisResult(null)} className="text-xs px-2 py-0.5 rounded" style={{ color: MUTED }}>Dismiss</button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: TEXT }}>{analysisResult.analyzed}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Records Analyzed</div>
+                </div>
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: EMERALD }}>{analysisResult.contactsExtracted}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Contacts Found</div>
+                </div>
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: BLUE }}>{analysisResult.pipelineUpdated}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Pipeline Updated</div>
+                </div>
+                <div className="text-center p-2 rounded-lg" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                  <div className="text-lg font-bold" style={{ color: PURPLE }}>{analysisResult.qualityAnalyzed}</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Transcripts Scored</div>
+                </div>
+              </div>
+              {analysisResult.details.length > 0 && (
+                <div className="space-y-1.5">
+                  {analysisResult.details.map((d, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2 rounded-lg text-xs" style={{ background: "white", border: `1px solid ${BORDER}` }}>
+                      <span className="font-bold flex-shrink-0" style={{ color: TEXT }}>{d.company}</span>
+                      {d.contactName && <span className="flex items-center gap-1" style={{ color: EMERALD }}><User className="w-3 h-3" />{d.contactName}</span>}
+                      {d.contactEmail && <span className="flex items-center gap-1" style={{ color: BLUE }}><Mail className="w-3 h-3" />{d.contactEmail}</span>}
+                      {d.contactPhone && <span className="flex items-center gap-1" style={{ color: PURPLE }}><Phone className="w-3 h-3" />{d.contactPhone}</span>}
+                      {d.qualityScore !== null && (
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0" style={{
+                          background: d.qualityScore >= 7 ? EMERALD : d.qualityScore >= 4 ? AMBER : ERROR, color: "white",
+                        }}>{d.qualityScore}</span>
+                      )}
+                      <span className="text-[10px] flex-1 truncate" style={{ color: MUTED }}>{d.extractedNotes}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {analysisResult.errors.length > 0 && (
+                <div className="mt-2 text-[10px]" style={{ color: ERROR }}>{analysisResult.errors.length} errors: {analysisResult.errors.slice(0, 3).join("; ")}</div>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-1.5 mb-4 flex-wrap" data-testid="stage-filters">
             <button

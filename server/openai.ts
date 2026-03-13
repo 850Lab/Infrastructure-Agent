@@ -405,6 +405,85 @@ Be SPECIFIC. Reference what was actually said. Don't be vague.`,
   }
 }
 
+export async function extractContactInfo(text: string, companyName?: string): Promise<{
+  contactName: string | null;
+  contactTitle: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  directExtension: string | null;
+  gatekeeperName: string | null;
+  companyDetails: string | null;
+  followupDate: string | null;
+  extractedNotes: string;
+}> {
+  log(`Extracting contact info from text (${text.length} chars)...`, "openai");
+
+  try {
+    const response = await proxyClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert at extracting actionable contact information from call transcripts, call notes, and call analysis reports for B2B sales teams.
+
+Extract ANY of the following from the provided text:
+- Person names (decision makers, gatekeepers, contacts mentioned)
+- Email addresses (explicit or implied, e.g. "email it to john at company dot com")
+- Phone numbers (direct lines, extensions, cell phones)
+- Job titles (operations manager, safety director, superintendent, etc.)
+- Company details (crew size, project mentions, facility info)
+- Follow-up dates or timing ("call back Thursday", "after lunch", "next week")
+- Gatekeeper names (receptionist, front desk person)
+
+Be thorough. Look for:
+- Numbers spoken as words ("four oh nine" = 409)
+- Websites mentioned (could contain email domain)
+- Implied emails ("just email it over" + website = possible email)
+- Names mentioned casually ("tell Mike I called", "ask for Susan")
+
+Respond ONLY with valid JSON:
+{
+  "contactName": "<decision maker or main contact name, or null>",
+  "contactTitle": "<their job title if mentioned, or null>",
+  "contactEmail": "<email address if found, or null>",
+  "contactPhone": "<direct phone/cell if different from main line, or null>",
+  "directExtension": "<extension number if mentioned, or null>",
+  "gatekeeperName": "<receptionist/front desk name if mentioned, or null>",
+  "companyDetails": "<relevant details: crew size, projects, needs, or null>",
+  "followupDate": "<when to follow up if mentioned, or null>",
+  "extractedNotes": "<1-2 sentence summary of all actionable info found>"
+}
+
+If nothing useful is found for a field, use null. Always provide extractedNotes summarizing what was found.`,
+        },
+        {
+          role: "user",
+          content: `Extract contact information from this call data${companyName ? ` (company: ${companyName})` : ""}:\n\n${text}`,
+        },
+      ],
+      max_tokens: 400,
+    });
+
+    const raw = response.choices[0]?.message?.content || "";
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    return {
+      contactName: parsed.contactName || null,
+      contactTitle: parsed.contactTitle || null,
+      contactEmail: parsed.contactEmail || null,
+      contactPhone: parsed.contactPhone || null,
+      directExtension: parsed.directExtension || null,
+      gatekeeperName: parsed.gatekeeperName || null,
+      companyDetails: parsed.companyDetails || null,
+      followupDate: parsed.followupDate || null,
+      extractedNotes: String(parsed.extractedNotes || "No actionable info found"),
+    };
+  } catch (err: any) {
+    log(`Contact extraction failed: ${err.message}`, "openai");
+    return { contactName: null, contactTitle: null, contactEmail: null, contactPhone: null, directExtension: null, gatekeeperName: null, companyDetails: null, followupDate: null, extractedNotes: "Extraction failed" };
+  }
+}
+
 export async function analyzeContainment(transcription: string): Promise<string> {
   log("Analyzing containment language...", "openai");
 
