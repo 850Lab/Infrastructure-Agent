@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Target, Phone, Mail, Users, Search, Filter, Save,
-  ChevronRight, AlertTriangle, CheckCircle2, XCircle,
+  ChevronRight, ChevronDown, AlertTriangle, CheckCircle2, XCircle,
   Loader2, Building2, User, MapPin, Briefcase, Zap,
-  Download, Send, Clock, Bookmark, Trash2, Eye,
-  SlidersHorizontal, ToggleLeft, ToggleRight, RefreshCw
+  Download, Send, Clock, Bookmark, Trash2, Eye, EyeOff,
+  SlidersHorizontal, ToggleLeft, ToggleRight, RefreshCw,
+  ArrowRight, PhoneCall, MailPlus, FileSearch, Heart, RotateCcw, Info
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -58,6 +59,10 @@ interface TargetResult {
   pipelineStatus: string;
   updatedAt: string;
   matchReasons: string[];
+  dataSignals: string[];
+  priorityReasons: string[];
+  recommendedAction: string;
+  recommendedActionType: string;
 }
 
 interface TargetQueryResponse {
@@ -117,9 +122,14 @@ export default function TargetingPage() {
   const [saveName, setSaveName] = useState("");
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [debouncedFilters, setDebouncedFilters] = useState<TargetFilters>({ ...DEFAULT_FILTERS });
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedFilters({ ...filters }), 400);
+    const timer = setTimeout(() => {
+      setDebouncedFilters({ ...filters });
+      setSelected(new Set());
+    }, 400);
     return () => clearTimeout(timer);
   }, [filters]);
 
@@ -196,11 +206,11 @@ export default function TargetingPage() {
   };
 
   const toggleAll = () => {
-    if (!data?.results) return;
-    if (selected.size === data.results.length) {
+    if (!visibleResults.length) return;
+    if (selected.size === visibleResults.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(data.results.map(r => r.companyId)));
+      setSelected(new Set(visibleResults.map(r => r.companyId)));
     }
   };
 
@@ -211,12 +221,46 @@ export default function TargetingPage() {
     setSelected(next);
   };
 
+  const toggleExpanded = (id: number) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const markIgnored = (companyIds: string[]) => {
+    setIgnoredIds(prev => {
+      const next = new Set(prev);
+      companyIds.forEach(id => next.add(id));
+      return next;
+    });
+    setSelected(new Set());
+    toast({ title: `${companyIds.length} lead(s) marked as ignored` });
+  };
+
+  const visibleResults = (data?.results || []).filter(r => !ignoredIds.has(r.companyId));
+
+  const saveSegmentMutation = useMutation({
+    mutationFn: async () => {
+      const segmentName = `Segment ${new Date().toLocaleDateString()} (${selected.size} leads)`;
+      const segmentFilters = { ...filters, _segmentCompanyIds: Array.from(selected) };
+      const res = await apiRequest("POST", "/api/targeting/profiles", { name: segmentName, filters: segmentFilters });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Saved as segment", description: `${selected.size} leads saved` });
+      setSelected(new Set());
+      refetchProfiles();
+    },
+  });
+
   const exportCSV = () => {
     if (!data?.results) return;
-    const rows = data.results.filter(r => selected.size === 0 || selected.has(r.companyId));
-    const header = "Company,Contact,Title,Phone,Email,Industry,City,State,Last Outcome,Match Reasons";
+    const rows = visibleResults.filter(r => selected.size === 0 || selected.has(r.companyId));
+    const header = "Company,Contact,Title,Phone,Email,Industry,City,State,Last Outcome,Match Reasons,Priority Reasons,Recommended Action";
     const csv = [header, ...rows.map(r =>
-      `"${r.companyName}","${r.contactName || ""}","${r.title || ""}","${r.phone || ""}","${r.contactEmail || ""}","${r.industry || ""}","${r.city || ""}","${r.state || ""}","${r.lastOutcome || ""}","${r.matchReasons.join("; ")}"`
+      `"${r.companyName}","${r.contactName || ""}","${r.title || ""}","${r.phone || ""}","${r.contactEmail || ""}","${r.industry || ""}","${r.city || ""}","${r.state || ""}","${r.lastOutcome || ""}","${r.matchReasons.join("; ")}","${r.priorityReasons.join("; ")}","${r.recommendedAction}"`
     )].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -478,8 +522,9 @@ export default function TargetingPage() {
 
             {selected.size > 0 && (
               <div className="rounded-xl p-3" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}30` }} data-testid="action-bar">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs font-bold" style={{ color: EMERALD }}>{selected.size} selected</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: EMERALD, color: "white" }}>{selected.size} selected</span>
+                  <div className="h-5 w-px mx-1" style={{ background: BORDER }} />
                   <Button
                     size="sm"
                     className="h-7 text-xs gap-1.5"
@@ -489,7 +534,7 @@ export default function TargetingPage() {
                     data-testid="button-send-to-focus"
                   >
                     {sendToFocusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                    Send to Focus Mode
+                    Send to Focus
                   </Button>
                   <Button
                     variant="outline"
@@ -501,10 +546,31 @@ export default function TargetingPage() {
                     data-testid="button-add-followup"
                   >
                     {addToFollowupMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
-                    Add to Follow-up
+                    Follow-up Queue
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    style={{ borderColor: PURPLE, color: PURPLE }}
+                    onClick={() => saveSegmentMutation.mutate()}
+                    disabled={saveSegmentMutation.isPending}
+                    data-testid="button-save-segment"
+                  >
+                    <Bookmark className="w-3 h-3" /> Save as Segment
                   </Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" style={{ borderColor: BORDER, color: MUTED }} onClick={exportCSV} data-testid="button-export">
-                    <Download className="w-3 h-3" /> Export CSV
+                    <Download className="w-3 h-3" /> Export
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    style={{ borderColor: ERROR, color: ERROR }}
+                    onClick={() => markIgnored(selIds)}
+                    data-testid="button-mark-ignored"
+                  >
+                    <EyeOff className="w-3 h-3" /> Mark Ignored
                   </Button>
                 </div>
               </div>
@@ -515,12 +581,17 @@ export default function TargetingPage() {
                 <div className="flex items-center gap-2">
                   <Eye className="w-4 h-4" style={{ color: BLUE }} />
                   <span className="text-sm font-bold" style={{ color: TEXT }}>Results Preview</span>
+                  {ignoredIds.size > 0 && (
+                    <button onClick={() => setIgnoredIds(new Set())} className="text-[10px] font-medium ml-2 underline" style={{ color: MUTED }} data-testid="button-show-ignored">
+                      Show {ignoredIds.size} ignored
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {(data?.results?.length || 0) > 0 && (
+                  {visibleResults.length > 0 && (
                     <>
                       <Button variant="outline" size="sm" className="h-7 text-xs gap-1" style={{ borderColor: BORDER, color: MUTED }} onClick={toggleAll} data-testid="button-select-all">
-                        {selected.size === data?.results?.length ? "Deselect All" : "Select All"}
+                        {selected.size === visibleResults.length ? "Deselect All" : "Select All"}
                       </Button>
                       {selected.size === 0 && (
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" style={{ borderColor: BORDER, color: MUTED }} onClick={exportCSV} data-testid="button-export-all">
@@ -541,7 +612,7 @@ export default function TargetingPage() {
                   <XCircle className="w-8 h-8 mx-auto mb-2" style={{ color: ERROR }} />
                   <p className="text-sm font-medium" style={{ color: TEXT }}>Failed to load results</p>
                 </div>
-              ) : data && data.results.length === 0 ? (
+              ) : data && visibleResults.length === 0 ? (
                 <div className="text-center py-12 px-6">
                   <Search className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
                   <p className="text-sm font-semibold mb-1" style={{ color: TEXT }}>No matching records</p>
@@ -570,83 +641,174 @@ export default function TargetingPage() {
                   </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs" data-testid="results-table">
-                    <thead>
-                      <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED, width: 32 }}></th>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Company</th>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Contact</th>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Location</th>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Data</th>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Status</th>
-                        <th className="p-3 text-left font-semibold" style={{ color: MUTED }}>Match Reasons</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data?.results.map((r, i) => (
-                        <tr
-                          key={r.id}
-                          className="transition-colors"
-                          style={{
-                            borderBottom: `1px solid ${BORDER}`,
-                            background: selected.has(r.companyId) ? `${EMERALD}06` : i % 2 === 0 ? "white" : SUBTLE,
-                          }}
-                          data-testid={`result-row-${i}`}
-                        >
-                          <td className="p-3">
-                            <input
-                              type="checkbox"
-                              checked={selected.has(r.companyId)}
-                              onChange={() => toggleOne(r.companyId)}
-                              className="rounded"
-                              data-testid={`checkbox-${r.companyId}`}
-                            />
-                          </td>
-                          <td className="p-3">
-                            <button onClick={() => navigate(`/machine/company/${r.companyId}`)} className="text-left">
-                              <div className="font-semibold" style={{ color: TEXT }}>{r.companyName}</div>
-                              {r.industry && <div className="text-[10px]" style={{ color: MUTED }}>{r.industry}</div>}
-                            </button>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-medium" style={{ color: r.contactName ? TEXT : MUTED }}>{r.contactName || "No DM"}</div>
-                            {r.title && <div className="text-[10px]" style={{ color: MUTED }}>{r.title}</div>}
-                          </td>
-                          <td className="p-3">
-                            <div style={{ color: MUTED }}>{[r.city, r.state].filter(Boolean).join(", ") || "—"}</div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex gap-1.5">
-                              {r.phone && <Phone className="w-3 h-3" style={{ color: BLUE }} />}
-                              {r.contactEmail && <Mail className="w-3 h-3" style={{ color: PURPLE }} />}
-                              {r.contactName && <User className="w-3 h-3" style={{ color: AMBER }} />}
+                <div data-testid="results-table">
+                  {visibleResults.map((r, i) => {
+                    const isExpanded = expandedRows.has(r.id);
+                    const actionIcon = r.recommendedActionType === "call" ? PhoneCall
+                      : r.recommendedActionType === "email" ? MailPlus
+                      : r.recommendedActionType === "research" ? FileSearch
+                      : r.recommendedActionType === "reengage" ? RotateCcw
+                      : r.recommendedActionType === "nurture" ? Heart
+                      : Info;
+                    const ActionIcon = actionIcon;
+                    const actionColor = r.recommendedActionType === "call" ? EMERALD
+                      : r.recommendedActionType === "email" ? BLUE
+                      : r.recommendedActionType === "research" ? AMBER
+                      : r.recommendedActionType === "reengage" ? PURPLE
+                      : MUTED;
+
+                    return (
+                      <div
+                        key={r.id}
+                        className="transition-all"
+                        style={{ borderBottom: `1px solid ${BORDER}`, background: selected.has(r.companyId) ? `${EMERALD}06` : i % 2 === 0 ? "white" : SUBTLE }}
+                        data-testid={`result-row-${i}`}
+                      >
+                        <div className="flex items-center gap-3 p-3">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(r.companyId)}
+                            onChange={() => toggleOne(r.companyId)}
+                            className="rounded flex-shrink-0"
+                            data-testid={`checkbox-${r.companyId}`}
+                          />
+
+                          <button onClick={() => toggleExpanded(r.id)} className="flex-shrink-0" data-testid={`expand-${r.id}`}>
+                            {isExpanded ? <ChevronDown className="w-4 h-4" style={{ color: MUTED }} /> : <ChevronRight className="w-4 h-4" style={{ color: MUTED }} />}
+                          </button>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button onClick={() => navigate(`/machine/company/${r.companyId}`)} className="text-left" data-testid={`link-company-${r.companyId}`}>
+                                <span className="text-xs font-bold" style={{ color: TEXT }}>{r.companyName}</span>
+                              </button>
+                              {r.industry && <span className="text-[10px]" style={{ color: MUTED }}>{r.industry}</span>}
+                              <span className="text-[10px]" style={{ color: MUTED }}>{[r.city, r.state].filter(Boolean).join(", ")}</span>
                             </div>
-                          </td>
-                          <td className="p-3">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{
-                              background: r.lastOutcome && ["interested", "meeting_requested", "replied", "live_answer"].includes(r.lastOutcome) ? `${EMERALD}12` : r.lastOutcome ? `${MUTED}12` : `${BLUE}12`,
-                              color: r.lastOutcome && ["interested", "meeting_requested", "replied", "live_answer"].includes(r.lastOutcome) ? EMERALD : r.lastOutcome ? MUTED : BLUE,
-                            }}>
-                              {r.lastOutcome || "New"}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex flex-wrap gap-1">
-                              {r.matchReasons.slice(0, 3).map((reason, ri) => (
-                                <span key={ri} className="px-1.5 py-0.5 rounded text-[9px] font-medium" style={{ background: `${EMERALD}08`, color: EMERALD }}>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              {r.contactName && <span className="text-[10px] font-medium" style={{ color: TEXT }}>{r.contactName}</span>}
+                              {r.title && <span className="text-[10px]" style={{ color: MUTED }}>{r.contactName ? "·" : ""} {r.title}</span>}
+                              <div className="flex gap-1 ml-1">
+                                {r.phone && <Phone className="w-2.5 h-2.5" style={{ color: BLUE }} />}
+                                {r.contactEmail && <Mail className="w-2.5 h-2.5" style={{ color: PURPLE }} />}
+                                {r.contactName && <User className="w-2.5 h-2.5" style={{ color: AMBER }} />}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {r.matchReasons.slice(0, 2).map((reason, ri) => (
+                                <span key={ri} className="px-1.5 py-0.5 rounded text-[9px] font-medium whitespace-nowrap" style={{ background: `${EMERALD}10`, color: EMERALD }} data-testid={`match-badge-${i}-${ri}`}>
                                   {reason}
                                 </span>
                               ))}
-                              {r.matchReasons.length > 3 && (
-                                <span className="text-[9px]" style={{ color: MUTED }}>+{r.matchReasons.length - 3}</span>
+                              {r.matchReasons.length > 2 && (
+                                <span className="text-[9px] font-medium" style={{ color: MUTED }}>+{r.matchReasons.length - 2}</span>
                               )}
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" style={{
+                              background: r.lastOutcome && ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"].includes(r.lastOutcome) ? `${EMERALD}12` : r.lastOutcome ? `${MUTED}12` : `${BLUE}12`,
+                              color: r.lastOutcome && ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"].includes(r.lastOutcome) ? EMERALD : r.lastOutcome ? MUTED : BLUE,
+                            }}>
+                              {r.lastOutcome?.replace(/_/g, " ") || "New"}
+                            </span>
+
+                            <button
+                              onClick={() => {
+                                if (r.recommendedActionType === "call" && r.phone) navigate(`/machine/company/${r.companyId}`);
+                                else if (r.recommendedActionType === "email") navigate(`/machine/company/${r.companyId}`);
+                                else navigate(`/machine/company/${r.companyId}`);
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all hover:opacity-80"
+                              style={{ background: `${actionColor}12`, color: actionColor, border: `1px solid ${actionColor}30` }}
+                              data-testid={`cta-${r.companyId}`}
+                            >
+                              <ActionIcon className="w-3 h-3" />
+                              {r.recommendedAction.length > 30 ? r.recommendedAction.slice(0, 28) + "..." : r.recommendedAction}
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="px-12 pb-4 space-y-3" data-testid={`expanded-${r.id}`}>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="rounded-lg p-3" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15` }}>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <CheckCircle2 className="w-3.5 h-3.5" style={{ color: EMERALD }} />
+                                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: EMERALD }}>Match Reasons</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {r.matchReasons.map((reason, ri) => (
+                                    <span key={ri} className="px-2 py-1 rounded-md text-[10px] font-medium" style={{ background: `${EMERALD}12`, color: EMERALD }} data-testid={`match-detail-${i}-${ri}`}>
+                                      {reason}
+                                    </span>
+                                  ))}
+                                  {r.dataSignals && r.dataSignals.map((sig, si) => (
+                                    <span key={`ds-${si}`} className="px-2 py-1 rounded-md text-[10px] font-medium" style={{ background: `${MUTED}12`, color: MUTED }} data-testid={`signal-badge-${i}-${si}`}>
+                                      {sig}
+                                    </span>
+                                  ))}
+                                  {r.matchReasons.length === 0 && (!r.dataSignals || r.dataSignals.length === 0) && <span className="text-[10px]" style={{ color: MUTED }}>No specific filter match</span>}
+                                </div>
+                              </div>
+
+                              <div className="rounded-lg p-3" style={{ background: `${BLUE}06`, border: `1px solid ${BLUE}15` }}>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <ArrowRight className="w-3.5 h-3.5" style={{ color: BLUE }} />
+                                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BLUE }}>Priority Reasons</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {r.priorityReasons.map((reason, ri) => (
+                                    <span key={ri} className="px-2 py-1 rounded-md text-[10px] font-medium" style={{ background: `${BLUE}12`, color: BLUE }} data-testid={`priority-badge-${i}-${ri}`}>
+                                      {reason}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="rounded-lg p-3" style={{ background: `${actionColor}06`, border: `1px solid ${actionColor}15` }}>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <ActionIcon className="w-3.5 h-3.5" style={{ color: actionColor }} />
+                                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: actionColor }}>Recommended Action</span>
+                                </div>
+                                <p className="text-xs font-semibold mb-2" style={{ color: TEXT }} data-testid={`action-text-${r.companyId}`}>{r.recommendedAction}</p>
+                                <button
+                                  onClick={() => navigate(`/machine/company/${r.companyId}`)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:opacity-80"
+                                  style={{ background: actionColor, color: "white" }}
+                                  data-testid={`action-button-${r.companyId}`}
+                                >
+                                  <ActionIcon className="w-3 h-3" />
+                                  Take Action
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4 pt-1" style={{ borderTop: `1px solid ${BORDER}` }}>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-medium" style={{ color: MUTED }}>Phone:</span>
+                                <span className="text-[10px] font-semibold" style={{ color: r.phone ? TEXT : ERROR }}>{r.phone || "Missing"}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-medium" style={{ color: MUTED }}>Email:</span>
+                                <span className="text-[10px] font-semibold" style={{ color: r.contactEmail ? TEXT : ERROR }}>{r.contactEmail || "Missing"}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-medium" style={{ color: MUTED }}>DM:</span>
+                                <span className="text-[10px] font-semibold" style={{ color: r.contactName ? TEXT : AMBER }}>{r.contactName || "Not identified"}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-medium" style={{ color: MUTED }}>Pipeline:</span>
+                                <span className="text-[10px] font-semibold" style={{ color: TEXT }}>{r.pipelineStatus}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

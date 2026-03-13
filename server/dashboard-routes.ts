@@ -1742,17 +1742,79 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         updatedAt: outreachPipeline.updatedAt,
       }).from(outreachPipeline).where(whereClause!).orderBy(orderClause).limit(50);
 
-      const matchReasons = results.map(r => {
-        const reasons: string[] = [];
-        if (f.industry && r.industry?.toLowerCase().includes(f.industry.toLowerCase())) reasons.push(`Industry: ${r.industry}`);
-        if (f.territory && (r.city?.toLowerCase().includes(f.territory.toLowerCase()) || r.state?.toLowerCase().includes(f.territory.toLowerCase()))) reasons.push(`Territory: ${r.city || ""}, ${r.state || ""}`);
-        if (f.role && r.title?.toLowerCase().includes(f.role.toLowerCase())) reasons.push(`Role: ${r.title}`);
-        if (r.phone) reasons.push("Has phone");
-        if (r.contactEmail) reasons.push("Has email");
-        if (r.contactName) reasons.push("Has DM");
-        if (r.lastOutcome && ["interested","meeting_requested","followup_scheduled","replied","live_answer"].includes(r.lastOutcome)) reasons.push(`Warm: ${r.lastOutcome}`);
-        if (!r.lastOutcome) reasons.push("Fresh lead");
-        return { ...r, matchReasons: reasons };
+      const WARM_OUTCOMES = ["interested","meeting_requested","followup_scheduled","replied","live_answer"];
+      const enrichedResults = results.map(r => {
+        const matchReasons: string[] = [];
+        if (f.industry && r.industry?.toLowerCase().includes(f.industry.toLowerCase())) matchReasons.push(`Industry: ${r.industry}`);
+        if (f.territory && (r.city?.toLowerCase().includes(f.territory.toLowerCase()) || r.state?.toLowerCase().includes(f.territory.toLowerCase()))) matchReasons.push(`Territory: ${[r.city, r.state].filter(Boolean).join(", ")}`);
+        if (f.role && r.title?.toLowerCase().includes(f.role.toLowerCase())) matchReasons.push(`Role: ${r.title}`);
+        if ((f.hasPhone || f.mustHavePhone) && r.phone) matchReasons.push("Phone found");
+        if ((f.hasEmail || f.mustHaveEmail) && r.contactEmail) matchReasons.push("Email found");
+        if ((f.hasDM || f.mustHaveDM) && r.contactName) matchReasons.push("DM identified");
+        if (f.mustHaveSignal && r.lastOutcome) matchReasons.push("Has signal activity");
+        if (f.warmLeads && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) matchReasons.push("Warm lead");
+        if (f.freshLeads && !r.lastOutcome) matchReasons.push("Fresh lead");
+        if (f.staleLeads && r.updatedAt) {
+          const daysSince = Math.floor((Date.now() - new Date(r.updatedAt).getTime()) / 86400000);
+          if (daysSince >= 7) matchReasons.push(`Stale: ${daysSince}d since last touch`);
+        }
+        if (f.matchMode === "strict") matchReasons.push("Strict: all contact data present");
+        else if (f.matchMode === "balanced") matchReasons.push("Balanced: phone or email present");
+
+        const dataSignals: string[] = [];
+        if (r.phone && !f.hasPhone && !f.mustHavePhone) dataSignals.push("Phone available");
+        if (r.contactEmail && !f.hasEmail && !f.mustHaveEmail) dataSignals.push("Email available");
+        if (r.contactName && !f.hasDM && !f.mustHaveDM) dataSignals.push("DM available");
+
+        const priorityReasons: string[] = [];
+        if (r.phone) priorityReasons.push("Has direct phone");
+        if (r.contactName) priorityReasons.push("Has named DM");
+        if (r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push(`Recent positive outcome: ${r.lastOutcome.replace(/_/g, " ")}`);
+        if (r.updatedAt) {
+          const daysSince = Math.floor((Date.now() - new Date(r.updatedAt).getTime()) / 86400000);
+          if (daysSince >= 7 && daysSince <= 30) priorityReasons.push("Stale but recoverable");
+          else if (daysSince > 30) priorityReasons.push("Cold — needs re-engagement");
+        }
+        if (!r.lastOutcome) priorityReasons.push("Fresh untouched lead");
+        if (r.phone && r.contactName && r.contactEmail) priorityReasons.push("Highest-value account");
+        if (f.priority === "fastest_to_meeting" && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) priorityReasons.push("Fastest path to meeting");
+        if (f.priority === "most_likely_to_answer" && r.phone) priorityReasons.push("Most likely to answer");
+
+        let recommendedAction = "";
+        let recommendedActionType = "";
+        if (r.phone && r.contactName && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
+          recommendedAction = `Call ${r.contactName} now — warm lead`;
+          recommendedActionType = "call";
+        } else if (r.phone && r.contactName && !r.lastOutcome) {
+          recommendedAction = `Call ${r.contactName} — fresh opportunity`;
+          recommendedActionType = "call";
+        } else if (r.phone && !r.contactName) {
+          recommendedAction = "Research DM before calling";
+          recommendedActionType = "research";
+        } else if (r.contactEmail && r.lastOutcome && WARM_OUTCOMES.includes(r.lastOutcome)) {
+          recommendedAction = "Send follow-up email — warm lead";
+          recommendedActionType = "email";
+        } else if (r.contactEmail && !r.lastOutcome) {
+          recommendedAction = "Send introductory email";
+          recommendedActionType = "email";
+        } else if (r.updatedAt) {
+          const daysSince = Math.floor((Date.now() - new Date(r.updatedAt).getTime()) / 86400000);
+          if (daysSince >= 7 && daysSince <= 30) {
+            recommendedAction = "Re-engage stale lead";
+            recommendedActionType = "reengage";
+          } else if (daysSince > 30) {
+            recommendedAction = "Add to nurture campaign";
+            recommendedActionType = "nurture";
+          } else {
+            recommendedAction = "Review before outreach";
+            recommendedActionType = "review";
+          }
+        } else {
+          recommendedAction = "Review before outreach";
+          recommendedActionType = "review";
+        }
+
+        return { ...r, matchReasons, dataSignals, priorityReasons, recommendedAction, recommendedActionType };
       });
 
       const allClientCount = clientId
@@ -1783,6 +1845,14 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           const noIndustry = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`NOT LOWER(${outreachPipeline.industry}) LIKE ${"%" + f.industry.toLowerCase() + "%"}`));
           if (noIndustry[0]?.count) exclusions.push({ reason: "Industry mismatch", count: noIndustry[0].count });
         }
+        if (f.mustHaveSignal) {
+          const noSignal = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`${outreachPipeline.lastOutcome} IS NULL`));
+          if (noSignal[0]?.count) exclusions.push({ reason: "No signal activity", count: noSignal[0].count });
+        }
+        if (f.warmLeads) {
+          const notWarm = await db.select({ count: sql<number>`count(*)::int` }).from(outreachPipeline).where(and(clientId ? eq(outreachPipeline.clientId, clientId) : sql`1=1`, sql`(${outreachPipeline.lastOutcome} IS NULL OR ${outreachPipeline.lastOutcome} NOT IN ('interested','meeting_requested','followup_scheduled','replied','live_answer'))`));
+          if (notWarm[0]?.count) exclusions.push({ reason: "Not warm", count: notWarm[0].count });
+        }
         if (exclusions.length === 0 && excluded > 0) exclusions.push({ reason: "Filtered by other criteria", count: excluded });
       }
 
@@ -1793,7 +1863,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         total,
         allCount: allClientCount,
         summary,
-        results: matchReasons,
+        results: enrichedResults,
         exclusions,
         filterOptions: {
           industries: distinctIndustries.map(r => r.industry).filter(Boolean).sort(),
