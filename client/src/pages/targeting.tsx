@@ -65,6 +65,7 @@ interface TargetResult {
   recommendedActionType: string;
   verifiedQualityScore: number | null;
   verifiedQualityLabel: string | null;
+  outcomeSource: string | null;
 }
 
 interface TargetQueryResponse {
@@ -736,8 +737,8 @@ export default function TargetingPage() {
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" style={{
                               background: r.lastOutcome && ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"].includes(r.lastOutcome) ? `${EMERALD}12` : r.lastOutcome ? `${MUTED}12` : `${BLUE}12`,
                               color: r.lastOutcome && ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"].includes(r.lastOutcome) ? EMERALD : r.lastOutcome ? MUTED : BLUE,
-                            }}>
-                              {r.lastOutcome?.replace(/_/g, " ") || "New"}
+                            }} title={r.outcomeSource || undefined}>
+                              {r.outcomeSource ? r.outcomeSource.replace("Airtable: ", "") : r.lastOutcome?.replace(/_/g, " ") || "New"}
                             </span>
 
                             <button

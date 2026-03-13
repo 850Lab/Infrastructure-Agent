@@ -1745,18 +1745,21 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
       const flowQualityData = await db.select({
         companyId: companyFlows.companyId,
+        companyName: companyFlows.companyName,
         verifiedQualityScore: companyFlows.verifiedQualityScore,
         verifiedQualityLabel: companyFlows.verifiedQualityLabel,
+        outcomeSource: companyFlows.outcomeSource,
       }).from(companyFlows)
         .where(and(
           clientId ? eq(companyFlows.clientId, clientId) : sql`1=1`,
-          sql`${companyFlows.verifiedQualityScore} IS NOT NULL`,
+          sql`(${companyFlows.verifiedQualityScore} IS NOT NULL OR ${companyFlows.outcomeSource} IS NOT NULL)`,
         ));
       const qualityMap = new Map(flowQualityData.map(q => [q.companyId, q]));
+      const qualityByName = new Map(flowQualityData.map(q => [q.companyName.toLowerCase(), q]));
 
       const WARM_OUTCOMES = ["interested","meeting_requested","followup_scheduled","replied","live_answer"];
       const enrichedResults = results.map(r => {
-        const qualityData = qualityMap.get(r.companyId);
+        const qualityData = qualityMap.get(r.companyId) || qualityByName.get(r.companyName?.toLowerCase() || "");
         const matchReasons: string[] = [];
         if (f.industry && r.industry?.toLowerCase().includes(f.industry.toLowerCase())) matchReasons.push(`Industry: ${r.industry}`);
         if (f.territory && (r.city?.toLowerCase().includes(f.territory.toLowerCase()) || r.state?.toLowerCase().includes(f.territory.toLowerCase()))) matchReasons.push(`Territory: ${[r.city, r.state].filter(Boolean).join(", ")}`);
@@ -1848,6 +1851,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           matchReasons, dataSignals, priorityReasons, recommendedAction, recommendedActionType,
           verifiedQualityScore: qualityData?.verifiedQualityScore ?? null,
           verifiedQualityLabel: qualityData?.verifiedQualityLabel ?? null,
+          outcomeSource: qualityData?.outcomeSource ?? null,
         };
       });
 
@@ -2091,6 +2095,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           const mappedOutcome = AIRTABLE_OUTCOME_MAP[airtableOutcome];
           if (!flow.lastOutcome || flow.lastOutcome === "no_answer" || flow.lastOutcome === "voicemail") {
             updates.lastOutcome = mappedOutcome;
+            updates.outcomeSource = `Airtable: ${f.Outcome || airtableOutcome}`;
             changed = true;
             result.outcomesUpdated++;
             log(`[transcript-sync] Outcome update: ${companyName} "${flow.lastOutcome}" → "${mappedOutcome}" (from Airtable: "${f.Outcome}")`, "targeting");

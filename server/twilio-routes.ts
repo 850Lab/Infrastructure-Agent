@@ -4,8 +4,8 @@ import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, e
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { twilioRecordings, clients, companyFlows, actionQueue } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { twilioRecordings, clients, companyFlows, actionQueue, inboundMessages, outreachPipeline } from "@shared/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { registerCoachingSession, subscribeToCoaching, getActiveSessions } from "./realtime-coaching";
 import { validateToken } from "./auth";
 
@@ -761,6 +761,93 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       log(`Inbound call webhook error: ${err.message}`);
       const agentPhone = process.env.AGENT_PHONE || "+14093387109";
       res.type("text/xml").send(`<Response><Dial>${agentPhone}</Dial></Response>`);
+    }
+  });
+
+  app.post("/api/twilio/webhook/sms", async (req: Request, res: Response) => {
+    try {
+      const { MessageSid, From, To, Body, NumMedia, MediaUrl0 } = req.body;
+      log(`Inbound SMS: From=${From}, To=${To}, Body="${(Body || "").substring(0, 80)}"`);
+
+      const mediaUrl = NumMedia && parseInt(NumMedia) > 0 ? MediaUrl0 || null : null;
+
+      let matchedCompany: string | null = null;
+      let matchedFlowId: number | null = null;
+
+      const normalizedFrom = (From || "").replace(/[^0-9+]/g, "");
+      if (normalizedFrom) {
+        const pipelineMatch = await db.select({ companyName: outreachPipeline.companyName })
+          .from(outreachPipeline)
+          .where(sql`REPLACE(REPLACE(REPLACE(${outreachPipeline.phone}, ' ', ''), '-', ''), '(', '') LIKE ${"%" + normalizedFrom.replace("+1", "").slice(-10)}`)
+          .limit(1);
+        if (pipelineMatch.length > 0) {
+          matchedCompany = pipelineMatch[0].companyName;
+        }
+
+        if (matchedCompany) {
+          const flowMatch = await db.select({ id: companyFlows.id })
+            .from(companyFlows)
+            .where(and(
+              sql`LOWER(${companyFlows.companyName}) = LOWER(${matchedCompany})`,
+              eq(companyFlows.status, "active"),
+            ))
+            .orderBy(desc(companyFlows.updatedAt))
+            .limit(1);
+          if (flowMatch.length > 0) {
+            matchedFlowId = flowMatch[0].id;
+            await db.update(companyFlows).set({
+              lastOutcome: "replied",
+              outcomeSource: `SMS reply: "${(Body || "").substring(0, 100)}"`,
+              updatedAt: new Date(),
+            }).where(eq(companyFlows.id, matchedFlowId));
+            log(`SMS matched to company "${matchedCompany}" (flow ${matchedFlowId}) — outcome updated to "replied"`);
+          }
+        }
+      }
+
+      await db.insert(inboundMessages).values({
+        messageSid: MessageSid || null,
+        fromNumber: From || "",
+        toNumber: To || "",
+        body: Body || "",
+        mediaUrl,
+        matchedCompany,
+        matchedFlowId,
+        status: "unread",
+      });
+
+      eventBus.publish("SMS_RECEIVED", {
+        from: From,
+        to: To,
+        body: (Body || "").substring(0, 500),
+        matchedCompany,
+        ts: Date.now(),
+      });
+
+      res.type("text/xml").send("<Response></Response>");
+    } catch (err: any) {
+      log(`Inbound SMS webhook error: ${err.message}`);
+      res.type("text/xml").send("<Response></Response>");
+    }
+  });
+
+  app.get("/api/twilio/inbound-messages", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const messages = await db.select().from(inboundMessages).orderBy(desc(inboundMessages.createdAt)).limit(50);
+      const unreadCount = messages.filter(m => m.status === "unread").length;
+      res.json({ messages, unreadCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/twilio/inbound-messages/:id/read", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await db.update(inboundMessages).set({ status: "read" }).where(eq(inboundMessages.id, id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

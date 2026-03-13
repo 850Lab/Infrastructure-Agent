@@ -483,6 +483,7 @@ export const companyFlows = pgTable("company_flows", {
   notes: text("notes"),
   verifiedQualityScore: integer("verified_quality_score"),
   verifiedQualityLabel: text("verified_quality_label"),
+  outcomeSource: text("outcome_source"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -555,3 +556,20 @@ export const targetProfiles = pgTable("target_profiles", {
 export const insertTargetProfileSchema = createInsertSchema(targetProfiles).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTargetProfile = z.infer<typeof insertTargetProfileSchema>;
 export type TargetProfile = typeof targetProfiles.$inferSelect;
+
+export const inboundMessages = pgTable("inbound_messages", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  messageSid: varchar("message_sid"),
+  fromNumber: varchar("from_number").notNull(),
+  toNumber: varchar("to_number").notNull(),
+  body: text("body").notNull(),
+  mediaUrl: text("media_url"),
+  matchedCompany: text("matched_company"),
+  matchedFlowId: integer("matched_flow_id"),
+  status: text("status").notNull().default("unread"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertInboundMessageSchema = createInsertSchema(inboundMessages).omit({ id: true, createdAt: true });
+export type InsertInboundMessage = z.infer<typeof insertInboundMessageSchema>;
+export type InboundMessage = typeof inboundMessages.$inferSelect;
