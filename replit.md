@@ -47,6 +47,14 @@ Key features include:
 -   **Twilio**: Provides click-to-call, SMS, automatic call recording with AI intelligence pipeline, and real-time call coaching.
 -   **PostgreSQL**: Stores webhook logs, user accounts, client registry, and various system-specific data tables.
 
+## Migration Documentation
+Project documentation for Git + Cursor migration lives in `/docs/`:
+-   `system-architecture.md` — Architecture diagrams, data flows, server file organization
+-   `system-dependencies.md` — All env vars, external systems, Airtable tables
+-   `potential-cleanup.md` — Dead code report (safe deletions vs. verify-first items)
+-   `.gitignore` — Configured to exclude node_modules, dist, .env, Replit-specific files
+-   `README.md` — Full project overview, setup instructions, API endpoints
+
 ## Production Audit (Completed)
 Audit performed across all 8 phases. Key fixes applied:
 - **Focus Mode queue advancement**: Removed index-based advancement after outcome logging. Queue re-fetch naturally advances since completed actions are removed from DB. "Continue to Next" just clears explanation overlay. Removed broken "Stay Here" button.
