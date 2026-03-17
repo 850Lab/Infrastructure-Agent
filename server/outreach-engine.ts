@@ -215,12 +215,16 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
       touch6Email = "[Email generation pending]";
     }
 
+    const firstTouchContent = "Subject: Quick question\n\nHey — are your crews working in the heat right now?";
+
     await storage.createOutreachPipeline({
       clientId,
       companyId,
       companyName,
       contactName: dmName || null,
       contactEmail: dmEmail || null,
+      touch0Email: firstTouchContent,
+      firstTouchSent: false,
       touch1Email: touch1Call,
       touch2Call: touch2Email,
       touch3Email: touch3Call,
@@ -228,7 +232,7 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
       touch5Email: touch5Call,
       touch6Call: touch6Email,
       pipelineStatus: "ACTIVE",
-      nextTouchDate: addDays(now, TOUCH_SCHEDULE[0].day),
+      nextTouchDate: now,
       touchesCompleted: 0,
     });
 
@@ -252,6 +256,10 @@ export async function advanceOutreachPipeline(clientId: string): Promise<{
   let completed = 0;
 
   for (const item of dueItems) {
+    if (!item.firstTouchSent && item.touch0Email) {
+      continue;
+    }
+
     const nextTouch = item.touchesCompleted + 1;
 
     if (nextTouch > 6) {

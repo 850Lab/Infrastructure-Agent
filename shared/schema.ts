@@ -169,6 +169,8 @@ export const outreachPipeline = pgTable("outreach_pipeline", {
   companyName: text("company_name").notNull(),
   contactName: text("contact_name"),
   contactEmail: text("contact_email"),
+  touch0Email: text("touch_0_email"),
+  firstTouchSent: boolean("first_touch_sent").default(false),
   touch1Email: text("touch_1_email"),
   touch2Call: text("touch_2_call"),
   touch3Email: text("touch_3_email"),

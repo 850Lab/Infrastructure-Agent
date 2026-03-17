@@ -216,6 +216,7 @@ export async function sendOutreachEmail(params: {
   if (!pipeline) return { success: false, error: "Outreach pipeline item not found" };
 
   const touchField: Record<number, string | null> = {
+    0: pipeline.touch0Email,
     2: pipeline.touch2Call,
     4: pipeline.touch4Call,
     6: pipeline.touch6Call,

@@ -36,7 +36,9 @@ async function runAllActiveClients(): Promise<void> {
 
       try {
         log(`Scheduler: starting pipeline for ${client.clientName} (${client.id})`, "scheduler");
-        startDailyRun({ clientId: client.id, top: 25 });
+        const parsedCap = parseInt(process.env.DAILY_OUTREACH_CAP || "100", 10);
+        const dailyOutreachCap = Number.isFinite(parsedCap) && parsedCap > 0 ? parsedCap : 100;
+        startDailyRun({ clientId: client.id, top: dailyOutreachCap });
         lastScheduledRun = Date.now();
         await waitForRunComplete();
         log(`Scheduler: completed pipeline for ${client.clientName}`, "scheduler");

@@ -87,6 +87,56 @@ async function processClientAutoSends(clientId: string): Promise<{
       continue;
     }
 
+    if (!item.firstTouchSent && item.touch0Email) {
+      if (!item.contactEmail) {
+        log(`  ${item.companyName}: First-touch skipped — no contact email`);
+        skipped++;
+        continue;
+      }
+
+      const alreadySentTouch0 = await hasSentForTouch(item.id, 0);
+      if (alreadySentTouch0) {
+        await storage.updateOutreachPipeline(item.id, {
+          firstTouchSent: true,
+          nextTouchDate: addDays(item.createdAt, TOUCH_SCHEDULE[0].day),
+        });
+      } else {
+        log(`  ${item.companyName}: Sending first-touch email to ${item.contactEmail}...`);
+        try {
+          const result = await sendOutreachEmail({
+            clientId,
+            outreachPipelineId: item.id,
+            touchNumber: 0,
+            recipientEmail: item.contactEmail,
+            recipientName: item.contactName || undefined,
+            companyId: item.companyId,
+            companyName: item.companyName,
+            sentVia: "auto",
+          });
+
+          if (result.success) {
+            sent++;
+            log(`  ${item.companyName}: First-touch sent successfully (id: ${result.emailSendId})`);
+            await storage.updateOutreachPipeline(item.id, {
+              firstTouchSent: true,
+              nextTouchDate: addDays(item.createdAt, TOUCH_SCHEDULE[0].day),
+            });
+          } else if (result.deferred) {
+            deferred++;
+            log(`  ${item.companyName}: First-touch deferred — ${result.deferReason || "daily limit"}`);
+            break;
+          } else {
+            failed++;
+            log(`  ${item.companyName}: First-touch failed — ${result.error}`);
+          }
+        } catch (err: any) {
+          failed++;
+          log(`  ${item.companyName}: First-touch error — ${err.message}`);
+        }
+      }
+      continue;
+    }
+
     const nextTouch = item.touchesCompleted + 1;
     if (nextTouch > 6) {
       skipped++;
