@@ -1,4 +1,5 @@
 import * as nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { db } from "./db";
 import { clientEmailSettings, emailSends, emailTrackingEvents } from "@shared/schema";
 import { eq, and, sql, isNull, desc } from "drizzle-orm";
@@ -255,30 +256,45 @@ export async function sendOutreachEmail(params: {
     .returning();
 
   try {
-    // Enforce throttle pacing between sends
     await enforceThrottle(params.clientId, settings.sendIntervalMs);
 
-    const transporter = createTransporter(settings);
-    const sendResult = await transporter.sendMail({
-      from: `"${settings.fromName}" <${settings.fromEmail}>`,
-      to: params.recipientName
-        ? `"${params.recipientName}" <${params.recipientEmail}>`
-        : params.recipientEmail,
-      subject,
-      html: trackedHtml,
-      headers: {
-        "X-Outreach-Tracking-Id": trackingId,
-      },
-    });
+    let messageId: string | null = null;
 
-    // Update status to sent and store the SMTP Message-ID for reply threading
-    const smtpMessageId = sendResult.messageId || null;
+    if (settings.providerType === "resend") {
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (!resendApiKey) throw new Error("RESEND_API_KEY environment variable is not set");
+      const resend = new Resend(resendApiKey);
+      const toAddr = params.recipientName
+        ? `${params.recipientName} <${params.recipientEmail}>`
+        : params.recipientEmail;
+      const { data, error } = await resend.emails.send({
+        from: `${settings.fromName} <${settings.fromEmail}>`,
+        to: [toAddr],
+        subject,
+        html: trackedHtml,
+        headers: { "X-Outreach-Tracking-Id": trackingId },
+      });
+      if (error) throw new Error(error.message);
+      messageId = data?.id ? `<${data.id}@resend.dev>` : null;
+    } else {
+      const transporter = createTransporter(settings);
+      const sendResult = await transporter.sendMail({
+        from: `"${settings.fromName}" <${settings.fromEmail}>`,
+        to: params.recipientName
+          ? `"${params.recipientName}" <${params.recipientEmail}>`
+          : params.recipientEmail,
+        subject,
+        html: trackedHtml,
+        headers: { "X-Outreach-Tracking-Id": trackingId },
+      });
+      messageId = sendResult.messageId || null;
+    }
+
     await db
       .update(emailSends)
-      .set({ status: "sent", messageId: smtpMessageId })
+      .set({ status: "sent", messageId, sentAt: new Date() })
       .where(eq(emailSends.id, sendRecord.id));
 
-    // Increment daily counter
     await db
       .update(clientEmailSettings)
       .set({
@@ -309,7 +325,7 @@ export async function sendTestEmail(
   const rawHtml = `
     <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:0 auto;">
       <h2 style="color:#0F172A;">Test Email from Texas Automation Systems</h2>
-      <p style="color:#334155;line-height:1.5;">This is a test email to verify your SMTP settings are working correctly.</p>
+      <p style="color:#334155;line-height:1.5;">This is a test email to verify your email settings are working correctly.</p>
       <p style="color:#334155;line-height:1.5;">If you can see this message, your email integration is properly configured.</p>
       <p style="color:#334155;line-height:1.5;"><a href="https://example.com/test-link" style="color:#10B981;">Click this test link</a> to verify click tracking.</p>
     </div>
@@ -317,13 +333,26 @@ export async function sendTestEmail(
   const html = processEmailForTracking(rawHtml, trackingId, settings.signature);
 
   try {
-    const transporter = createTransporter(settings);
-    await transporter.sendMail({
-      from: `"${settings.fromName}" <${settings.fromEmail}>`,
-      to: recipientEmail,
-      subject: "Test Email — Texas Automation Systems",
-      html,
-    });
+    if (settings.providerType === "resend") {
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (!resendApiKey) throw new Error("RESEND_API_KEY environment variable is not set");
+      const resend = new Resend(resendApiKey);
+      const { error } = await resend.emails.send({
+        from: `${settings.fromName} <${settings.fromEmail}>`,
+        to: [recipientEmail],
+        subject: "Test Email — Texas Automation Systems",
+        html,
+      });
+      if (error) throw new Error(error.message);
+    } else {
+      const transporter = createTransporter(settings);
+      await transporter.sendMail({
+        from: `"${settings.fromName}" <${settings.fromEmail}>`,
+        to: recipientEmail,
+        subject: "Test Email — Texas Automation Systems",
+        html,
+      });
+    }
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -449,30 +478,43 @@ export async function sendProposalEmail(params: {
 }): Promise<{ success: boolean; error?: string }> {
   const settings = await getEmailSettings(params.clientId);
   if (!settings) return { success: false, error: "Email settings not configured for this client. Go to Email Settings to set up SMTP." };
-  if (!settings.smtpHost || !settings.smtpUser || !settings.smtpPass) {
-    return { success: false, error: "SMTP credentials not configured. Go to Email Settings to set up SMTP." };
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: settings.smtpHost,
-    port: settings.smtpPort,
-    secure: settings.smtpSecure,
-    auth: { user: settings.smtpUser, pass: settings.smtpPass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
 
   const fromName = settings.fromName || "Proposals";
   const fromEmail = settings.fromEmail || settings.smtpUser;
+  const subjectLine = `${params.proposalTitle} — ${params.companyName}`;
 
   try {
-    await transporter.sendMail({
-      from: `"${fromName}" <${fromEmail}>`,
-      to: params.recipientEmail,
-      subject: `${params.proposalTitle} — ${params.companyName}`,
-      html: params.proposalHtml,
-    });
+    if (settings.providerType === "resend") {
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (!resendApiKey) throw new Error("RESEND_API_KEY environment variable is not set");
+      const resend = new Resend(resendApiKey);
+      const { error } = await resend.emails.send({
+        from: `${fromName} <${fromEmail}>`,
+        to: [params.recipientEmail],
+        subject: subjectLine,
+        html: params.proposalHtml,
+      });
+      if (error) throw new Error(error.message);
+    } else {
+      if (!settings.smtpHost || !settings.smtpUser || !settings.smtpPass) {
+        return { success: false, error: "SMTP credentials not configured. Go to Email Settings to set up SMTP." };
+      }
+      const transporter = nodemailer.createTransport({
+        host: settings.smtpHost,
+        port: settings.smtpPort,
+        secure: settings.smtpSecure,
+        auth: { user: settings.smtpUser, pass: settings.smtpPass },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+      });
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: params.recipientEmail,
+        subject: subjectLine,
+        html: params.proposalHtml,
+      });
+    }
     return { success: true };
   } catch (err: any) {
     return { success: false, error: `Email delivery failed: ${err.message || "Unknown SMTP error"}` };

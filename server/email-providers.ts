@@ -56,6 +56,14 @@ const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
     recommendedIntervalMs: 12000,
     notes: "Zoho limits: 250/day free, more on premium plans. Conservative pacing required.",
   },
+  resend: {
+    type: "resend",
+    label: "Resend",
+    maxDailyLimit: 3000,
+    recommendedDailyLimit: 500,
+    recommendedIntervalMs: 1000,
+    notes: "Resend API — 3000/day on free tier, 50k+ on paid. Uses HTTP API instead of SMTP. Requires verified domain for production sending.",
+  },
   custom: {
     type: "custom",
     label: "Custom SMTP",
@@ -75,6 +83,7 @@ export function detectProviderFromHost(smtpHost: string): ProviderProfile {
   if (host.includes("sendgrid")) return PROVIDER_PROFILES.sendgrid;
   if (host.includes("hubspot")) return PROVIDER_PROFILES.hubspot;
   if (host.includes("zoho")) return PROVIDER_PROFILES.zoho;
+  if (host.includes("resend")) return PROVIDER_PROFILES.resend;
 
   return PROVIDER_PROFILES.custom;
 }

@@ -108,13 +108,18 @@ export function registerEmailRoutes(app: Express) {
         autoSendEnabled,
       } = req.body;
 
-      if (!smtpHost || !smtpUser || !fromName || !fromEmail) {
-        res.status(400).json({ error: "Missing required fields" });
+      if (!fromName || !fromEmail) {
+        res.status(400).json({ error: "Missing required fields: fromName and fromEmail are required" });
         return;
       }
 
-      // Auto-detect provider from SMTP host
-      const provider = detectProviderFromHost(smtpHost);
+      const isResend = (smtpHost || "").toLowerCase().includes("resend");
+      if (!isResend && (!smtpHost || !smtpUser)) {
+        res.status(400).json({ error: "Missing required fields: smtpHost and smtpUser are required for SMTP providers" });
+        return;
+      }
+
+      const provider = detectProviderFromHost(smtpHost || "resend");
       const { limit: clampedLimit, clamped } = clampDailyLimit(dailyLimit || 50, provider.type);
 
       const [existing] = await db
@@ -159,7 +164,7 @@ export function registerEmailRoutes(app: Express) {
         }
         res.json(response);
       } else {
-        if (!smtpPass) {
+        if (!smtpPass && !isResend) {
           res.status(400).json({ error: "SMTP password is required for initial setup" });
           return;
         }
