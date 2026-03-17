@@ -1,12 +1,163 @@
 import { ImapFlow } from "imapflow";
 import { db } from "./db";
-import { clientEmailSettings, emailSends, emailReplies, outreachPipeline } from "@shared/schema";
-import { eq, and, isNotNull, isNull, inArray, desc } from "drizzle-orm";
+import { clientEmailSettings, emailSends, emailReplies, outreachPipeline, companyFlows, actionQueue } from "@shared/schema";
+import { eq, and, isNotNull, isNull, inArray, desc, gte, sql } from "drizzle-orm";
 import { log } from "./index";
+import { sendSms } from "./twilio-service";
 
 const TAG = "reply-checker";
 const REPLY_CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
 let replyCheckTimer: ReturnType<typeof setInterval> | null = null;
+
+const NEGATIVE_PHRASES = [
+  "no thanks", "not interested", "stop", "unsubscribe", "remove me",
+  "wrong person", "not at this time", "do not contact", "don't contact",
+  "dont contact", "please remove", "take me off", "opt out", "no thank you",
+  "not looking", "no longer interested",
+];
+
+const HOT_PHRASES = [
+  "yes", "interested", "tell me more", "what is this", "maybe", "possibly",
+  "send info", "send information", "give me a call", "call me", "we are",
+  "we do", "looking into that", "want to know more", "can you send more",
+  "let's talk", "lets talk", "let us talk", "send details", "more info",
+  "sounds good", "sounds interesting", "reach out", "set up a call",
+  "schedule a call", "when can we talk",
+];
+
+type ReplyClassification = "HOT" | "NOT_INTERESTED" | "NEUTRAL";
+
+function classifyReply(subject: string, snippet: string): { classification: ReplyClassification; reason: string } {
+  const raw = `${subject} ${snippet}`.toLowerCase().replace(/[^a-z0-9\s']/g, " ").replace(/\s+/g, " ").trim();
+
+  for (const phrase of NEGATIVE_PHRASES) {
+    if (raw.includes(phrase)) {
+      return { classification: "NOT_INTERESTED", reason: `negative phrase: "${phrase}"` };
+    }
+  }
+
+  for (const phrase of HOT_PHRASES) {
+    if (raw.includes(phrase)) {
+      return { classification: "HOT", reason: `positive phrase: "${phrase}"` };
+    }
+  }
+
+  return { classification: "NEUTRAL", reason: "no matching phrases" };
+}
+
+async function handleHotReply(params: {
+  clientId: string;
+  companyId: string;
+  companyName: string;
+  contactName: string | null;
+  contactEmail: string;
+  replySnippet: string;
+  emailReplyId: number;
+  pipelineId: number;
+}): Promise<void> {
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const existing = await db.select({ id: actionQueue.id }).from(actionQueue).where(
+    and(
+      eq(actionQueue.clientId, params.clientId),
+      eq(actionQueue.companyId, params.companyId),
+      eq(actionQueue.taskType, "hot_reply_followup"),
+      gte(actionQueue.createdAt, oneDayAgo),
+    )
+  );
+
+  if (existing.length === 0) {
+    await db.insert(actionQueue).values({
+      clientId: params.clientId,
+      companyId: params.companyId,
+      companyName: params.companyName,
+      contactName: params.contactName,
+      contactEmail: params.contactEmail,
+      flowType: "email",
+      taskType: "hot_reply_followup",
+      dueAt: new Date(),
+      priority: 99,
+      status: "pending",
+      recommendationText:
+        `HOT REPLY — ${params.companyName} showed interest.\n` +
+        `Reply: "${params.replySnippet.substring(0, 150)}"\n\n` +
+        `Follow-up steps:\n` +
+        `• Call after shift\n` +
+        `• Ask what type of site they are running\n` +
+        `• Ask crew size\n` +
+        `• Ask whether they need short-term or monthly setup`,
+      lastOutcome: "replied",
+      attemptNumber: 1,
+    });
+    log(`HOT action_queue task created for ${params.companyName}`, TAG);
+  } else {
+    log(`HOT action_queue task already exists for ${params.companyName} — skipped`, TAG);
+  }
+
+  const [flow] = await db.select().from(companyFlows).where(
+    and(
+      eq(companyFlows.clientId, params.clientId),
+      eq(companyFlows.companyId, params.companyId),
+      isNull(companyFlows.warmStage),
+    )
+  ).limit(1);
+
+  if (flow) {
+    await db.update(companyFlows).set({
+      warmStage: "initial_interest",
+      warmStageUpdatedAt: new Date(),
+      lastOutcome: "replied",
+      updatedAt: new Date(),
+    }).where(eq(companyFlows.id, flow.id));
+    log(`Set warmStage=initial_interest on flow #${flow.id} for ${params.companyName}`, TAG);
+  }
+
+  const smsTo = process.env.INTERNAL_HOT_LEAD_SMS_TO;
+  if (smsTo) {
+    const smsBody = `HOT LEAD: ${params.companyName}\n${params.replySnippet.substring(0, 120)}`;
+    sendSms(smsTo, smsBody).then(smsResult => {
+      if (smsResult.success) {
+        log(`HOT SMS alert sent to ${smsTo} for ${params.companyName} (SID: ${smsResult.sid})`, TAG);
+      } else {
+        log(`HOT SMS alert failed for ${params.companyName}: ${smsResult.error}`, TAG);
+      }
+    }).catch(err => {
+      log(`HOT SMS alert error for ${params.companyName}: ${err.message}`, TAG);
+    });
+  }
+}
+
+async function handleNotInterestedReply(params: {
+  clientId: string;
+  companyId: string;
+  companyName: string;
+  pipelineId: number;
+  reason: string;
+}): Promise<void> {
+  await db.update(outreachPipeline).set({
+    pipelineStatus: "NOT_INTERESTED",
+    respondedAt: new Date(),
+    respondedVia: "reply_negative",
+    updatedAt: new Date(),
+  }).where(eq(outreachPipeline.id, params.pipelineId));
+
+  const flows = await db.select().from(companyFlows).where(
+    and(
+      eq(companyFlows.clientId, params.clientId),
+      eq(companyFlows.companyId, params.companyId),
+      eq(companyFlows.status, "active"),
+    )
+  );
+
+  for (const flow of flows) {
+    await db.update(companyFlows).set({
+      lastOutcome: "not_relevant",
+      notes: `Auto-suppressed: reply classified NOT_INTERESTED (${params.reason})`,
+      updatedAt: new Date(),
+    }).where(eq(companyFlows.id, flow.id));
+  }
+
+  log(`NOT_INTERESTED suppression applied for ${params.companyName} (pipeline #${params.pipelineId}): ${params.reason}`, TAG);
+}
 
 // IMAP provider presets: derive IMAP host from SMTP host
 function deriveImapHost(smtpHost: string): string | null {
@@ -202,6 +353,12 @@ async function checkRepliesForClient(settings: {
             .set({ replyDetectedAt: new Date() })
             .where(eq(emailSends.id, matchedSend.id));
 
+          // Classify reply content
+          const replyText = msgSubject || "";
+          const replySnippet = replyText ? `Re: ${replyText}`.substring(0, 200) : "";
+          const { classification, reason } = classifyReply(msgSubject, replySnippet);
+          log(`Reply from ${fromAddr} for ${matchedSend.companyName || matchedSend.companyId} classified as ${classification} (${reason})`, TAG);
+
           // Auto-pause the outreach sequence
           const [pipeline] = await db
             .select()
@@ -209,20 +366,47 @@ async function checkRepliesForClient(settings: {
             .where(eq(outreachPipeline.id, matchedSend.outreachPipelineId));
 
           if (pipeline && pipeline.pipelineStatus === "ACTIVE") {
-            await db
-              .update(outreachPipeline)
-              .set({
-                pipelineStatus: "RESPONDED",
-                respondedAt: new Date(),
-                respondedVia: "reply_detected",
-                updatedAt: new Date(),
-              })
-              .where(eq(outreachPipeline.id, pipeline.id));
+            if (classification === "NOT_INTERESTED") {
+              await handleNotInterestedReply({
+                clientId: settings.clientId,
+                companyId: matchedSend.companyId,
+                companyName: matchedSend.companyName || matchedSend.companyId,
+                pipelineId: pipeline.id,
+                reason,
+              });
+            } else {
+              await db
+                .update(outreachPipeline)
+                .set({
+                  pipelineStatus: "RESPONDED",
+                  respondedAt: new Date(),
+                  respondedVia: "reply_detected",
+                  updatedAt: new Date(),
+                })
+                .where(eq(outreachPipeline.id, pipeline.id));
+            }
 
             log(
-              `Reply detected from ${fromAddr} for ${matchedSend.companyName || matchedSend.companyId} (touch ${matchedSend.touchNumber}) — sequence paused`,
+              `Reply detected from ${fromAddr} for ${matchedSend.companyName || matchedSend.companyId} (touch ${matchedSend.touchNumber}) — ${classification === "NOT_INTERESTED" ? "suppressed" : "sequence paused"}`,
               TAG
             );
+          }
+
+          if (classification === "HOT" && pipeline) {
+            try {
+              await handleHotReply({
+                clientId: settings.clientId,
+                companyId: matchedSend.companyId,
+                companyName: matchedSend.companyName || matchedSend.companyId,
+                contactName: matchedSend.contactName || null,
+                contactEmail: fromAddr,
+                replySnippet,
+                emailReplyId: 0,
+                pipelineId: pipeline.id,
+              });
+            } catch (hotErr: any) {
+              log(`HOT handler error for ${matchedSend.companyName}: ${hotErr.message}`, TAG);
+            }
           }
 
           repliesFound++;
