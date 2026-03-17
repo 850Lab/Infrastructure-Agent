@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, RefreshCw, ChevronDown, ChevronUp,
   Mail, Phone, Search, AlertTriangle, TrendingUp, Zap, Target, Shield,
+  Microscope, ArrowRightLeft, Ban, Users, Globe,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -40,6 +41,11 @@ interface FlowScore {
   warmStage: string | null;
   verifiedQualityScore: number | null;
   lastOutcome: string | null;
+  researchBlockerReasons: string | null;
+  researchConvertedFrom: string | null;
+  deepEnrichmentRan: boolean;
+  discoveredContacts: string | null;
+  phonePaths: string | null;
 }
 
 interface ScoresResponse {
@@ -175,8 +181,73 @@ function FlowCard({ flow }: { flow: FlowScore }) {
             </div>
           )}
 
+          {flow.researchConvertedFrom && (
+            <div className="flex items-center gap-1.5 text-[10px] p-2 rounded" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15`, color: TEXT }}>
+              <ArrowRightLeft className="w-3 h-3" style={{ color: EMERALD }} />
+              <span className="font-bold" style={{ color: EMERALD }}>Converted from research_more</span>
+            </div>
+          )}
+
+          {flow.researchBlockerReasons && (() => {
+            try {
+              const reasons: string[] = JSON.parse(flow.researchBlockerReasons);
+              if (reasons.length === 0) return null;
+              return (
+                <div className="p-2 rounded space-y-1" style={{ background: `${AMBER}06`, border: `1px solid ${AMBER}15` }}>
+                  <div className="text-[9px] font-bold uppercase" style={{ color: AMBER }}>Research Blockers</div>
+                  {reasons.map((r, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: TEXT }}>
+                      <Ban className="w-3 h-3 shrink-0" style={{ color: AMBER }} />
+                      {BLOCKER_LABELS[r] || r}
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {flow.discoveredContacts && (() => {
+            try {
+              const contacts = JSON.parse(flow.discoveredContacts);
+              if (!Array.isArray(contacts) || contacts.length === 0) return null;
+              return (
+                <div className="p-2 rounded space-y-1" style={{ background: `${PURPLE}06`, border: `1px solid ${PURPLE}15` }}>
+                  <div className="text-[9px] font-bold uppercase" style={{ color: PURPLE }}>Discovered Contacts</div>
+                  {contacts.map((c: any, i: number) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: TEXT }}>
+                      <Users className="w-3 h-3 shrink-0" style={{ color: PURPLE }} />
+                      <span className="font-medium">{c.name}</span>
+                      <span style={{ color: MUTED }}>- {c.title}</span>
+                      {c.email && <span style={{ color: BLUE }}>{c.email}</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {flow.phonePaths && (() => {
+            try {
+              const paths = JSON.parse(flow.phonePaths);
+              if (!Array.isArray(paths) || paths.length === 0) return null;
+              return (
+                <div className="p-2 rounded space-y-1" style={{ background: `${EMERALD}06`, border: `1px solid ${EMERALD}15` }}>
+                  <div className="text-[9px] font-bold uppercase" style={{ color: EMERALD }}>Phone Paths</div>
+                  {paths.map((p: any, i: number) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: TEXT }}>
+                      <Phone className="w-3 h-3 shrink-0" style={{ color: EMERALD }} />
+                      <span className="font-medium">{p.label}</span>
+                      <span style={{ color: MUTED }}>{p.phone}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
           <div className="flex items-center gap-2 text-[9px]" style={{ color: MUTED }}>
             <span>Status: {flow.enrichmentStatus || "pending"}</span>
+            {flow.deepEnrichmentRan && <span>| Deep Enriched</span>}
             {flow.lastEnrichedAt && <span>| Scored: {new Date(flow.lastEnrichedAt).toLocaleDateString()}</span>}
           </div>
         </div>
@@ -185,12 +256,39 @@ function FlowCard({ flow }: { flow: FlowScore }) {
   );
 }
 
+const BLOCKER_LABELS: Record<string, string> = {
+  no_website: "No website found",
+  no_usable_domain: "Could not extract domain from website",
+  website_unreachable: "Website unreachable or offline",
+  no_named_contacts: "No named contacts discovered",
+  no_contact_info_found: "No email or phone found anywhere",
+  phone_only_no_email: "Phone found but no email addresses",
+  generic_email_only: "Only generic emails (info@, office@)",
+  contact_form_only: "Only a contact form — no direct emails",
+  weak_operational_evidence: "Minimal operational evidence on site",
+};
+
+interface ResearchStatus {
+  totalActive: number;
+  researchBacklog: number;
+  convertedToEmail: number;
+  convertedToCall: number;
+  totalConverted: number;
+  deepEnriched: number;
+  blocked: number;
+  blockerBreakdown: Record<string, number>;
+}
+
 export default function LeadIntelligencePage() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("all");
 
   const { data, isLoading } = useQuery<ScoresResponse>({
     queryKey: ["/api/lead-intelligence/scores"],
+  });
+
+  const { data: researchStatus } = useQuery<ResearchStatus>({
+    queryKey: ["/api/research-engine/status"],
   });
 
   const scoreMutation = useMutation({
@@ -204,6 +302,24 @@ export default function LeadIntelligencePage() {
     },
     onError: (err: any) => {
       toast({ title: "Scoring failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const researchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/research-engine/run");
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/research-engine/status"] });
+      toast({
+        title: "Research engine complete",
+        description: `${result.totalProcessed} processed: ${result.convertedToEmail} email, ${result.convertedToCall} call, ${result.remainingResearch} still researching`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Research engine failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -273,6 +389,68 @@ export default function LeadIntelligencePage() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {researchStatus && (researchStatus.researchBacklog > 0 || researchStatus.totalConverted > 0) && (
+          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="research-engine-panel">
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
+              <div className="flex items-center gap-2">
+                <Microscope className="w-4 h-4" style={{ color: AMBER }} />
+                <div>
+                  <div className="text-[12px] font-bold" style={{ color: TEXT }}>Research-to-Reachable Engine</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Deep website enrichment converts research_more flows into actionable outreach</div>
+                </div>
+              </div>
+              <Button
+                onClick={() => researchMutation.mutate()}
+                disabled={researchMutation.isPending || researchStatus.researchBacklog === 0}
+                className="gap-1.5 text-[11px]"
+                style={{ background: AMBER }}
+                data-testid="run-research-engine"
+              >
+                {researchMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                Run Deep Enrichment ({researchStatus.researchBacklog})
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-5 gap-3 p-4">
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: AMBER }}>{researchStatus.researchBacklog}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Research Backlog</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: BLUE }}>{researchStatus.convertedToEmail}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Converted to Email</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: EMERALD }}>{researchStatus.convertedToCall}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Converted to Call</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: PURPLE }}>{researchStatus.deepEnriched}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Deep Enriched</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: ERROR }}>{researchStatus.blocked}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Blocked</div>
+              </div>
+            </div>
+
+            {Object.keys(researchStatus.blockerBreakdown).length > 0 && (
+              <div className="px-4 pb-4">
+                <div className="text-[9px] font-bold uppercase mb-2" style={{ color: AMBER }}>Blocker Breakdown</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(researchStatus.blockerBreakdown).sort((a, b) => b[1] - a[1]).map(([reason, count]) => (
+                    <div key={reason} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ background: `${AMBER}08`, border: `1px solid ${AMBER}20`, color: TEXT }}>
+                      <Ban className="w-3 h-3" style={{ color: AMBER }} />
+                      {BLOCKER_LABELS[reason] || reason}
+                      <span className="font-bold ml-0.5" style={{ color: AMBER }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

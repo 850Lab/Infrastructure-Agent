@@ -2367,6 +2367,11 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         warmStage: companyFlows.warmStage,
         verifiedQualityScore: companyFlows.verifiedQualityScore,
         lastOutcome: companyFlows.lastOutcome,
+        researchBlockerReasons: companyFlows.researchBlockerReasons,
+        researchConvertedFrom: companyFlows.researchConvertedFrom,
+        deepEnrichmentRan: companyFlows.deepEnrichmentRan,
+        discoveredContacts: companyFlows.discoveredContacts,
+        phonePaths: companyFlows.phonePaths,
       }).from(companyFlows)
         .where(and(
           eq(companyFlows.clientId, clientId),
@@ -2417,6 +2422,107 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         .where(and(eq(inferredContacts.companyId, companyId), eq(inferredContacts.clientId, clientId)))
         .orderBy(desc(inferredContacts.createdAt));
       res.json({ contacts });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/research-engine/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const { runResearchEngine } = await import("./research-engine");
+      const result = await runResearchEngine(clientId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Research engine error: ${err.message}`, "research-engine");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/research-engine/enrich/:flowId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const flowId = parseInt(req.params.flowId);
+      if (isNaN(flowId)) return res.status(400).json({ error: "Invalid flow ID" });
+      const [flow] = await db.select({ id: companyFlows.id, clientId: companyFlows.clientId })
+        .from(companyFlows).where(and(eq(companyFlows.id, flowId), eq(companyFlows.clientId, clientId)));
+      if (!flow) return res.status(404).json({ error: "Flow not found" });
+      const { deepEnrichFlow } = await import("./research-engine");
+      const result = await deepEnrichFlow(flowId);
+      if (!result) return res.status(404).json({ error: "Enrichment failed" });
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Research enrich error: ${err.message}`, "research-engine");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/research-engine/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const allActive = await db.select({
+        bestChannel: companyFlows.bestChannel,
+        researchBlockerReasons: companyFlows.researchBlockerReasons,
+        researchConvertedFrom: companyFlows.researchConvertedFrom,
+        deepEnrichmentRan: companyFlows.deepEnrichmentRan,
+        enrichmentStatus: companyFlows.enrichmentStatus,
+      }).from(companyFlows)
+        .where(and(eq(companyFlows.clientId, clientId), eq(companyFlows.status, "active")));
+
+      let researchBacklog = 0;
+      let convertedToEmail = 0;
+      let convertedToCall = 0;
+      let deepEnriched = 0;
+      let blocked = 0;
+      const blockerBreakdown: Record<string, number> = {};
+
+      for (const f of allActive) {
+        if (f.bestChannel === "research_more") researchBacklog++;
+        if (f.researchConvertedFrom === "research_more") {
+          if (f.bestChannel === "email") convertedToEmail++;
+          else if (f.bestChannel === "call") convertedToCall++;
+        }
+        if (f.deepEnrichmentRan) deepEnriched++;
+        if (f.enrichmentStatus === "research_blocked") blocked++;
+        if (f.researchBlockerReasons) {
+          try {
+            const reasons = JSON.parse(f.researchBlockerReasons);
+            for (const r of reasons) {
+              blockerBreakdown[r] = (blockerBreakdown[r] || 0) + 1;
+            }
+          } catch {}
+        }
+      }
+
+      res.json({
+        totalActive: allActive.length,
+        researchBacklog,
+        convertedToEmail,
+        convertedToCall,
+        totalConverted: convertedToEmail + convertedToCall,
+        deepEnriched,
+        blocked,
+        blockerBreakdown,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
