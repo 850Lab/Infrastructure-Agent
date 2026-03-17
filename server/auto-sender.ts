@@ -9,10 +9,10 @@ const AUTO_SEND_STARTUP_DELAY = 90 * 1000;
 
 const TOUCH_SCHEDULE = [
   { day: 1, type: "call" as const },
-  { day: 3, type: "email" as const },
-  { day: 5, type: "call" as const },
-  { day: 7, type: "email" as const },
-  { day: 10, type: "call" as const },
+  { day: 2, type: "email" as const },
+  { day: 3, type: "call" as const },
+  { day: 5, type: "email" as const },
+  { day: 8, type: "call" as const },
   { day: 14, type: "email" as const },
 ];
 

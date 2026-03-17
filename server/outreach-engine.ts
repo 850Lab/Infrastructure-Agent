@@ -15,10 +15,10 @@ const openai = new OpenAI({
 
 const TOUCH_SCHEDULE = [
   { day: 1, type: "call" as const, label: "Qualification Call" },
-  { day: 3, type: "email" as const, label: "Follow-up Email" },
-  { day: 5, type: "call" as const, label: "Follow-up Call" },
-  { day: 7, type: "email" as const, label: "Check-in Email" },
-  { day: 10, type: "call" as const, label: "Final Call" },
+  { day: 2, type: "email" as const, label: "48h Follow-up Email" },
+  { day: 3, type: "call" as const, label: "Follow-up Call" },
+  { day: 5, type: "email" as const, label: "3-day Check-in Email" },
+  { day: 8, type: "call" as const, label: "Final Call" },
   { day: 14, type: "email" as const, label: "Final Email" },
 ];
 
@@ -116,9 +116,9 @@ function generateCallScript(company: CompanyForOutreach, touchNumber: 1 | 3 | 5)
     return `CALL SCRIPT — Touch 1 (Day 1)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. We work with contractors like yours on [VALUE PROP]. Wanted to see if this is something worth a quick conversation about — do you have 2 minutes?"\n\nIf unavailable: Leave brief voicemail with value prop and callback number.`;
   }
   if (touchNumber === 3) {
-    return `CALL SCRIPT — Touch 3 (Day 5)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] again with [COMPANY]. I sent an email a couple days ago about [VALUE PROP] — just wanted to make sure it landed on your radar. Worth a quick chat?"\n\nIf unavailable: Leave voicemail referencing the email.`;
+    return `CALL SCRIPT — Touch 3 (Day 3)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] again with [COMPANY]. I sent an email yesterday about [VALUE PROP] — just wanted to make sure it landed on your radar. Worth a quick chat?"\n\nIf unavailable: Leave voicemail referencing the email.`;
   }
-  return `CALL SCRIPT — Touch 5 FINAL CALL (Day 10)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. I've reached out a couple times about [VALUE PROP]. This is my last call — if there's any interest, I'd love 5 minutes. If not, no hard feelings."\n\nIf unavailable: Leave final voicemail with callback number.`;
+  return `CALL SCRIPT — Touch 5 FINAL CALL (Day 8)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. I've reached out a couple times about [VALUE PROP]. This is my last call — if there's any interest, I'd love 5 minutes. If not, no hard feelings."\n\nIf unavailable: Leave final voicemail with callback number.`;
 }
 
 export async function populateOutreachPipeline(clientId: string): Promise<{ added: number; skipped: number }> {

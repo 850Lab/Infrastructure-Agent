@@ -239,7 +239,7 @@ export function registerEmailRoutes(app: Express) {
       }
 
       const { outreachPipelineId, touchNumber, recipientEmail, recipientName, companyId, companyName } = req.body;
-      if (!outreachPipelineId || !touchNumber || !recipientEmail || !companyId) {
+      if (!outreachPipelineId || touchNumber === undefined || touchNumber === null || !recipientEmail || !companyId) {
         res.status(400).json({ error: "Missing required fields" });
         return;
       }

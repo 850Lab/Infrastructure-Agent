@@ -14,7 +14,7 @@ import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { db } from "./db";
 import { manualLeads, clients, companyFlows, flowAttempts, actionQueue, outreachPipeline, targetProfiles, emailSends, emailReplies, twilioRecordings, inboundMessages } from "@shared/schema";
-import { eq, and, gte, lte, inArray, sql, desc, or, asc } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, sql, desc, or, asc, isNotNull } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
@@ -724,6 +724,8 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         completed: 0,
         responded: 0,
         notInterested: 0,
+        hotLeads: 0,
+        warmLeads: 0,
       };
       for (const item of items) {
         if (item.pipelineStatus === "ACTIVE") stats.active++;
@@ -731,6 +733,32 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         else if (item.pipelineStatus === "RESPONDED") stats.responded++;
         else if (item.pipelineStatus === "NOT_INTERESTED") stats.notInterested++;
       }
+
+      const { actionQueue, companyFlows } = await import("@shared/schema");
+      const [hotResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(actionQueue)
+        .where(
+          and(
+            eq(actionQueue.clientId, clientId),
+            eq(actionQueue.taskType, "hot_reply_followup"),
+            eq(actionQueue.status, "pending"),
+          )
+        );
+      stats.hotLeads = hotResult?.count || 0;
+
+      const [warmResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(companyFlows)
+        .where(
+          and(
+            eq(companyFlows.clientId, clientId),
+            eq(companyFlows.status, "active"),
+            isNotNull(companyFlows.warmStage),
+          )
+        );
+      stats.warmLeads = warmResult?.count || 0;
+
       res.json({ stats, items });
     } catch (err: any) {
       log(`Outreach pipeline fetch error: ${err.message}`, "outreach-engine");
