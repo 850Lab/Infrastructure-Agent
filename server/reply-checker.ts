@@ -27,17 +27,22 @@ const HOT_PHRASES = [
 
 type ReplyClassification = "HOT" | "NOT_INTERESTED" | "NEUTRAL";
 
+function phraseMatch(text: string, phrase: string): boolean {
+  const pattern = new RegExp(`(?:^|\\s)${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`);
+  return pattern.test(` ${text} `);
+}
+
 function classifyReply(subject: string, snippet: string): { classification: ReplyClassification; reason: string } {
   const raw = `${subject} ${snippet}`.toLowerCase().replace(/[^a-z0-9\s']/g, " ").replace(/\s+/g, " ").trim();
 
   for (const phrase of NEGATIVE_PHRASES) {
-    if (raw.includes(phrase)) {
+    if (phraseMatch(raw, phrase)) {
       return { classification: "NOT_INTERESTED", reason: `negative phrase: "${phrase}"` };
     }
   }
 
   for (const phrase of HOT_PHRASES) {
-    if (raw.includes(phrase)) {
+    if (phraseMatch(raw, phrase)) {
       return { classification: "HOT", reason: `positive phrase: "${phrase}"` };
     }
   }
