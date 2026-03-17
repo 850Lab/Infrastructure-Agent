@@ -490,6 +490,17 @@ export const companyFlows = pgTable("company_flows", {
   transcriptSummary: text("transcript_summary"),
   warmStage: text("warm_stage"),
   warmStageUpdatedAt: timestamp("warm_stage_updated_at"),
+  revenuePotentialScore: integer("revenue_potential_score"),
+  reachabilityScore: integer("reachability_score"),
+  heatRelevanceScore: integer("heat_relevance_score"),
+  contactConfidenceScore: integer("contact_confidence_score"),
+  compositeScore: integer("composite_score"),
+  bestChannel: text("best_channel"),
+  routingReason: text("routing_reason"),
+  bestContactPath: text("best_contact_path"),
+  scoringSignals: text("scoring_signals"),
+  enrichmentStatus: text("enrichment_status").default("pending"),
+  lastEnrichedAt: timestamp("last_enriched_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -579,3 +590,24 @@ export const inboundMessages = pgTable("inbound_messages", {
 export const insertInboundMessageSchema = createInsertSchema(inboundMessages).omit({ id: true, createdAt: true });
 export type InsertInboundMessage = z.infer<typeof insertInboundMessageSchema>;
 export type InboundMessage = typeof inboundMessages.$inferSelect;
+
+export const inferredContacts = pgTable("inferred_contacts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  companyName: text("company_name"),
+  domain: text("domain"),
+  inferredEmail: text("inferred_email").notNull(),
+  pattern: text("pattern"),
+  confidence: text("confidence").notNull().default("low"),
+  source: text("source"),
+  personName: text("person_name"),
+  personTitle: text("person_title"),
+  verified: boolean("verified").default(false),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertInferredContactSchema = createInsertSchema(inferredContacts).omit({ id: true, createdAt: true });
+export type InsertInferredContact = z.infer<typeof insertInferredContactSchema>;
+export type InferredContact = typeof inferredContacts.$inferSelect;

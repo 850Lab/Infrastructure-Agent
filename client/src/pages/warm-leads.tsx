@@ -63,6 +63,15 @@ interface WarmLead {
   state: string | null;
   industry: string | null;
   attemptCount: number;
+  compositeScore: number | null;
+  revenuePotentialScore: number | null;
+  reachabilityScore: number | null;
+  heatRelevanceScore: number | null;
+  contactConfidenceScore: number | null;
+  bestChannel: string | null;
+  routingReason: string | null;
+  bestContactPath: string | null;
+  enrichmentStatus: string | null;
 }
 
 interface TimelineEvent {
@@ -283,7 +292,21 @@ function WarmLeadRow({ lead }: { lead: WarmLead }) {
               </div>
             )}
           </div>
-          {lead.verifiedQualityScore !== null && (
+          {lead.compositeScore !== null && (
+            <div className="flex items-center gap-1" data-testid={`composite-score-${lead.flowId}`}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold" style={{
+                background: lead.compositeScore >= 70 ? EMERALD : lead.compositeScore >= 40 ? AMBER : ERROR,
+                color: "white",
+              }}>{lead.compositeScore}</div>
+              {lead.bestChannel && (
+                <div className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{
+                  background: lead.bestChannel === "email" ? `${BLUE}15` : lead.bestChannel === "call" ? `${EMERALD}15` : `${AMBER}15`,
+                  color: lead.bestChannel === "email" ? BLUE : lead.bestChannel === "call" ? EMERALD : AMBER,
+                }}>{lead.bestChannel === "email" ? "Email" : lead.bestChannel === "call" ? "Call" : lead.bestChannel === "research_more" ? "Research" : "N/A"}</div>
+              )}
+            </div>
+          )}
+          {lead.compositeScore === null && lead.verifiedQualityScore !== null && (
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold" style={{
               background: lead.verifiedQualityScore >= 7 ? EMERALD : lead.verifiedQualityScore >= 4 ? AMBER : ERROR,
               color: "white",
@@ -340,6 +363,38 @@ function WarmLeadRow({ lead }: { lead: WarmLead }) {
               )}
             </div>
           </div>
+
+          {lead.compositeScore !== null && (
+            <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }} data-testid={`intelligence-breakdown-${lead.flowId}`}>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: MUTED }}>Lead Intelligence</div>
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {[
+                  { label: "Revenue", value: lead.revenuePotentialScore, color: EMERALD },
+                  { label: "Reachability", value: lead.reachabilityScore, color: BLUE },
+                  { label: "Heat Relevance", value: lead.heatRelevanceScore, color: "#F97316" },
+                  { label: "Contact", value: lead.contactConfidenceScore, color: PURPLE },
+                ].map((s) => (
+                  <div key={s.label} className="text-center">
+                    <div className="text-[9px] font-medium mb-0.5" style={{ color: MUTED }}>{s.label}</div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: `${s.color}15` }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${s.value || 0}%`, background: s.color }} />
+                    </div>
+                    <div className="text-[10px] font-bold mt-0.5" style={{ color: s.color }}>{s.value ?? "--"}</div>
+                  </div>
+                ))}
+              </div>
+              {lead.routingReason && (
+                <div className="text-[10px] mt-1 p-2 rounded" style={{ background: `${BLUE}06`, border: `1px solid ${BLUE}15`, color: TEXT }}>
+                  <span className="font-bold" style={{ color: BLUE }}>Routing: </span>{lead.routingReason}
+                </div>
+              )}
+              {lead.bestContactPath && (
+                <div className="text-[10px] mt-1" style={{ color: MUTED }}>
+                  <span className="font-semibold">Path:</span> {lead.bestContactPath}
+                </div>
+              )}
+            </div>
+          )}
 
           {(lead.transcriptSummary || lead.buyingSignals.length > 0 || lead.objections.length > 0) && (
             <div className="rounded-lg p-3" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>

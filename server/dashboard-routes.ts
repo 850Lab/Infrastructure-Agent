@@ -21,6 +21,8 @@ import { gatherCompanyIntel } from "./web-intel";
 import { storage } from "./storage";
 import { getTimeWeight, getSignalAge, getDecayConstant } from "./time-weight";
 import { analyzeLeadQuality, extractContactInfo } from "./openai";
+import { scoreAndUpdateFlow, scoreAllFlowsForClient, scoreCompany } from "./lead-intelligence";
+import { inferredContacts } from "@shared/schema";
 
 export { authMiddleware } from "./auth";
 
@@ -2298,6 +2300,128 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/lead-intelligence/score-all", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const result = await scoreAllFlowsForClient(clientId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Score-all error: ${err.message}`, "lead-intelligence");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/lead-intelligence/score/:flowId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const flowId = parseInt(req.params.flowId);
+      if (isNaN(flowId)) return res.status(400).json({ error: "Invalid flow ID" });
+      const [flow] = await db.select({ id: companyFlows.id, clientId: companyFlows.clientId })
+        .from(companyFlows).where(and(eq(companyFlows.id, flowId), eq(companyFlows.clientId, clientId)));
+      if (!flow) return res.status(404).json({ error: "Flow not found" });
+      const result = await scoreAndUpdateFlow(flowId);
+      if (!result) return res.status(404).json({ error: "Scoring failed" });
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Score flow error: ${err.message}`, "lead-intelligence");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lead-intelligence/scores", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const flows = await db.select({
+        id: companyFlows.id,
+        companyId: companyFlows.companyId,
+        companyName: companyFlows.companyName,
+        contactName: companyFlows.contactName,
+        status: companyFlows.status,
+        revenuePotentialScore: companyFlows.revenuePotentialScore,
+        reachabilityScore: companyFlows.reachabilityScore,
+        heatRelevanceScore: companyFlows.heatRelevanceScore,
+        contactConfidenceScore: companyFlows.contactConfidenceScore,
+        compositeScore: companyFlows.compositeScore,
+        bestChannel: companyFlows.bestChannel,
+        routingReason: companyFlows.routingReason,
+        bestContactPath: companyFlows.bestContactPath,
+        scoringSignals: companyFlows.scoringSignals,
+        enrichmentStatus: companyFlows.enrichmentStatus,
+        lastEnrichedAt: companyFlows.lastEnrichedAt,
+        warmStage: companyFlows.warmStage,
+        verifiedQualityScore: companyFlows.verifiedQualityScore,
+        lastOutcome: companyFlows.lastOutcome,
+      }).from(companyFlows)
+        .where(and(
+          eq(companyFlows.clientId, clientId),
+          eq(companyFlows.status, "active"),
+        ))
+        .orderBy(desc(companyFlows.compositeScore));
+
+      const scored = flows.filter(f => f.compositeScore !== null);
+      const unscored = flows.filter(f => f.compositeScore === null);
+
+      const channelBreakdown = { email: 0, call: 0, research_more: 0, discard: 0 };
+      for (const f of scored) {
+        const ch = f.bestChannel as keyof typeof channelBreakdown;
+        if (ch && channelBreakdown[ch] !== undefined) channelBreakdown[ch]++;
+      }
+
+      const avgComposite = scored.length > 0
+        ? Math.round(scored.reduce((s, f) => s + (f.compositeScore || 0), 0) / scored.length)
+        : 0;
+
+      res.json({
+        totalFlows: flows.length,
+        scored: scored.length,
+        unscored: unscored.length,
+        avgCompositeScore: avgComposite,
+        channelBreakdown,
+        flows: flows.map(f => ({
+          ...f,
+          scoringSignals: f.scoringSignals ? JSON.parse(f.scoringSignals) : null,
+        })),
+      });
+    } catch (err: any) {
+      log(`Lead intelligence scores error: ${err.message}`, "lead-intelligence");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lead-intelligence/inferred/:companyId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const companyId = req.params.companyId;
+      const contacts = await db.select().from(inferredContacts)
+        .where(and(eq(inferredContacts.companyId, companyId), eq(inferredContacts.clientId, clientId)))
+        .orderBy(desc(inferredContacts.createdAt));
+      res.json({ contacts });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   const WARM_LEAD_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer", "callback"];
   const WARM_STAGES = ["initial_interest", "proposal_sent", "meeting_scheduled", "negotiating", "verbal_commit", "closed_won", "closed_lost"];
 
@@ -2370,6 +2494,15 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           state: pipeline?.state || null,
           industry: pipeline?.industry || null,
           attemptCount: f.attemptCount,
+          compositeScore: f.compositeScore,
+          revenuePotentialScore: f.revenuePotentialScore,
+          reachabilityScore: f.reachabilityScore,
+          heatRelevanceScore: f.heatRelevanceScore,
+          contactConfidenceScore: f.contactConfidenceScore,
+          bestChannel: f.bestChannel,
+          routingReason: f.routingReason,
+          bestContactPath: f.bestContactPath,
+          enrichmentStatus: f.enrichmentStatus,
         };
       });
 

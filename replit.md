@@ -1,7 +1,7 @@
 # Texas Automation Systems — Lead Engine Command Center
 
 ## Overview
-The "Lead Engine Command Center" is a multi-tenant B2B lead generation and call management system. Its purpose is to automate lead processes, manage call operations, and deliver real-time insights to optimize lead management and sales outreach. Key capabilities include real-time data visualization, AI-powered lead enrichment, dynamic playbook generation, and comprehensive analytics. The system targets industrial contractors with plans for broader industry expansion, providing a central dashboard for monitoring and managing lead generation and sales activities.
+The "Lead Engine Command Center" is a multi-tenant B2B lead generation and call management system designed to automate lead processes, manage call operations, and provide real-time insights to optimize lead management and sales outreach. It features real-time data visualization, AI-powered lead enrichment, dynamic playbook generation, and comprehensive analytics. The system's vision is to become the central dashboard for industrial contractors to monitor and manage their lead generation and sales activities, with ambitions for broader industry expansion.
 
 ## User Preferences
 I prefer iterative development with clear communication at each stage.
@@ -12,81 +12,48 @@ I want the agent to prioritize high-impact features and focus on delivering tang
 I prefer to use the web dashboard for daily operations and monitoring, with CLI tools primarily for setup and troubleshooting.
 
 ## System Architecture
-The system utilizes a micro-frontend-like architecture with a clear separation between frontend and backend, supporting multi-tenancy, role-based access control, and client data isolation.
+The system employs a micro-frontend-like architecture, ensuring a clear separation between frontend and backend. It supports multi-tenancy, robust role-based access control, and strict client data isolation.
 
 ### UI/UX Decisions
-The frontend is a React application built with Shadcn UI and Framer Motion, featuring a modern design with a white background, dark text, and emerald green accents. The main dashboard is a **Command Center** layout with 5 functional panels: Revenue Opportunities (hot leads, calls due, overdue follow-ups, pipeline value), Pipeline Snapshot (visual funnel bar), Activity Momentum (daily metrics + streak), AI Recommendations (contextual next-actions), and Hot Leads (warm companies list). Additional panels include Automation Health (engine status, untouched leads, outreach scripts) and Quick Actions (shortcuts to Focus Mode, Follow-ups, Pipeline, Add Company). SSE is used for real-time run status tracking. Command Center data is served by `/api/command-center`. A public landing page/product tour is available at `/site`.
+The frontend is a modern React application utilizing Shadcn UI and Framer Motion. It features a clean design with a white background, dark text, and emerald green accents. The central "Command Center" dashboard integrates five key panels: Revenue Opportunities, Pipeline Snapshot, Activity Momentum, AI Recommendations, and Hot Leads. Additional panels include Automation Health and Quick Actions. Real-time updates are handled via Server-Sent Events (SSE). A public landing page/product tour is available at `/site`.
 
 ### Technical Implementations
-The **backend** is implemented with Express and TypeScript, while the **frontend** is an 11-page React application optimized with virtualization and React Query caching. **PostgreSQL** handles various data, including webhook logs, user accounts, client registry, and system-specific tables. **Airtable** serves as the primary data persistence layer for business logic, with JSON file fallbacks. **Authentication** is database-backed and token-based. **Real-time communication** leverages SSE with an in-memory EventBus. A daily orchestrator manages lead generation processes.
+The backend is built with Express and TypeScript, while the frontend is an 11-page React application optimized with virtualization and React Query caching. PostgreSQL is used for core system data such as webhook logs, user accounts, and client registries. Airtable serves as the primary data persistence layer for business logic, with JSON file fallbacks. Authentication is database-backed and token-based. Real-time communication relies on SSE with an in-memory EventBus. A daily orchestrator manages lead generation processes.
 
-Key features include:
--   **AI-Powered Engines**: Lead Engine, DM Enrichment, Playbook Generator, Call Outcome Engine, Briefing Engine, Closed-Loop Sales Learning System, DM Decision Authority Learning Loop, Web Intel Scraper, and Machine Alerts.
--   **Outreach Management**: Unified Outreach Hub for email and call execution, configurable 7-Touch Outreach Pipeline (Touch 0: first-touch email "Quick question" sent immediately on pipeline creation, then existing 6-touch sequence starting day 1), Per-Client Email Sending & Tracking, Email Performance Analytics, Template Customization, and Reply Detection with deterministic classification (HOT/NOT_INTERESTED/NEUTRAL). Daily outreach cap configurable via `DAILY_OUTREACH_CAP` env var (default 100, was hardcoded 25). Schema fields: `touch_0_email` (text) and `first_touch_sent` (boolean, default false) on `outreach_pipeline` table. **Reply Classification** (`server/reply-checker.ts`): Negative phrases override HOT. NOT_INTERESTED sets `pipelineStatus="NOT_INTERESTED"` + suppresses active company_flows. HOT creates `hot_reply_followup` action_queue task (deduped within 24h), sets warmStage on company_flows, and fires non-blocking Twilio SMS alert to `INTERNAL_HOT_LEAD_SMS_TO` env var. **Email Providers** (`server/email-service.ts`, `server/email-providers.ts`): Supports both SMTP (nodemailer) and Resend API. Provider auto-detected from `smtpHost` field. Resend provider uses `RESEND_API_KEY` env var; does not require SMTP credentials. All three send paths (outreach, test, proposal) support Resend.
--   **Call Processing**: Call Recording + Transcription Pipeline with automatic follow-up date extraction. **Twilio Recording Sync** (`POST /api/twilio/sync-recordings`) pulls all recordings directly from Twilio API, downloads audio, transcribes via Whisper, runs containment analysis + lead quality scoring, and matches to companies via phone lookup + transcript keyword matching. Handles dual-channel recordings and child call leg resolution for the external call center (CoolingTrailerScript). **Deep Analysis** (`POST /api/warm-leads/deep-analysis`) mines Airtable Calls records for contact info extraction via GPT-4o.
--   **Workflow & Productivity**: Features like Run Diff, Revert Last Run, Opportunities Pipeline, Machine Feedback, Rank Explainability Layer, Machine Identity & Settings, First-Run Cinematic, Onboarding Wizard, Admin Platform. **Focus Mode** (`/machine/focus`) provides an execution cockpit for parallel outreach flows with an **Outcome Explanation Layer** that shows machine decision details (system action, why chosen, state changes, next action) after each outcome is logged. **Today Page** (`/machine/today`) is an execution-first Action Dashboard with a collapsible **KPI Scoreboard** showing 5-day funnel, 7-day conversion rates, and 30-day pipeline metrics with AI interpretation. **Airtable Write-Back** (`server/airtable-writeback.ts`) syncs flow attempt states to Airtable.
--   **Data Quality & Learning**: Targeting Accuracy, Query Generation Performance Tracking, Time-Decay Weighting, Authority Trend Tracking, Cross-Client Learning, DM Status Classification, DM Recovery Queue, and Information Ceiling Detection.
--   **Production Safety**: Includes React Error Boundaries, Process Guards, Concurrency Guards, Rate Limit Handling, and Fetch Timeouts.
--   **Compliance Pages**: Public `/privacy` and `/terms` pages.
--   **Company Detail / Relationship Control Panel** (`/machine/company/:id`): Provides full account mission control with sections for Company Summary, Target Roles, Contacts/Decision Makers, Flow Progress, Timeline, Notes & Intel, Next Best Action, and Quick Actions.
--   **Queue Pages**: Call Queue (`/machine/call-queue`), Email Queue (`/machine/email-queue`), LinkedIn Queue (`/machine/linkedin-queue`) display action queue data.
--   **Contacts/Lead Management**: Includes a redesigned contacts page with an Add Lead form, per-company Enrich button, search/filter, and expandable detail rows.
--   **My Leads Page** (`/machine/my-leads`): Dedicated page for manually added leads with tool access for call logging, playbooks, enrichment, and proposal creation.
+Key system features include:
+-   **AI-Powered Engines**: Modules for lead generation, DM enrichment, playbook generation, call outcome analysis, briefing, closed-loop sales learning, DM decision authority learning, web scraping, and machine alerts.
+-   **Outreach Management**: A unified hub for email and call execution, supporting a configurable 7-Touch Outreach Pipeline, per-client email sending/tracking, performance analytics, template customization, and AI-driven reply detection (HOT/NOT_INTERESTED/NEUTRAL). Supports both SMTP (Nodemailer) and Resend API for email delivery.
+-   **Call Processing**: Includes call recording, transcription, and AI-powered analysis for follow-up date extraction, containment analysis, and lead quality scoring. Twilio Recording Sync pulls and processes recordings, matching them to companies. Deep analysis extracts contact info from Airtable call records using GPT-4o.
+-   **Workflow & Productivity**: Features like Focus Mode for parallel outreach, an Outcome Explanation Layer providing AI decision details, and a Today Page (Action Dashboard) with a KPI Scoreboard. Airtable write-back functionality syncs flow attempt states.
+-   **Data Quality & Learning**: Mechanisms for targeting accuracy, query generation performance tracking, time-decay weighting, authority trend tracking, cross-client learning, DM status classification, DM recovery, and information ceiling detection.
+-   **Production Safety**: Implements React Error Boundaries, Process/Concurrency Guards, Rate Limit Handling, and Fetch Timeouts.
+-   **Compliance**: Public `/privacy` and `/terms` pages are provided.
+-   **Company Detail / Relationship Control Panel**: A comprehensive view for managing individual company interactions, including flow progress, timeline, notes, and next best actions.
+-   **Queue Pages**: Dedicated pages for Call, Email, and LinkedIn action queues.
+-   **Contacts/Lead Management**: Enhanced contacts page with lead addition, enrichment, search/filter, and detailed views.
+-   **My Leads Page**: A dedicated page for manually added leads with tool access.
 -   **Multi-Campaign Support**: Allows for multiple active campaigns with isolated data and configurable settings.
--   **LNG Relationship Intelligence Engine**: A client-specific feature at `/machine/lng-projects` that generates "Operator Cards" with company intelligence, priority people, and recommended actions, utilizing 6 search angles via Outscraper + GPT-4o analysis.
--   **Warm Leads Dashboard** (`/machine/warm-leads`): Dedicated workspace for managing leads that have shown interest. Features: priority stat cards (overdue follow-ups, meetings today, needs proposal, active deals), stage filter pills, expandable lead rows with deal stage progression bar (Initial Interest → Proposal Sent → Meeting Scheduled → Negotiating → Verbal Commit → Closed Won/Lost), one-click stage advancement, Close Won/Lost buttons, transcript intelligence panel (buying signals, objections, next step), full relationship timeline aggregating flow attempts, emails sent/replied, call recordings, inbound SMS, and note-taking. `warm_stage` column on `company_flows` tracks deal progression. API: `GET /api/warm-leads`, `PATCH /api/warm-leads/:flowId/stage`, `GET /api/warm-leads/:companyId/timeline`, `POST /api/warm-leads/:flowId/notes`.
--   **Targeting Control Panel** (`/machine/targeting`): Operator-controlled lead targeting with Core Filters, Signal Filters, Strictness Controls, Priority Objectives, Required Field toggles, live Target Summary bar, expandable Results Preview with Lead Explanation Layer, Coverage Diagnostics, Saved Target Profiles, and Batch Actions. **Transcript Sync**: "Sync Transcripts" button pulls Airtable call records, maps outcomes (Qualified→interested, Decision Maker→interested, etc.), runs GPT-4o quality analysis on transcripts, writes scores to `company_flows`, and auto-inserts pipeline records. Original Airtable outcome preserved in `outcome_source` column and displayed in UI (shows "Qualified" instead of generic "interested"). **Transcript Quality Override**: Leads scored 3/10 or below auto-downgraded. **Transcript Intelligence**: `analyzeLeadQuality` returns rich data including `summary` (plain English), `buyingSignals` (specific quotes), `objections` (deflections/disqualifiers), `nextStepReason`; stored as JSON in `quality_signals` column and `transcript_summary` column on `company_flows`. Targeting expanded view shows "Transcript Intelligence" panel with buying signals (green), objections (red), and recommended next step (blue). **Lead Intelligence API**: `GET /api/targeting/lead-intelligence` aggregates patterns across all analyzed transcripts — top buying signals, top objections, hot/warm/cold breakdown. **Inbound SMS**: Webhook at `/api/twilio/webhook/sms` receives text messages, matches sender to pipeline phone numbers, updates flow outcome to "replied", stores in `inbound_messages` table. API: `GET /api/twilio/inbound-messages`, `PATCH /api/twilio/inbound-messages/:id/read`.
+-   **LNG Relationship Intelligence Engine**: A client-specific feature generating "Operator Cards" with company intelligence and recommended actions through Outscraper and GPT-4o.
+-   **Warm Leads Dashboard**: A dedicated workspace for managing interested leads, featuring priority stats, stage filtering, deal stage progression, one-click stage advancement, and a transcript intelligence panel with buying signals, objections, and next steps.
+-   **Targeting Control Panel**: Provides operator-controlled lead targeting with filters, strictness controls, priority objectives, live target summaries, and an explanation layer for lead results. Includes transcript synchronization, AI-powered quality override, and lead intelligence aggregation. Inbound SMS webhook processes text messages, updates flow outcomes, and stores messages.
 
 ## External Dependencies
 -   **Airtable**: Primary data store for business logic.
--   **OpenAI**: Used for Whisper (audio transcription), GPT (GPT-4o) for containment analysis, web crawling, DM fit scoring, and playbook generation.
+-   **OpenAI**: Utilized for Whisper (audio transcription), GPT (GPT-4o) for various AI analyses including containment, web crawling, DM fit scoring, and playbook generation.
 -   **Make.com**: Integrated for scenario auditing and blueprint management.
 -   **Apollo.io**: Used for decision-maker enrichment and data acquisition.
--   **Outscraper**: Utilized for Google Maps searches and website lookup services.
--   **HubSpot**: Per-client OAuth integration for syncing call outcomes, DMs, qualified deals, and companies. Optional sync for proposals.
--   **Twilio**: Provides click-to-call, SMS, automatic call recording with AI intelligence pipeline, and real-time call coaching.
+-   **Outscraper**: Leveraged for Google Maps searches and website lookup services.
+-   **HubSpot**: Provides per-client OAuth integration for syncing call outcomes, DMs, qualified deals, and companies.
+-   **Twilio**: Supplies click-to-call, SMS, automatic call recording with an AI intelligence pipeline, and real-time call coaching capabilities.
 -   **PostgreSQL**: Stores webhook logs, user accounts, client registry, and various system-specific data tables.
 
-## Migration Documentation
-Project documentation for Git + Cursor migration lives in `/docs/`:
--   `system-architecture.md` — Architecture diagrams, data flows, server file organization
--   `system-dependencies.md` — All env vars, external systems, Airtable tables
--   `potential-cleanup.md` — Dead code report (safe deletions vs. verify-first items)
--   `.gitignore` — Configured to exclude node_modules, dist, .env, Replit-specific files
--   `README.md` — Full project overview, setup instructions, API endpoints
+## Lead Intelligence Layer
+The platform includes a multi-signal lead intelligence scoring engine (`server/lead-intelligence.ts`) that evaluates every company flow across four dimensions:
+-   **Revenue Potential** (30% weight): Company size, industry keywords, outdoor crew indicators
+-   **Heat Relevance** (30% weight): Gulf Coast geography, industrial/heat-related industry match
+-   **Reachability** (25% weight): Direct email, phone, website, DM status availability
+-   **Contact Confidence** (15% weight): Named DMs, verified emails, title authority
 
-## Production Audit (Completed)
-Audit performed across all 8 phases. Key fixes applied:
-- **Focus Mode queue advancement**: Removed index-based advancement after outcome logging. Queue re-fetch naturally advances since completed actions are removed from DB. "Continue to Next" just clears explanation overlay. Removed broken "Stay Here" button.
-- **Safe index clamping**: `safeIndex = Math.min(currentIndex, actions.length - 1)` prevents out-of-bounds access.
-- **Explanation panel navigation**: `companyId` stored in `explanationData` so Company Detail button navigates to correct company even after queue re-fetches.
-- **Session complete detection**: `isSessionComplete = totalActions === 0 && totalDone > 0` replaces index-based check. Empty queue check (`totalDone === 0`) renders first so session summary can display.
-- **stateChanges accuracy**: "Next task queued" only shown for active/paused flows. Removed always-true "Airtable company status updated". Now shows "Attempt #N recorded" instead.
-- **KPI accuracy**: `closedWon30` counts unique companies with `meeting_requested` outcomes (was hardcoded 0). `dmsIdentified` uses Set for unique companies (was counting events). `followupsScheduled` counts only explicit scheduling outcomes (was counting callbackAt-only). Email/LinkedIn KPI uses flowType OR channel for consistency.
-- **Double-click protection**: Synchronous `submitLockRef` prevents duplicate outcome submissions.
+Scores produce a **composite score** (0-100) and **channel routing** decision (email/call/research_more/discard) with auditable reasoning stored as JSON in `scoring_signals`. An `inferred_contacts` table stores email pattern intelligence (first.last@domain, flast@domain, etc.) with confidence labels.
 
-## Not-a-Fit DQ Reason Tagging + Smart Query Retirement
-"Not a Fit" outcome added to Gatekeeper and DM call flows. When selected, a DQ reason picker appears (Residential, Supplier/Distributor, Wrong Service, Too Small, Out of Area, Other). Submitting a reason:
-- Sets the current flow to completed with `not_a_fit` outcome
-- Terminates all other active flows for that company/client
-- Cancels all pending action queue items for that company
-- Writes `Lead_Status = "Disqualified"` to Airtable
-- Tags the source query in Airtable's Search_Queries with `[DQ:reason]`
-- Auto-retires queries where 3+ companies from the same source query are DQ'd
-
-Key files: `focus-mode.tsx` (UI), `flow-engine.ts` (computeNextAction + handleDqQueryFeedback), `airtable-writeback.ts` (mapOutcomeToLeadStatus)
-
-## Live Post-Analysis Updates (Next Action + AI Notes)
-After a call recording is transcribed and analyzed, the Explanation Screen updates live:
-- **Next Action card**: If the AI extracts a follow-up date from the transcript, the Next Action card transitions from green to purple with a "LIVE" badge and shows the AI-updated recommendation. The flow's `callbackAt` and `nextAction` are also updated in the database.
-- **AI Notes section**: A new card appears below the recording section showing AI-extracted insights (follow-up dates, authority issues, detected problems) parsed from the transcript analysis.
-- **Lead Quality Scoring**: GPT-4o analyzes each transcript to score lead quality 1-10 (Hot/Warm/Cool/Cold/Not Qualified). Evaluates need, budget signals, timeline, fit, engagement, and authority. Shows as a color-coded card with progress bar and bullet-pointed signals on the Explanation Screen. Stored in `twilio_recordings` table (`lead_quality_score`, `lead_quality_label`, `lead_quality_signals`). Colors: green (8-10), blue (6-7), amber (4-5), red (1-3). Function: `analyzeLeadQuality()` in `openai.ts`.
-- **Backend**: `processRecording` in `twilio-routes.ts` now updates the active `companyFlows` record and `actionQueue` entry after analysis completes. The `recording-by-callsid` endpoint returns `updatedFlowAction`, `updatedFlowNotes`, `updatedFlowDueAt`, and lead quality data alongside recording data.
-- The polling mechanism (every 5s until `processedAt` is set) naturally picks up these updates when analysis completes.
-
-## Coaching Toggle
-Per-client setting to enable/disable live AI coaching during calls. When disabled, calls still get recorded and transcribed post-call (cheaper). Toggle available in Machine Settings under "Call Settings" card.
-- Schema: `clients.coaching_enabled` (boolean, default true)
-- API: `GET/PATCH /api/coaching/status` with `{ enabled: boolean }`
-- Backend: `twilio-routes.ts` checks client setting before attaching media stream; skips `registerCoachingSession` when off
-- UI: Toggle switch in `machine-settings.tsx` with feature list showing what's always included vs coaching-only
+The scoring runs automatically during the daily orchestrator pipeline and can be triggered manually via `POST /api/lead-intelligence/score-all`. The dedicated **Lead Intelligence** page (`/machine/lead-intelligence`) provides a full scoring dashboard with channel filters, score breakdowns, and routing explanations. Warm Leads cards also display composite scores and channel badges inline.

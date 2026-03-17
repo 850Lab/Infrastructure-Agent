@@ -331,6 +331,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
 
     if (clientId) {
       try {
+        const { scoreAllFlowsForClient } = await import("./lead-intelligence");
+        const scoreResult = await scoreAllFlowsForClient(clientId);
+        log(`Lead intelligence: ${scoreResult.scored} flows scored, ${scoreResult.errors} errors`, "daily-web");
+      } catch (e: any) {
+        log(`Lead intelligence scoring failed (non-blocking): ${e.message}`, "daily-web");
+      }
+
+      try {
         const trendCount = await snapshotAuthorityTrends(clientId);
         log(`Authority trend snapshot: ${trendCount} titles recorded`, "daily-web");
       } catch (e: any) {
