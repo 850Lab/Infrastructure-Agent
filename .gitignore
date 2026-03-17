@@ -22,3 +22,5 @@ npm-debug.log*
 
 attached_assets/
 generated-icon.png
+data/run_history.json
+data/run_history.json
