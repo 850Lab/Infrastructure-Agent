@@ -407,6 +407,18 @@ interface DeepResearchStatus {
   blockerBreakdown: Record<string, number>;
 }
 
+interface WebsiteFinderStatus {
+  processed: number;
+  websitesFound: number;
+  stillBlocked: number;
+  notFound: number;
+  candidateStored: number;
+  lowConfidence: number;
+  blockedUrl: number;
+  sourceUnavailable: number;
+  breakdown: Record<string, number>;
+}
+
 export default function LeadIntelligencePage() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("all");
@@ -421,6 +433,10 @@ export default function LeadIntelligencePage() {
 
   const { data: deepResearchStatus } = useQuery<DeepResearchStatus>({
     queryKey: ["/api/deep-research-engine/status"],
+  });
+
+  const { data: websiteFinderStatus } = useQuery<WebsiteFinderStatus>({
+    queryKey: ["/api/website-finder-engine/status"],
   });
 
   const scoreMutation = useMutation({
@@ -471,6 +487,25 @@ export default function LeadIntelligencePage() {
     },
     onError: (err: any) => {
       toast({ title: "Deep research failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const websiteFinderMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/website-finder-engine/run");
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/website-finder-engine/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/research-engine/status"] });
+      toast({
+        title: "Website finder complete",
+        description: result.processed != null ? `${result.websitesFound} found, ${result.stillBlocked} blocked` : "Run finished",
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Website finder failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -602,6 +637,52 @@ export default function LeadIntelligencePage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {websiteFinderStatus && (websiteFinderStatus.processed > 0 || websiteFinderStatus.websitesFound > 0 || (researchStatus?.researchBacklog ?? 0) > 0) && (
+          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="website-finder-panel">
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4" style={{ color: BLUE }} />
+                <div>
+                  <div className="text-[12px] font-bold" style={{ color: TEXT }}>Website Finder</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Source official websites for research_more flows missing pipeline.website</div>
+                </div>
+              </div>
+              <Button
+                onClick={() => websiteFinderMutation.mutate()}
+                disabled={websiteFinderMutation.isPending}
+                className="gap-1.5 text-[11px]"
+                style={{ background: BLUE }}
+                data-testid="run-website-finder"
+              >
+                {websiteFinderMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                Run Website Finder
+              </Button>
+            </div>
+            <div className="grid grid-cols-5 gap-3 p-4">
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: TEXT }}>{websiteFinderStatus.processed}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Processed</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: EMERALD }}>{websiteFinderStatus.websitesFound}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Found</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: AMBER }}>{websiteFinderStatus.stillBlocked}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Blocked</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: PURPLE }}>{websiteFinderStatus.candidateStored}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Candidates</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: ERROR }}>{websiteFinderStatus.notFound}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Not Found</div>
+              </div>
+            </div>
           </div>
         )}
 

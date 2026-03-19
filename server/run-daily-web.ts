@@ -339,6 +339,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }
 
       try {
+        const { runWebsiteFinderEngine } = await import("./website-finder-engine");
+        const websiteFinderResult = await runWebsiteFinderEngine(clientId);
+        log(`Website finder: processed=${websiteFinderResult.processed} found=${websiteFinderResult.websitesFound} blocked=${websiteFinderResult.stillBlocked}`, "daily-web");
+      } catch (e: any) {
+        log(`Website finder failed (non-blocking): ${e.message}`, "daily-web");
+      }
+
+      try {
         const { runResearchEngine } = await import("./research-engine");
         const researchResult = await runResearchEngine(clientId);
         log(`Research engine: processed=${researchResult.totalProcessed} email=${researchResult.convertedToEmail} call=${researchResult.convertedToCall} remaining=${researchResult.remainingResearch}`, "daily-web");

@@ -2537,6 +2537,79 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/website-finder-engine/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const { runWebsiteFinderEngine } = await import("./website-finder-engine");
+      const result = await runWebsiteFinderEngine(clientId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Website finder engine error: ${err.message}`, "website-finder-engine");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/website-finder-engine/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const rows = await db.select({
+        websiteLookupStatus: outreachPipeline.websiteLookupStatus,
+      }).from(outreachPipeline)
+        .where(eq(outreachPipeline.clientId, clientId));
+
+      let processed = 0;
+      let websitesFound = 0;
+      let notFound = 0;
+      let candidateStored = 0;
+      let lowConfidence = 0;
+      let blockedUrl = 0;
+      let sourceUnavailable = 0;
+      const breakdown: Record<string, number> = {};
+
+      for (const r of rows) {
+        if (!r.websiteLookupStatus) continue;
+        processed++;
+        breakdown[r.websiteLookupStatus] = (breakdown[r.websiteLookupStatus] || 0) + 1;
+        if (r.websiteLookupStatus === "found") websitesFound++;
+        else if (r.websiteLookupStatus === "not_found") notFound++;
+        else if (r.websiteLookupStatus === "candidate_stored") candidateStored++;
+        else if (r.websiteLookupStatus === "low_confidence") lowConfidence++;
+        else if (r.websiteLookupStatus === "blocked_url") blockedUrl++;
+        else if (r.websiteLookupStatus === "source_unavailable") sourceUnavailable++;
+      }
+
+      const stillBlocked = notFound + candidateStored + lowConfidence + blockedUrl + sourceUnavailable;
+
+      res.json({
+        processed,
+        websitesFound,
+        stillBlocked,
+        notFound,
+        candidateStored,
+        lowConfidence,
+        blockedUrl,
+        sourceUnavailable,
+        breakdown,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/deep-research-engine/run", authMiddleware, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
