@@ -340,20 +340,24 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
   }
 
   // Backfill: ensure outreach_pipeline row exists for each research_more company
-  const byCompany = new Map<string, { companyName: string }>();
+  const backfillMap = new Map<string, { companyName: string }>();
   for (const f of flows) {
-    if (!byCompany.has(f.companyId)) byCompany.set(f.companyId, { companyName: f.companyName });
+    if (!backfillMap.has(f.companyId)) backfillMap.set(f.companyId, { companyName: f.companyName });
   }
   let backfillCreated = 0;
-  for (const [companyId, { companyName }] of byCompany) {
-    const { created } = await ensureOutreachPipelineRow({
-      clientId,
-      companyId,
-      companyName,
-    });
-    if (created) backfillCreated++;
+  for (const [companyId, { companyName }] of backfillMap) {
+    try {
+      const { created } = await ensureOutreachPipelineRow({
+        clientId,
+        companyId,
+        companyName,
+      });
+      if (created) backfillCreated++;
+    } catch (e: any) {
+      log(`Website finder backfill error for ${companyName} (${companyId}): ${e.message}`, TAG);
+    }
   }
-  if (backfillCreated > 0) log(`Website finder backfill: created ${backfillCreated} pipeline rows for research_more flows`, TAG);
+  if (backfillCreated > 0) log(`Website finder backfill: created ${backfillCreated} pipeline rows`, TAG);
 
   // Step 2: pipeline rows for those companyIds (any); Step 3: with website null
   const [step2Result, step3Result, pipelineRows] = await Promise.all([
