@@ -3,6 +3,7 @@ import { companyFlows, outreachPipeline } from "@shared/schema";
 import { eq, and, or, sql, lt, isNull, inArray } from "drizzle-orm";
 import { log } from "./logger";
 import { isOutscraperAvailable, searchGoogleMaps } from "./outscraper";
+import { ensureOutreachPipelineRow } from "./outreach-pipeline-helper";
 
 const TAG = "website-finder-engine";
 
@@ -337,6 +338,22 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
       filterCounts: { researchMoreFlows: 0, withPipelineRow: 0, withWebsiteNull: 0, notRecentlyLookedUp: 0, finalSelected: 0 },
     };
   }
+
+  // Backfill: ensure outreach_pipeline row exists for each research_more company
+  const byCompany = new Map<string, { companyName: string }>();
+  for (const f of flows) {
+    if (!byCompany.has(f.companyId)) byCompany.set(f.companyId, { companyName: f.companyName });
+  }
+  let backfillCreated = 0;
+  for (const [companyId, { companyName }] of byCompany) {
+    const { created } = await ensureOutreachPipelineRow({
+      clientId,
+      companyId,
+      companyName,
+    });
+    if (created) backfillCreated++;
+  }
+  if (backfillCreated > 0) log(`Website finder backfill: created ${backfillCreated} pipeline rows for research_more flows`, TAG);
 
   // Step 2: pipeline rows for those companyIds (any); Step 3: with website null
   const [step2Result, step3Result, pipelineRows] = await Promise.all([

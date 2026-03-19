@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, uuid, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -162,11 +162,13 @@ export const insertRecoveryQueueSchema = createInsertSchema(recoveryQueue).omit(
 export type InsertRecoveryQueueItem = z.infer<typeof insertRecoveryQueueSchema>;
 export type RecoveryQueueItem = typeof recoveryQueue.$inferSelect;
 
-export const outreachPipeline = pgTable("outreach_pipeline", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  clientId: varchar("client_id").notNull(),
-  companyId: varchar("company_id").notNull(),
-  companyName: text("company_name").notNull(),
+export const outreachPipeline = pgTable(
+  "outreach_pipeline",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    clientId: varchar("client_id").notNull(),
+    companyId: varchar("company_id").notNull(),
+    companyName: text("company_name").notNull(),
   contactName: text("contact_name"),
   contactEmail: text("contact_email"),
   touch0Email: text("touch_0_email"),
@@ -211,7 +213,9 @@ export const outreachPipeline = pgTable("outreach_pipeline", {
   emailTemplateVersion: text("email_template_version"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+  },
+  (table) => [unique("outreach_pipeline_client_company_idx").on(table.clientId, table.companyId)]
+);
 
 export const insertOutreachPipelineSchema = createInsertSchema(outreachPipeline).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOutreachPipeline = z.infer<typeof insertOutreachPipelineSchema>;

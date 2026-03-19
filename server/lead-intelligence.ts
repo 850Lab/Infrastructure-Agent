@@ -2,6 +2,7 @@ import { db } from "./db";
 import { companyFlows, inferredContacts, outreachPipeline } from "@shared/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { log } from "./logger";
+import { ensureOutreachPipelineRow } from "./outreach-pipeline-helper";
 
 const TAG = "lead-intelligence";
 
@@ -423,6 +424,16 @@ export async function scoreAndUpdateFlow(flowId: number): Promise<ScoringResult 
     lastEnrichedAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(companyFlows.id, flowId));
+
+  if (result.bestChannel === "research_more" && !pipeline) {
+    const { created } = await ensureOutreachPipelineRow({
+      clientId: flow.clientId,
+      companyId: flow.companyId,
+      companyName: flow.companyName,
+      contactName: flow.contactName ?? null,
+    });
+    if (created) log(`Created outreach_pipeline row for research_more flow ${flow.companyName} (${flow.companyId})`, TAG);
+  }
 
   log(`Scored flow #${flowId} (${flow.companyName}): composite=${result.compositeScore}, channel=${result.bestChannel}`, TAG);
   return result;
