@@ -7,6 +7,7 @@ import { storage } from "./storage";
 import { getIndustryConfig } from "./config";
 import { ensureOutreachPipelineRow } from "./outreach-pipeline-helper";
 import { reportPipelineIntegrity } from "./pipeline-integrity";
+import { getClientAirtableConfig } from "./airtable-scoped";
 
 function logOutreach(msg: string) {
   log(msg, "outreach-engine");
@@ -125,6 +126,20 @@ function generateCallScript(company: CompanyForOutreach, touchNumber: 1 | 3 | 5)
   return `CALL SCRIPT — Touch 5 FINAL CALL (Day 8)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. I've reached out a couple times about [VALUE PROP]. This is my last call — if there's any interest, I'd love 5 minutes. If not, no hard feelings."\n\nIf unavailable: Leave final voicemail with callback number.`;
 }
 
+export async function fetchWebsiteFromAirtableCompany(clientId: string, companyId: string): Promise<string | null> {
+  if (!companyId.startsWith("rec")) return null;
+  try {
+    const cfg = await getClientAirtableConfig(clientId);
+    if (!cfg.apiKey || !cfg.baseId) return null;
+    const table = encodeURIComponent("Companies");
+    const data = await airtableRequest(`${table}/${companyId}`, {}, cfg);
+    const website = data?.fields?.Website?.trim() || data?.fields?.website?.trim() || null;
+    return website || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function populateOutreachPipeline(clientId: string): Promise<{ added: number; skipped: number }> {
   const flows = await db
     .select({
@@ -152,11 +167,13 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
   let skipped = 0;
 
   for (const [companyId, { companyName, contactName }] of byCompany) {
+    const website = await fetchWebsiteFromAirtableCompany(clientId, companyId);
     const { created } = await ensureOutreachPipelineRow({
       clientId,
       companyId,
       companyName,
       contactName: contactName ?? null,
+      website: website ?? null,
     });
     if (created) {
       added++;

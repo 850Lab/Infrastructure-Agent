@@ -427,11 +427,17 @@ export async function scoreAndUpdateFlow(flowId: number): Promise<ScoringResult 
   }).where(eq(companyFlows.id, flowId));
 
   if (result.bestChannel === "research_more" && !pipeline) {
+    let website: string | null = null;
+    if (flow.companyId?.startsWith("rec") && flow.clientId) {
+      const { fetchWebsiteFromAirtableCompany } = await import("./outreach-engine");
+      website = await fetchWebsiteFromAirtableCompany(flow.clientId, flow.companyId);
+    }
     const { created } = await ensureOutreachPipelineRow({
       clientId: flow.clientId,
       companyId: flow.companyId,
       companyName: flow.companyName,
       contactName: flow.contactName ?? null,
+      website,
     });
     if (created) log(`Created outreach_pipeline row for research_more flow ${flow.companyName} (${flow.companyId})`, TAG);
   }

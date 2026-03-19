@@ -13,7 +13,8 @@ export type WebsiteLookupStatus =
   | "low_confidence"
   | "blocked_url"
   | "not_found"
-  | "source_unavailable";
+  | "source_unavailable"
+  | "skipped";
 
 const BLOCKED_HOSTS = [
   "facebook.com",
@@ -120,7 +121,7 @@ export interface WebsiteFinderResult {
 }
 
 async function lookupWebsiteForPipeline(
-  pipeline: { id: number; companyId: string; companyName: string; city?: string | null; state?: string | null }
+  pipeline: { id: number; companyId: string; companyName: string; city?: string | null; state?: string | null; website?: string | null }
 ): Promise<WebsiteFinderResult> {
   const base: WebsiteFinderResult = {
     pipelineId: pipeline.id,
@@ -128,6 +129,10 @@ async function lookupWebsiteForPipeline(
     companyName: pipeline.companyName,
     status: "not_found",
   };
+
+  if (pipeline.website?.trim()) {
+    return { ...base, status: "skipped", websiteReasoning: "website_already_exists" };
+  }
 
   if (!isOutscraperAvailable()) {
     base.status = "source_unavailable";
@@ -345,12 +350,15 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
     if (!backfillMap.has(f.companyId)) backfillMap.set(f.companyId, { companyName: f.companyName });
   }
   let backfillCreated = 0;
+  const { fetchWebsiteFromAirtableCompany } = await import("./outreach-engine");
   for (const [companyId, { companyName }] of backfillMap) {
     try {
+      const website = companyId.startsWith("rec") ? await fetchWebsiteFromAirtableCompany(clientId, companyId) : null;
       const { created } = await ensureOutreachPipelineRow({
         clientId,
         companyId,
         companyName,
+        website,
       });
       if (created) backfillCreated++;
     } catch (e: any) {
@@ -448,6 +456,10 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
   for (const pipeline of toProcess) {
     try {
       const lookup = await lookupWebsiteForPipeline(pipeline);
+
+      if (lookup.status === "skipped") {
+        continue;
+      }
 
       const update: Record<string, unknown> = {
         websiteLookupRan: true,

@@ -2202,7 +2202,15 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         if (changed) {
           await db.update(companyFlows).set(updates).where(eq(companyFlows.id, flow.id));
 
-          const pipelineRows = await db.select({ id: outreachPipeline.id })
+          const f2 = rec.fields || {};
+          const websiteFromCalls = (f2.Website || f2.website || "").trim() || null;
+          let website = websiteFromCalls;
+          if (!website && flow.companyId?.startsWith("rec") && flow.clientId) {
+            const { fetchWebsiteFromAirtableCompany } = await import("./outreach-engine");
+            website = await fetchWebsiteFromAirtableCompany(flow.clientId, flow.companyId);
+          }
+
+          const pipelineRows = await db.select({ id: outreachPipeline.id, website: outreachPipeline.website })
             .from(outreachPipeline)
             .where(
               and(
@@ -2212,12 +2220,19 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
             )
             .limit(1);
 
-          if (pipelineRows.length > 0 && updates.lastOutcome) {
-            await db.update(outreachPipeline)
-              .set({ lastOutcome: updates.lastOutcome, updatedAt: new Date() })
-              .where(eq(outreachPipeline.id, pipelineRows[0].id));
-          } else if (pipelineRows.length === 0) {
-            const f2 = rec.fields || {};
+          if (pipelineRows.length > 0) {
+            const row = pipelineRows[0];
+            const updatePayload: Record<string, unknown> = { updatedAt: new Date() };
+            if (updates.lastOutcome) updatePayload.lastOutcome = updates.lastOutcome;
+            const existingWebsite = row.website?.trim() || null;
+            if (!existingWebsite && website) {
+              updatePayload.website = website;
+              console.log(`[PIPELINE] Website mapped from Airtable: ${companyName} → ${website}`);
+            }
+            if (Object.keys(updatePayload).length > 1) {
+              await db.update(outreachPipeline).set(updatePayload).where(eq(outreachPipeline.id, row.id));
+            }
+          } else {
             try {
               const { ensureOutreachPipelineRow } = await import("./outreach-pipeline-helper");
               const { created } = await ensureOutreachPipelineRow({
@@ -2227,6 +2242,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
                 contactName: flow.contactName ?? null,
                 city: f2.city || null,
                 state: f2.state || null,
+                website,
               });
               if (created) {
                 log(`[transcript-sync] Ensured pipeline row for ${companyName}`, "targeting");

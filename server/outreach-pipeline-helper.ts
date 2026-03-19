@@ -17,7 +17,7 @@ export async function ensureOutreachPipelineRow(params: {
   website?: string | null;
 }): Promise<{ created: boolean; existing: boolean }> {
   const [existing] = await db
-    .select({ id: outreachPipeline.id })
+    .select({ id: outreachPipeline.id, website: outreachPipeline.website })
     .from(outreachPipeline)
     .where(
       and(
@@ -28,6 +28,16 @@ export async function ensureOutreachPipelineRow(params: {
     .limit(1);
 
   if (existing) {
+    // Update website only if missing and we have one from Airtable
+    const existingWebsite = existing.website?.trim() || null;
+    const newWebsite = params.website?.trim() || null;
+    if (!existingWebsite && newWebsite) {
+      await db
+        .update(outreachPipeline)
+        .set({ website: newWebsite, updatedAt: new Date() })
+        .where(eq(outreachPipeline.id, existing.id));
+      console.log(`[PIPELINE] Website mapped from Airtable: ${params.companyName} → ${newWebsite}`);
+    }
     return { created: false, existing: true };
   }
 
@@ -50,7 +60,11 @@ export async function ensureOutreachPipelineRow(params: {
         target: [outreachPipeline.clientId, outreachPipeline.companyId],
       })
       .returning({ id: outreachPipeline.id });
-    return { created: inserted.length > 0, existing: inserted.length === 0 };
+    const created = inserted.length > 0;
+    if (created && (params.website?.trim())) {
+      console.log(`[PIPELINE] Website mapped from Airtable: ${params.companyName} → ${params.website?.trim()}`);
+    }
+    return { created, existing: !created };
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code;
     if (code === "23505") {
