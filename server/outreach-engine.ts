@@ -1,8 +1,12 @@
 import OpenAI from "openai";
+import { db } from "./db";
+import { companyFlows } from "@shared/schema";
+import { eq, and, ne } from "drizzle-orm";
 import { log } from "./logger";
-import { getClientAirtableConfig, scopedFormula } from "./airtable-scoped";
 import { storage } from "./storage";
 import { getIndustryConfig } from "./config";
+import { ensureOutreachPipelineRow } from "./outreach-pipeline-helper";
+import { reportPipelineIntegrity } from "./pipeline-integrity";
 
 function logOutreach(msg: string) {
   log(msg, "outreach-engine");
@@ -122,125 +126,53 @@ function generateCallScript(company: CompanyForOutreach, touchNumber: 1 | 3 | 5)
 }
 
 export async function populateOutreachPipeline(clientId: string): Promise<{ added: number; skipped: number }> {
-  const atConfig = await getClientAirtableConfig(clientId);
-  if (!atConfig.apiKey || !atConfig.baseId) {
-    throw new Error("Airtable credentials not configured");
+  const flows = await db
+    .select({
+      companyId: companyFlows.companyId,
+      companyName: companyFlows.companyName,
+      contactName: companyFlows.contactName,
+    })
+    .from(companyFlows)
+    .where(
+      and(
+        eq(companyFlows.clientId, clientId),
+        eq(companyFlows.status, "active"),
+        ne(companyFlows.bestChannel, "discard")
+      )
+    );
+
+  const byCompany = new Map<string, { companyName: string; contactName: string | null }>();
+  for (const f of flows) {
+    if (!byCompany.has(f.companyId)) {
+      byCompany.set(f.companyId, { companyName: f.companyName, contactName: f.contactName });
+    }
   }
-
-  const eligibleRecords: any[] = [];
-  const formula = `OR({DM_Status}="DM_READY",{DM_Status}="READY_FOR_OUTREACH")`;
-
-  async function fetchPages(filter: string) {
-    let offset: string | undefined;
-    do {
-      const params = new URLSearchParams({ pageSize: "100", filterByFormula: filter });
-      if (offset) params.set("offset", offset);
-      const data = await airtableRequest(`Companies?${params}`, {}, atConfig);
-      eligibleRecords.push(...(data.records || []));
-      offset = data.offset;
-    } while (offset);
-  }
-
-  try {
-    await fetchPages(formula);
-  } catch (e: any) {
-    logOutreach(`Fetch error: ${e.message}`);
-    return { added: 0, skipped: 0 };
-  }
-
-  logOutreach(`Found ${eligibleRecords.length} eligible companies (DM_READY or READY_FOR_OUTREACH)`);
 
   let added = 0;
   let skipped = 0;
 
-  for (const rec of eligibleRecords) {
-    const f = rec.fields;
-    const companyId = rec.id;
-    const companyName = String(f.company_name || f.Company_Name || "").trim();
-
-    const existing = await storage.getOutreachPipelineByCompany(companyId, clientId);
-    if (existing) {
-      skipped++;
-      continue;
-    }
-
-    const dmName = String(f.Primary_DM_Name || f.primary_dm_name || "").trim();
-    const dmTitle = String(f.Primary_DM_Title || f.primary_dm_title || "").trim();
-    const dmEmail = String(f.Primary_DM_Email || f.primary_dm_email || "").trim();
-    const dmPhone = String(f.Primary_DM_Phone || f.primary_dm_phone || "").trim();
-    const website = String(f.Website || f.website || "").trim();
-    const dmStatus = String(f.DM_Status || "").trim();
-    const infoCeiling = Boolean(f.Info_Ceiling_Reached);
-
-    const company: CompanyForOutreach = {
-      id: companyId,
-      companyName,
-      dmName,
-      dmTitle,
-      dmEmail,
-      dmPhone,
-      website,
-      dmStatus,
-      infoCeilingReached: infoCeiling,
-    };
-
-    const now = new Date();
-
-    const touch1Call = generateCallScript(company, 1);
-    const touch3Call = generateCallScript(company, 3);
-    const touch5Call = generateCallScript(company, 5);
-
-    let touch2Email = "";
-    let touch4Email = "";
-    let touch6Email = "";
-
-    try {
-      const t2 = await generateOutreachEmails(company, 2);
-      touch2Email = `Subject: ${t2.subject}\n\n${t2.body}`;
-    } catch {
-      touch2Email = "[Email generation pending]";
-    }
-
-    try {
-      const t4 = await generateOutreachEmails(company, 4);
-      touch4Email = `Subject: ${t4.subject}\n\n${t4.body}`;
-    } catch {
-      touch4Email = "[Email generation pending]";
-    }
-
-    try {
-      const t6 = await generateOutreachEmails(company, 6);
-      touch6Email = `Subject: ${t6.subject}\n\n${t6.body}`;
-    } catch {
-      touch6Email = "[Email generation pending]";
-    }
-
-    const firstTouchContent = "Subject: Quick question\n\nHey — are your crews working in the heat right now?";
-
-    await storage.createOutreachPipeline({
+  for (const [companyId, { companyName, contactName }] of byCompany) {
+    const { created } = await ensureOutreachPipelineRow({
       clientId,
       companyId,
       companyName,
-      contactName: dmName || null,
-      contactEmail: dmEmail || null,
-      touch0Email: firstTouchContent,
-      firstTouchSent: false,
-      touch1Email: touch1Call,
-      touch2Call: touch2Email,
-      touch3Email: touch3Call,
-      touch4Call: touch4Email,
-      touch5Email: touch5Call,
-      touch6Call: touch6Email,
-      pipelineStatus: "ACTIVE",
-      nextTouchDate: now,
-      touchesCompleted: 0,
+      contactName: contactName ?? null,
     });
-
-    added++;
-    logOutreach(`Added ${companyName} to outreach pipeline (contact: ${dmName || "unknown"})`);
+    if (created) {
+      added++;
+      logOutreach(`Ensured pipeline row for ${companyName} (${companyId})`);
+    } else {
+      skipped++;
+    }
   }
 
-  logOutreach(`Outreach pipeline populated: ${added} added, ${skipped} already in pipeline`);
+  logOutreach(`Outreach pipeline populated: ${added} added, ${skipped} already in pipeline (from ${flows.length} active non-discard flows)`);
+
+  const integrity = await reportPipelineIntegrity(clientId);
+  if (integrity.orphanFlowCount > 0) {
+    logOutreach(`Integrity: ${integrity.orphanFlowCount} flows still missing pipeline rows after populate`);
+  }
+
   return { added, skipped };
 }
 

@@ -4,6 +4,7 @@ import { clientEmailSettings, emailSends, emailReplies, outreachPipeline, compan
 import { eq, and, isNotNull, isNull, inArray, desc, gte, sql } from "drizzle-orm";
 import { log } from "./index";
 import { sendSms } from "./twilio-service";
+import { normalizePipelineStatusForClient } from "./outreach-pipeline-helper";
 
 const TAG = "reply-checker";
 const REPLY_CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
@@ -190,6 +191,8 @@ async function checkRepliesForClient(settings: {
 }): Promise<{ repliesFound: number; errors: string[] }> {
   const errors: string[] = [];
   let repliesFound = 0;
+
+  await normalizePipelineStatusForClient(settings.clientId);
 
   // Determine IMAP connection details
   const imapHost = settings.imapHost || deriveImapHost(settings.smtpHost);

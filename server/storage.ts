@@ -257,8 +257,44 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createOutreachPipeline(item: InsertOutreachPipeline): Promise<OutreachPipeline> {
-    const [created] = await db.insert(outreachPipeline).values(item).returning();
-    return created;
+    try {
+      const inserted = await db
+        .insert(outreachPipeline)
+        .values(item)
+        .onConflictDoNothing({
+          target: [outreachPipeline.clientId, outreachPipeline.companyId],
+        })
+        .returning();
+      if (inserted.length > 0) return inserted[0];
+      const [existing] = await db
+        .select()
+        .from(outreachPipeline)
+        .where(
+          and(
+            eq(outreachPipeline.clientId, item.clientId),
+            eq(outreachPipeline.companyId, item.companyId)
+          )
+        )
+        .limit(1);
+      if (existing) return existing;
+      throw new Error("Insert failed and no existing row found");
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      if (code === "23505") {
+        const [existing] = await db
+          .select()
+          .from(outreachPipeline)
+          .where(
+            and(
+              eq(outreachPipeline.clientId, item.clientId),
+              eq(outreachPipeline.companyId, item.companyId)
+            )
+          )
+          .limit(1);
+        if (existing) return existing;
+      }
+      throw e;
+    }
   }
 
   async getOutreachPipelines(clientId: string, status?: string): Promise<OutreachPipeline[]> {

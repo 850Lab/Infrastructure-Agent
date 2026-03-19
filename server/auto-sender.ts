@@ -3,6 +3,7 @@ import { clientEmailSettings, emailSends, outreachPipeline } from "@shared/schem
 import { eq, and, lte, sql } from "drizzle-orm";
 import { sendOutreachEmail } from "./email-service";
 import { storage } from "./storage";
+import { normalizePipelineStatusForClient } from "./outreach-pipeline-helper";
 
 const AUTO_SEND_INTERVAL = 15 * 60 * 1000;
 const AUTO_SEND_STARTUP_DELAY = 90 * 1000;
@@ -74,6 +75,9 @@ async function processClientAutoSends(clientId: string): Promise<{
   failed: number;
   deferred: number;
 }> {
+  const normalized = await normalizePipelineStatusForClient(clientId);
+  if (normalized > 0) log(`  Normalized ${normalized} legacy pipelineStatus rows to ACTIVE`);
+
   const dueItems = await storage.getOutreachPipelinesDue(clientId, 20);
 
   let sent = 0;

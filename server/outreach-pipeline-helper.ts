@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { outreachPipeline } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 /**
  * Ensures an outreach_pipeline row exists for the given company.
@@ -59,4 +59,33 @@ export async function ensureOutreachPipelineRow(params: {
     }
     throw e;
   }
+}
+
+const PIPELINE_STATUS_UPPER: Record<string, string> = {
+  active: "ACTIVE",
+  completed: "COMPLETED",
+  responded: "RESPONDED",
+  "not_interested": "NOT_INTERESTED",
+};
+
+/**
+ * Normalizes legacy lowercase pipelineStatus (e.g. "active") to uppercase "ACTIVE".
+ * Call during transition to fix existing rows.
+ */
+export async function normalizePipelineStatusForClient(clientId: string): Promise<number> {
+  let total = 0;
+  for (const [lower, upper] of Object.entries(PIPELINE_STATUS_UPPER)) {
+    const result = await db
+      .update(outreachPipeline)
+      .set({ pipelineStatus: upper, updatedAt: new Date() })
+      .where(
+        and(
+          eq(outreachPipeline.clientId, clientId),
+          sql`LOWER(${outreachPipeline.pipelineStatus}) = ${lower}`
+        )
+      )
+      .returning({ id: outreachPipeline.id });
+    total += result.length;
+  }
+  return total;
 }

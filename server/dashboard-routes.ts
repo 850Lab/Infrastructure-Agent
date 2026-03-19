@@ -795,6 +795,21 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/pipeline-integrity", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId && (req as any).user?.role === "platform_admin") {
+        clientId = undefined;
+      }
+      const { reportPipelineIntegrity } = await import("./pipeline-integrity");
+      const report = await reportPipelineIntegrity(clientId);
+      res.json(report);
+    } catch (err: any) {
+      log(`Pipeline integrity error: ${err.message}`, "pipeline-integrity");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/dm-status/run", authMiddleware, async (req: Request, res: Response) => {
     try {
       let clientId = (req as any).user?.clientId;
@@ -2093,9 +2108,15 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     };
 
     try {
-      const formula = encodeURIComponent('OR(company_name!="",Company!="")');
-      const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent("Calls")}?filterByFormula=${formula}&pageSize=100`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const baseFormula = 'OR(company_name!="",Company!="")';
+      const formula = clientId
+        ? encodeURIComponent(scopedFormula(clientId, baseFormula))
+        : encodeURIComponent(baseFormula);
+      const cfg = clientId ? await getClientAirtableConfig(clientId) : { apiKey, baseId };
+      const fetchBaseId = cfg.baseId || baseId;
+      const fetchApiKey = cfg.apiKey || apiKey;
+      const url = `https://api.airtable.com/v0/${fetchBaseId}/${encodeURIComponent("Calls")}?filterByFormula=${formula}&pageSize=100`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${fetchApiKey}` } });
       if (!res.ok) {
         result.errors.push(`Airtable fetch failed: ${res.status}`);
         return result;
@@ -2183,7 +2204,12 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
           const pipelineRows = await db.select({ id: outreachPipeline.id })
             .from(outreachPipeline)
-            .where(sql`LOWER(${outreachPipeline.companyName}) = LOWER(${companyName})`)
+            .where(
+              and(
+                eq(outreachPipeline.clientId, flow.clientId),
+                sql`LOWER(${outreachPipeline.companyName}) = LOWER(${companyName})`
+              )
+            )
             .limit(1);
 
           if (pipelineRows.length > 0 && updates.lastOutcome) {
@@ -2193,23 +2219,28 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           } else if (pipelineRows.length === 0) {
             const f2 = rec.fields || {};
             try {
-              await db.insert(outreachPipeline).values({
+              const { ensureOutreachPipelineRow } = await import("./outreach-pipeline-helper");
+              const { created } = await ensureOutreachPipelineRow({
                 clientId: flow.clientId,
                 companyId: flow.companyId || `flow-${flow.id}`,
                 companyName: companyName,
-                phone: f2.phone || null,
-                contactName: flow.contactName || null,
-                contactEmail: null,
+                contactName: flow.contactName ?? null,
                 city: f2.city || null,
                 state: f2.state || null,
-                industry: null,
-                lastOutcome: updates.lastOutcome || flow.lastOutcome || null,
-                pipelineStatus: "active",
-                nextTouchDate: new Date(),
               });
-              log(`[transcript-sync] Inserted ${companyName} into outreach_pipeline`, "targeting");
+              if (created) {
+                log(`[transcript-sync] Ensured pipeline row for ${companyName}`, "targeting");
+                const [newRow] = await db.select().from(outreachPipeline)
+                  .where(and(eq(outreachPipeline.clientId, flow.clientId), eq(outreachPipeline.companyId, flow.companyId || `flow-${flow.id}`)))
+                  .limit(1);
+                if (newRow && (updates.lastOutcome || flow.lastOutcome)) {
+                  await db.update(outreachPipeline)
+                    .set({ lastOutcome: updates.lastOutcome || flow.lastOutcome || null, updatedAt: new Date() })
+                    .where(eq(outreachPipeline.id, newRow.id));
+                }
+              }
             } catch (insertErr: any) {
-              log(`[transcript-sync] Pipeline insert failed for ${companyName}: ${insertErr.message}`, "targeting");
+              log(`[transcript-sync] Pipeline ensure failed for ${companyName}: ${insertErr.message}`, "targeting");
             }
           }
         }
