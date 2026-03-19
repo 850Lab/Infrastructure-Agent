@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, RefreshCw, ChevronDown, ChevronUp,
   Mail, Phone, Search, AlertTriangle, TrendingUp, Zap, Target, Shield,
-  Microscope, ArrowRightLeft, Ban, Users, Globe, Layers,
+  Microscope, ArrowRightLeft, Ban, Users, Globe, Layers, Database, Play,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -452,6 +452,7 @@ export default function LeadIntelligencePage() {
   const { isAuthenticated } = useAuth();
   const [filter, setFilter] = useState<string>("all");
   const [readinessFilter, setReadinessFilter] = useState<string>("all");
+  const [vettingPolling, setVettingPolling] = useState(false);
 
   const { data, isLoading } = useQuery<ScoresResponse>({
     queryKey: ["/api/lead-intelligence/scores"],
@@ -569,6 +570,54 @@ export default function LeadIntelligencePage() {
     },
   });
 
+  const vettingBatchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/vetting/run-batch", { batchSize: 10 });
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vetting/progress"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-triage/summary"] });
+      toast({
+        title: "Vetting batch complete",
+        description: `${result.batchProcessed} companies vetted (${result.flowsCreated} new flows, ${result.scored} scored). ${result.remaining} remaining.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Vetting batch failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const vettingFullMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/vetting/run-full", { batchSize: 10 });
+      return res.json();
+    },
+    onSuccess: () => {
+      setVettingPolling(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/vetting/progress"] });
+      toast({ title: "Full vetting started", description: "Processing all companies in batches of 10. Progress will update automatically." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Full vetting failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const vettingProgress = useQuery<any>({
+    queryKey: ["/api/vetting/progress"],
+    refetchInterval: vettingPolling || vettingBatchMutation.isPending ? 8000 : false,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (vettingPolling && vettingProgress.data && !vettingProgress.data.running) {
+      setVettingPolling(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-triage/summary"] });
+    }
+  }, [vettingPolling, vettingProgress.data]);
+
   const flows = data?.flows || [];
   const channelFiltered = filter === "all" ? flows
     : filter === "unscored" ? flows.filter(f => f.compositeScore === null)
@@ -640,6 +689,73 @@ export default function LeadIntelligencePage() {
             </div>
           </div>
         )}
+
+        {(() => {
+          const vp = vettingProgress.data as any;
+          if (!vp) return null;
+          const isRunning = vp.running || vettingBatchMutation.isPending || vettingFullMutation.isPending;
+          const pct = vp.percentComplete || 0;
+          return (
+            <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="vetting-panel">
+              <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4" style={{ color: PURPLE }} />
+                  <div>
+                    <div className="text-[12px] font-bold" style={{ color: TEXT }}>Airtable Vetting Engine</div>
+                    <div className="text-[10px]" style={{ color: MUTED }}>
+                      {vp.alreadyVetted} of {vp.totalAirtable} companies vetted ({pct}%)
+                      {vp.remaining > 0 && ` · ${vp.remaining} remaining`}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => vettingBatchMutation.mutate()}
+                    disabled={isRunning}
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-[10px] h-7"
+                    data-testid="vetting-batch-button"
+                  >
+                    {vettingBatchMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                    Vet Next 10
+                  </Button>
+                  <Button
+                    onClick={() => vettingFullMutation.mutate()}
+                    disabled={isRunning}
+                    size="sm"
+                    className="gap-1.5 text-[10px] h-7"
+                    style={{ background: PURPLE }}
+                    data-testid="vetting-full-button"
+                  >
+                    {vettingFullMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Database className="w-3 h-3" />}
+                    Vet All ({vp.remaining})
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="w-full rounded-full h-2" style={{ background: BORDER }}>
+                  <div
+                    className="h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%`, background: pct === 100 ? EMERALD : PURPLE }}
+                  />
+                </div>
+                <div className="flex gap-4 text-[10px]" style={{ color: MUTED }}>
+                  {Object.entries(vp.channelBreakdown || {}).map(([ch, count]) => (
+                    <div key={ch} className="flex items-center gap-1">
+                      {ch === "email" && <Mail className="w-3 h-3" style={{ color: BLUE }} />}
+                      {ch === "call" && <Phone className="w-3 h-3" style={{ color: EMERALD }} />}
+                      {ch === "research_more" && <Search className="w-3 h-3" style={{ color: AMBER }} />}
+                      {ch === "discard" && <Ban className="w-3 h-3" style={{ color: ERROR }} />}
+                      {!["email","call","research_more","discard"].includes(ch) && <Target className="w-3 h-3" />}
+                      <span className="font-medium" style={{ color: TEXT }}>{String(count)}</span> {ch}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {triageSummary && (
           <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="triage-summary-panel">

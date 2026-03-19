@@ -55,6 +55,17 @@ Airtable field names are **lowercase** in the actual base (`company_name`, `phon
 ## Contact Name Validation
 Both `research-engine.ts` and `deep-research-engine.ts` use an `isPlausiblePersonName()` filter with a `NOT_PERSON_NAMES`/`NOT_PERSON_WORDS` blocklist. This prevents website text fragments like "Safety Financial", "Guards Home", "Pipe Fabrication" from being treated as human contact names. Only strings with 2-4 capitalized words where none match common English/industry words pass the filter.
 
+## Vetting Engine
+The vetting engine (`server/vetting-engine.ts`) processes the full Airtable Companies table (682+) in configurable batches (default 10). For each company not yet in `company_flows`, it:
+1. Creates a `company_flow` entry (gatekeeper type, priority 30, note "Created by vetting engine")
+2. Creates an `outreach_pipeline` row with Airtable data (phone, website, city, state)
+3. Runs lead intelligence scoring to assign composite score and best channel
+4. Runs the research engine (website crawl) if scored as `research_more` and a website exists
+
+The `Today_Call_List` checkbox in Airtable is NOT touched — it remains the operator's focus tool. Vetting creates flows with low priority so they don't clutter the daily action queue.
+
+API endpoints: `GET /api/vetting/progress`, `POST /api/vetting/run-batch`, `POST /api/vetting/run-full`. UI controls are on the Lead Intelligence page.
+
 ## Lead Intelligence Layer
 The platform includes a multi-signal lead intelligence scoring engine (`server/lead-intelligence.ts`) that evaluates every company flow across four dimensions:
 -   **Revenue Potential** (30% weight): Company size, industry keywords, outdoor crew indicators

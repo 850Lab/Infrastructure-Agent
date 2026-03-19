@@ -2677,6 +2677,71 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/vetting/progress", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const { getVettingProgress } = await import("./vetting-engine");
+      const progress = await getVettingProgress(clientId);
+      res.json({ success: true, ...progress });
+    } catch (err: any) {
+      log(`Vetting progress error: ${err.message}`, "vetting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/vetting/run-batch", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const batchSize = Number(req.body?.batchSize) || 10;
+      const { runVettingBatch, isVettingRunning } = await import("./vetting-engine");
+      if (isVettingRunning()) return res.status(409).json({ error: "Vetting batch already in progress" });
+      const result = await runVettingBatch(clientId, batchSize);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Vetting batch error: ${err.message}`, "vetting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/vetting/run-full", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+      const batchSize = Number(req.body?.batchSize) || 10;
+      const { isVettingRunning } = await import("./vetting-engine");
+      if (isVettingRunning()) return res.status(409).json({ error: "Vetting already in progress" });
+      res.json({ success: true, message: `Full vetting started (batch size ${batchSize}). Check progress at GET /api/vetting/progress.` });
+      const { runFullVetting } = await import("./vetting-engine");
+      runFullVetting(clientId, batchSize, (batchResult, batchNumber) => {
+        log(`Vetting batch #${batchNumber}: processed=${batchResult.batchProcessed} remaining=${batchResult.remaining} (${batchResult.percentComplete}%)`, "vetting");
+      }).then(final => {
+        log(`Full vetting complete: ${final.totalProcessed} processed in ${final.totalBatches} batches`, "vetting");
+      }).catch(err => {
+        log(`Full vetting error: ${err.message}`, "vetting");
+      });
+    } catch (err: any) {
+      log(`Vetting start error: ${err.message}`, "vetting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/research-engine/enrich/:flowId", authMiddleware, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
