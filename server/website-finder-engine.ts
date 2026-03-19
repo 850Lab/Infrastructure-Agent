@@ -205,6 +205,85 @@ async function lookupWebsiteForPipeline(
   return base;
 }
 
+export async function getWebsiteFinderFilterCounts(clientId: string): Promise<{
+  researchMoreFlows: number;
+  withPipelineRow: number;
+  withWebsiteNull: number;
+  notRecentlyLookedUp: number;
+  finalSelected: number;
+}> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const flows = await db
+    .select({ companyId: companyFlows.companyId })
+    .from(companyFlows)
+    .where(
+      and(
+        eq(companyFlows.clientId, clientId),
+        eq(companyFlows.status, "active"),
+        eq(companyFlows.bestChannel, "research_more"),
+        sql`${companyFlows.companyName} IS NOT NULL AND ${companyFlows.companyName} != ''`
+      )
+    );
+
+  const companyIds = [...new Set(flows.map(f => f.companyId))];
+  if (companyIds.length === 0) {
+    return { researchMoreFlows: 0, withPipelineRow: 0, withWebsiteNull: 0, notRecentlyLookedUp: 0, finalSelected: 0 };
+  }
+
+  const [step2, step3, step4Rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outreachPipeline)
+      .where(
+        and(
+          eq(outreachPipeline.clientId, clientId),
+          inArray(outreachPipeline.companyId, companyIds)
+        )
+    ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outreachPipeline)
+      .where(
+        and(
+          eq(outreachPipeline.clientId, clientId),
+          inArray(outreachPipeline.companyId, companyIds),
+          or(
+            sql`${outreachPipeline.website} IS NULL`,
+            sql`${outreachPipeline.website} = ''`
+          )
+        )
+    ),
+    db
+      .select({ companyId: outreachPipeline.companyId })
+      .from(outreachPipeline)
+      .where(
+        and(
+          eq(outreachPipeline.clientId, clientId),
+          inArray(outreachPipeline.companyId, companyIds),
+          or(
+            sql`${outreachPipeline.website} IS NULL`,
+            sql`${outreachPipeline.website} = ''`
+          ),
+          or(
+            eq(outreachPipeline.websiteLookupRan, false),
+            isNull(outreachPipeline.websiteLookupAt),
+            lt(outreachPipeline.websiteLookupAt, sevenDaysAgo)
+          )
+        )
+    ),
+  ]);
+
+  const byCompany = new Set(step4Rows.map(r => r.companyId));
+  return {
+    researchMoreFlows: flows.length,
+    withPipelineRow: step2[0]?.count ?? 0,
+    withWebsiteNull: step3[0]?.count ?? 0,
+    notRecentlyLookedUp: step4Rows.length,
+    finalSelected: byCompany.size,
+  };
+}
+
 export async function runWebsiteFinderEngine(clientId: string): Promise<{
   processed: number;
   websitesFound: number;
@@ -215,9 +294,17 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
   blockedUrl: number;
   sourceUnavailable: number;
   errors: number;
+  filterCounts?: {
+    researchMoreFlows: number;
+    withPipelineRow: number;
+    withWebsiteNull: number;
+    notRecentlyLookedUp: number;
+    finalSelected: number;
+  };
 }> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+  // Step 1: research_more flows (bestChannel, companyName required)
   const flows = await db
     .select({
       companyId: companyFlows.companyId,
@@ -233,6 +320,7 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
       )
     );
 
+  const step1 = flows.length;
   const companyIds = [...new Set(flows.map(f => f.companyId))];
   if (companyIds.length === 0) {
     log(`Website finder: no research_more flows for client ${clientId}`, TAG);
@@ -246,10 +334,35 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
       blockedUrl: 0,
       sourceUnavailable: 0,
       errors: 0,
+      filterCounts: { researchMoreFlows: 0, withPipelineRow: 0, withWebsiteNull: 0, notRecentlyLookedUp: 0, finalSelected: 0 },
     };
   }
 
-  const pipelineRows = await db
+  // Step 2: pipeline rows for those companyIds (any); Step 3: with website null
+  const [step2Result, step3Result, pipelineRows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outreachPipeline)
+      .where(
+        and(
+          eq(outreachPipeline.clientId, clientId),
+          inArray(outreachPipeline.companyId, companyIds)
+        )
+    ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outreachPipeline)
+      .where(
+        and(
+          eq(outreachPipeline.clientId, clientId),
+          inArray(outreachPipeline.companyId, companyIds),
+          or(
+            sql`${outreachPipeline.website} IS NULL`,
+            sql`${outreachPipeline.website} = ''`
+          )
+        )
+    ),
+    db
     .select({
       id: outreachPipeline.id,
       companyId: outreachPipeline.companyId,
@@ -275,9 +388,10 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
           lt(outreachPipeline.websiteLookupAt, sevenDaysAgo)
         )
       )
-    );
+    ),
+  ]);
 
-  const byCompany = new Map<string, typeof pipelineRows[0]>();
+  const byCompany = new Map<string, (typeof pipelineRows)[0]>();
   for (const p of pipelineRows) {
     if (!byCompany.has(p.companyId)) {
       byCompany.set(p.companyId, p);
@@ -285,6 +399,17 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
   }
 
   const toProcess = Array.from(byCompany.values());
+  const filterCounts = {
+    researchMoreFlows: step1,
+    withPipelineRow: step2Result[0]?.count ?? 0,
+    withWebsiteNull: step3Result[0]?.count ?? 0,
+    notRecentlyLookedUp: pipelineRows.length,
+    finalSelected: toProcess.length,
+  };
+  log(
+    `Website finder filter counts: research_more=${filterCounts.researchMoreFlows} pipeline=${filterCounts.withPipelineRow} website_null=${filterCounts.withWebsiteNull} not_recent=${filterCounts.notRecentlyLookedUp} final=${filterCounts.finalSelected}`,
+    TAG
+  );
   log(`Website finder: ${toProcess.length} pipeline rows to process (client: ${clientId})`, TAG);
 
   const result = {
@@ -381,5 +506,5 @@ export async function runWebsiteFinderEngine(clientId: string): Promise<{
     TAG
   );
 
-  return result;
+  return { ...result, filterCounts };
 }

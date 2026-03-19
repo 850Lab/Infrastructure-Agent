@@ -418,6 +418,13 @@ interface WebsiteFinderStatus {
   blockedUrl: number;
   sourceUnavailable: number;
   breakdown: Record<string, number>;
+  filterCounts?: {
+    researchMoreFlows: number;
+    withPipelineRow: number;
+    withWebsiteNull: number;
+    notRecentlyLookedUp: number;
+    finalSelected: number;
+  };
 }
 
 export default function LeadIntelligencePage() {
@@ -703,6 +710,7 @@ export default function LeadIntelligencePage() {
                 </button>
               </div>
             ) : websiteFinderStatus ? (
+            <>
             <div className="grid grid-cols-5 gap-3 p-4">
               <div className="text-center">
                 <div className="text-[16px] font-bold" style={{ color: TEXT }}>{websiteFinderStatus.processed}</div>
@@ -725,6 +733,14 @@ export default function LeadIntelligencePage() {
                 <div className="text-[9px]" style={{ color: MUTED }}>Not Found</div>
               </div>
             </div>
+            {websiteFinderStatus.filterCounts && (
+              <div className="px-4 pb-4 pt-0">
+                <div className="text-[9px]" style={{ color: MUTED }}>
+                  Filter funnel: research_more={websiteFinderStatus.filterCounts.researchMoreFlows} → pipeline={websiteFinderStatus.filterCounts.withPipelineRow} → website_null={websiteFinderStatus.filterCounts.withWebsiteNull} → not_recent={websiteFinderStatus.filterCounts.notRecentlyLookedUp} → final={websiteFinderStatus.filterCounts.finalSelected}
+                </div>
+              </div>
+            )}
+            </>
             ) : null}
           </div>
         )}

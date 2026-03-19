@@ -2566,10 +2566,16 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       }
       if (!clientId) return res.status(400).json({ error: "Client context required" });
 
-      const rows = await db.select({
-        websiteLookupStatus: outreachPipeline.websiteLookupStatus,
-      }).from(outreachPipeline)
-        .where(eq(outreachPipeline.clientId, clientId));
+      const [rows, filterCounts] = await Promise.all([
+        db.select({
+          websiteLookupStatus: outreachPipeline.websiteLookupStatus,
+        }).from(outreachPipeline)
+          .where(eq(outreachPipeline.clientId, clientId)),
+        (async () => {
+          const { getWebsiteFinderFilterCounts } = await import("./website-finder-engine");
+          return getWebsiteFinderFilterCounts(clientId);
+        })(),
+      ]);
 
       let processed = 0;
       let websitesFound = 0;
@@ -2604,6 +2610,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         blockedUrl,
         sourceUnavailable,
         breakdown,
+        filterCounts,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
