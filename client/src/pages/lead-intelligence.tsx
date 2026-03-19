@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import AppLayout from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -421,22 +422,32 @@ interface WebsiteFinderStatus {
 
 export default function LeadIntelligencePage() {
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
   const [filter, setFilter] = useState<string>("all");
 
   const { data, isLoading } = useQuery<ScoresResponse>({
     queryKey: ["/api/lead-intelligence/scores"],
+    enabled: isAuthenticated,
   });
 
   const { data: researchStatus } = useQuery<ResearchStatus>({
     queryKey: ["/api/research-engine/status"],
+    enabled: isAuthenticated,
   });
 
   const { data: deepResearchStatus } = useQuery<DeepResearchStatus>({
     queryKey: ["/api/deep-research-engine/status"],
+    enabled: isAuthenticated,
   });
 
-  const { data: websiteFinderStatus } = useQuery<WebsiteFinderStatus>({
+  const {
+    data: websiteFinderStatus,
+    isLoading: websiteFinderLoading,
+    isError: websiteFinderError,
+    refetch: refetchWebsiteFinder,
+  } = useQuery<WebsiteFinderStatus>({
     queryKey: ["/api/website-finder-engine/status"],
+    enabled: isAuthenticated,
   });
 
   const scoreMutation = useMutation({
@@ -640,7 +651,7 @@ export default function LeadIntelligencePage() {
           </div>
         )}
 
-        {websiteFinderStatus && (
+        {(websiteFinderStatus || websiteFinderLoading || (researchStatus?.researchBacklog ?? 0) > 0) && (
           <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="website-finder-panel">
             <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
               <div className="flex items-center gap-2">
@@ -650,17 +661,48 @@ export default function LeadIntelligencePage() {
                   <div className="text-[10px]" style={{ color: MUTED }}>Source official websites for research_more flows missing pipeline.website</div>
                 </div>
               </div>
-              <Button
-                onClick={() => websiteFinderMutation.mutate()}
-                disabled={websiteFinderMutation.isPending}
-                className="gap-1.5 text-[11px]"
-                style={{ background: BLUE }}
-                data-testid="run-website-finder"
-              >
-                {websiteFinderMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-                Run Website Finder
-              </Button>
+              <div className="flex items-center gap-2">
+                {websiteFinderError && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-[10px]"
+                    onClick={() => refetchWebsiteFinder()}
+                    data-testid="website-finder-retry"
+                  >
+                    Retry
+                  </Button>
+                )}
+                <Button
+                  onClick={() => websiteFinderMutation.mutate()}
+                  disabled={websiteFinderMutation.isPending}
+                  className="gap-1.5 text-[11px]"
+                  style={{ background: BLUE }}
+                  data-testid="run-website-finder"
+                >
+                  {websiteFinderMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                  Run Website Finder
+                </Button>
+              </div>
             </div>
+            {websiteFinderLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8" style={{ color: MUTED }}>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-[11px]">Loading status...</span>
+              </div>
+            ) : websiteFinderError ? (
+              <div className="py-6 text-center">
+                <span className="text-[11px]" style={{ color: MUTED }}>Unable to load status. </span>
+                <button
+                  type="button"
+                  onClick={() => refetchWebsiteFinder()}
+                  className="text-[11px] font-medium"
+                  style={{ color: BLUE }}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : websiteFinderStatus ? (
             <div className="grid grid-cols-5 gap-3 p-4">
               <div className="text-center">
                 <div className="text-[16px] font-bold" style={{ color: TEXT }}>{websiteFinderStatus.processed}</div>
@@ -683,6 +725,7 @@ export default function LeadIntelligencePage() {
                 <div className="text-[9px]" style={{ color: MUTED }}>Not Found</div>
               </div>
             </div>
+            ) : null}
           </div>
         )}
 
