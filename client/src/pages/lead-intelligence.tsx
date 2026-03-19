@@ -640,7 +640,7 @@ export default function LeadIntelligencePage() {
           </div>
         )}
 
-        {(
+        {websiteFinderStatus && (
           <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="website-finder-panel">
             <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
               <div className="flex items-center gap-2">
