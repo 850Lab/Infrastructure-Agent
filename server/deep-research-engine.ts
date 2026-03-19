@@ -377,8 +377,39 @@ async function extractContactsWithLLM(params: {
   }
 }
 
+const NOT_PERSON_WORDS = new Set([
+  "the","and","for","our","its","with","from","this","that","are","was","has","have","will","can",
+  "may","not","all","but","into","also","been","who","how","any","each","more","much","than",
+  "very","most","just","over","only","such","some","other","both","many","well","back","down",
+  "even","here","home","work","like","your","about","after","where","would","could","should",
+  "their","being","first","last","new","old","high","low","big","top","full","best","next",
+  "good","great","real","free","open","long","short","large","small","right","left","early",
+  "late","hard","fast","same","main","key","major","minor","general","special","national",
+  "industrial","commercial","construction","maintenance","safety","operations","services",
+  "project","management","engineering","environmental","mechanical","electrical","thermal",
+  "chemical","energy","pipe","fabrication","specialty","executive","corporate","financial",
+  "president","vice","director","manager","superintendent","supervisor","coordinator",
+  "assistant","associate","senior","junior","lead","chief","head","ship","guards","minutes",
+  "decision","confidence","become","aggressive","facility","facilities","discover","modernization",
+  "arizona","public","dunbar","crane","ton","area","insulation","equipment","supply","north",
+  "south","east","west","central","gulf","coast","marine","field","plant","site","crew","team",
+  "group","division","department","section","unit","office","building","put","set","get","let",
+  "run","help","need","want","make","take","give","call","meet","keep","hold","turn","move",
+]);
+
+function isPlausiblePersonName(name: string): boolean {
+  const parts = name.split(/\s+/);
+  if (parts.length < 2 || parts.length > 4) return false;
+  for (const p of parts) {
+    if (p.length === 1 && !p.match(/^[A-Z]$/)) return false;
+    if (NOT_PERSON_WORDS.has(p.toLowerCase())) return false;
+    if (p.length > 1 && !p.match(/^[A-Z][a-z]+\.?$/)) return false;
+  }
+  if (parts[0].length < 2 || parts[parts.length - 1].length < 2) return false;
+  return true;
+}
+
 function inferContactsWithHeuristics(text: string): ExtractedContact[] {
-  // Lightweight fallback: extract simple "Name - Title" and map roles via title heuristics.
   const contacts: ExtractedContact[] = [];
   const lines = text.split(/\n|\. |\! |\? /).map(l => l.trim()).filter(Boolean);
   const seen = new Set<string>();
@@ -400,14 +431,13 @@ function inferContactsWithHeuristics(text: string): ExtractedContact[] {
 
   for (const line of lines) {
     if (!titleKeywords.some(k => line.toLowerCase().includes(k))) continue;
-    // Name-ish pattern: Capitalized First and Last.
     const m = line.match(/\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b/);
     if (!m) continue;
     const fullName = `${m[1]} ${m[2]}`;
+    if (!isPlausiblePersonName(fullName)) continue;
     const key = fullName.toLowerCase();
     if (seen.has(key)) continue;
 
-    // Take the whole line as evidence; keep it short.
     const title = line.length > 120 ? line.slice(0, 120) : line;
     const role = roleFromTitleHeuristic(title);
     const roleConfidenceScore = role === "unknown" ? 30 : 65;

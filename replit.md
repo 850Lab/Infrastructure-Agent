@@ -47,6 +47,14 @@ Key system features include:
 -   **Twilio**: Supplies click-to-call, SMS, automatic call recording with an AI intelligence pipeline, and real-time call coaching capabilities.
 -   **PostgreSQL**: Stores webhook logs, user accounts, client registry, and various system-specific data tables.
 
+## Airtable Data Sync
+The `populateOutreachPipeline()` function (in `outreach-engine.ts`) now pulls **website, phone, city, and state** from Airtable's Companies table for every pipeline company on each run via `fetchAirtableCompanyData()`. The `ensureOutreachPipelineRow()` helper (in `outreach-pipeline-helper.ts`) backfills any of these fields that are missing on existing pipeline rows without overwriting existing values.
+
+Airtable field names are **lowercase** in the actual base (`company_name`, `phone`, `city`, `state`, `website`), not CamelCase — the fetch function checks both casing variants.
+
+## Contact Name Validation
+Both `research-engine.ts` and `deep-research-engine.ts` use an `isPlausiblePersonName()` filter with a `NOT_PERSON_NAMES`/`NOT_PERSON_WORDS` blocklist. This prevents website text fragments like "Safety Financial", "Guards Home", "Pipe Fabrication" from being treated as human contact names. Only strings with 2-4 capitalized words where none match common English/industry words pass the filter.
+
 ## Lead Intelligence Layer
 The platform includes a multi-signal lead intelligence scoring engine (`server/lead-intelligence.ts`) that evaluates every company flow across four dimensions:
 -   **Revenue Potential** (30% weight): Company size, industry keywords, outdoor crew indicators

@@ -15,9 +15,16 @@ export async function ensureOutreachPipelineRow(params: {
   city?: string | null;
   state?: string | null;
   website?: string | null;
+  phone?: string | null;
 }): Promise<{ created: boolean; existing: boolean }> {
   const [existing] = await db
-    .select({ id: outreachPipeline.id, website: outreachPipeline.website })
+    .select({
+      id: outreachPipeline.id,
+      website: outreachPipeline.website,
+      phone: outreachPipeline.phone,
+      city: outreachPipeline.city,
+      state: outreachPipeline.state,
+    })
     .from(outreachPipeline)
     .where(
       and(
@@ -28,13 +35,16 @@ export async function ensureOutreachPipelineRow(params: {
     .limit(1);
 
   if (existing) {
-    // Update website only if missing and we have one from Airtable
-    const existingWebsite = existing.website?.trim() || null;
-    const newWebsite = params.website?.trim() || null;
-    if (!existingWebsite && newWebsite) {
+    const updates: Record<string, any> = {};
+    if (!(existing.website?.trim()) && params.website?.trim()) updates.website = params.website.trim();
+    if (!(existing.phone?.trim()) && params.phone?.trim()) updates.phone = params.phone.trim();
+    if (!(existing.city?.trim()) && params.city?.trim()) updates.city = params.city.trim();
+    if (!(existing.state?.trim()) && params.state?.trim()) updates.state = params.state.trim();
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = new Date();
       await db
         .update(outreachPipeline)
-        .set({ website: newWebsite, updatedAt: new Date() })
+        .set(updates)
         .where(eq(outreachPipeline.id, existing.id));
     }
     return { created: false, existing: true };
@@ -52,6 +62,7 @@ export async function ensureOutreachPipelineRow(params: {
         city: params.city ?? null,
         state: params.state ?? null,
         website: params.website ?? null,
+        phone: params.phone ?? null,
         nextTouchDate: now,
         pipelineStatus: "ACTIVE",
       })

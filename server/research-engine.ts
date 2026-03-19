@@ -165,6 +165,38 @@ function getPhoneContext(html: string, phone: string): { label: string; type: Ph
   return { label: "Office", type: "generic" };
 }
 
+const NOT_PERSON_NAMES = new Set([
+  "the","and","for","our","its","with","from","this","that","are","was","has","have","will","can",
+  "may","not","all","but","into","also","been","who","how","any","each","more","much","than",
+  "very","most","just","over","only","such","some","other","both","many","well","back","down",
+  "even","here","home","work","like","your","about","after","where","would","could","should",
+  "their","being","first","last","new","old","high","low","big","top","full","best","next",
+  "good","great","real","free","open","long","short","large","small","right","left","early",
+  "late","hard","fast","same","main","key","major","minor","general","special","national",
+  "industrial","commercial","construction","maintenance","safety","operations","services",
+  "project","management","engineering","environmental","mechanical","electrical","thermal",
+  "chemical","energy","pipe","fabrication","specialty","executive","corporate","financial",
+  "president","vice","director","manager","superintendent","supervisor","coordinator",
+  "assistant","associate","senior","junior","lead","chief","head","ship","guards","minutes",
+  "decision","confidence","become","aggressive","facility","facilities","discover","modernization",
+  "arizona","public","dunbar","crane","ton","area","insulation","equipment","supply","north",
+  "south","east","west","central","gulf","coast","marine","field","plant","site","crew","team",
+  "group","division","department","section","unit","office","building","put","set","get","let",
+  "run","help","need","want","make","take","give","call","meet","keep","hold","turn","move",
+]);
+
+function isPlausiblePersonName(name: string): boolean {
+  const parts = name.split(/\s+/);
+  if (parts.length < 2 || parts.length > 4) return false;
+  for (const p of parts) {
+    if (p.length === 1 && !p.match(/^[A-Z]$/)) return false;
+    if (NOT_PERSON_NAMES.has(p.toLowerCase())) return false;
+    if (p.length > 1 && !p.match(/^[A-Z][a-z]+\.?$/)) return false;
+  }
+  if (parts[0].length < 2 || parts[parts.length - 1].length < 2) return false;
+  return true;
+}
+
 function extractNamesAndTitles(html: string): DiscoveredContact[] {
   const textContent = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
@@ -180,7 +212,7 @@ function extractNamesAndTitles(html: string): DiscoveredContact[] {
     const matches = textContent.matchAll(titleRegex);
     for (const match of matches) {
       const name = match[1].trim();
-      if (name.length > 4 && name.length < 50 && !seen.has(name.toLowerCase())) {
+      if (name.length > 4 && name.length < 50 && !seen.has(name.toLowerCase()) && isPlausiblePersonName(name)) {
         seen.add(name.toLowerCase());
         contacts.push({
           name,
@@ -197,7 +229,7 @@ function extractNamesAndTitles(html: string): DiscoveredContact[] {
     const reversedMatches = textContent.matchAll(reversedRegex);
     for (const match of reversedMatches) {
       const name = match[1].trim();
-      if (name.length > 4 && name.length < 50 && !seen.has(name.toLowerCase())) {
+      if (name.length > 4 && name.length < 50 && !seen.has(name.toLowerCase()) && isPlausiblePersonName(name)) {
         seen.add(name.toLowerCase());
         contacts.push({
           name,

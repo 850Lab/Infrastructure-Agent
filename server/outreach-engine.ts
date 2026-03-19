@@ -126,18 +126,36 @@ function generateCallScript(company: CompanyForOutreach, touchNumber: 1 | 3 | 5)
   return `CALL SCRIPT — Touch 5 FINAL CALL (Day 8)\n${dmRef}${titleRef}\n\nOpener: "Hi, this is [NAME] with [COMPANY]. I've reached out a couple times about [VALUE PROP]. This is my last call — if there's any interest, I'd love 5 minutes. If not, no hard feelings."\n\nIf unavailable: Leave final voicemail with callback number.`;
 }
 
-export async function fetchWebsiteFromAirtableCompany(clientId: string, companyId: string): Promise<string | null> {
+export interface AirtableCompanyData {
+  website: string | null;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+export async function fetchAirtableCompanyData(clientId: string, companyId: string): Promise<AirtableCompanyData | null> {
   if (!companyId.startsWith("rec")) return null;
   try {
     const cfg = await getClientAirtableConfig(clientId);
     if (!cfg.apiKey || !cfg.baseId) return null;
     const table = encodeURIComponent("Companies");
     const data = await airtableRequest(`${table}/${companyId}`, {}, cfg);
-    const website = data?.fields?.Website?.trim() || data?.fields?.website?.trim() || null;
-    return website || null;
+    const f = data?.fields;
+    if (!f) return null;
+    return {
+      website: f.Website?.trim() || f.website?.trim() || null,
+      phone: f.Phone?.trim() || f.phone?.trim() || null,
+      city: f.City?.trim() || f.city?.trim() || null,
+      state: f.State?.trim() || f.state?.trim() || null,
+    };
   } catch {
     return null;
   }
+}
+
+export async function fetchWebsiteFromAirtableCompany(clientId: string, companyId: string): Promise<string | null> {
+  const data = await fetchAirtableCompanyData(clientId, companyId);
+  return data?.website || null;
 }
 
 export async function populateOutreachPipeline(clientId: string): Promise<{ added: number; skipped: number }> {
@@ -166,16 +184,19 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
   let added = 0;
   let skipped = 0;
 
-  let websitesFound = 0;
+  let airtableSynced = 0;
   for (const [companyId, { companyName, contactName }] of byCompany) {
-    const website = await fetchWebsiteFromAirtableCompany(clientId, companyId);
-    if (website) websitesFound++;
+    const atData = await fetchAirtableCompanyData(clientId, companyId);
+    if (atData) airtableSynced++;
     const { created } = await ensureOutreachPipelineRow({
       clientId,
       companyId,
       companyName,
       contactName: contactName ?? null,
-      website: website ?? null,
+      website: atData?.website ?? null,
+      phone: atData?.phone ?? null,
+      city: atData?.city ?? null,
+      state: atData?.state ?? null,
     });
     if (created) {
       added++;
@@ -184,7 +205,7 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
       skipped++;
     }
   }
-  if (websitesFound > 0) logOutreach(`Airtable website sync: ${websitesFound}/${byCompany.size} companies had websites`);
+  if (airtableSynced > 0) logOutreach(`Airtable data sync: ${airtableSynced}/${byCompany.size} companies synced (website, phone, city, state)`);
 
   logOutreach(`Outreach pipeline populated: ${added} added, ${skipped} already in pipeline (from ${flows.length} active non-discard flows)`);
 
