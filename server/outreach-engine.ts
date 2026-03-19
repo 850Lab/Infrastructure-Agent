@@ -166,8 +166,10 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
   let added = 0;
   let skipped = 0;
 
+  let websitesFound = 0;
   for (const [companyId, { companyName, contactName }] of byCompany) {
     const website = await fetchWebsiteFromAirtableCompany(clientId, companyId);
+    if (website) websitesFound++;
     const { created } = await ensureOutreachPipelineRow({
       clientId,
       companyId,
@@ -182,6 +184,7 @@ export async function populateOutreachPipeline(clientId: string): Promise<{ adde
       skipped++;
     }
   }
+  if (websitesFound > 0) logOutreach(`Airtable website sync: ${websitesFound}/${byCompany.size} companies had websites`);
 
   logOutreach(`Outreach pipeline populated: ${added} added, ${skipped} already in pipeline (from ${flows.length} active non-discard flows)`);
 

@@ -36,7 +36,6 @@ export async function ensureOutreachPipelineRow(params: {
         .update(outreachPipeline)
         .set({ website: newWebsite, updatedAt: new Date() })
         .where(eq(outreachPipeline.id, existing.id));
-      console.log(`[PIPELINE] Website mapped from Airtable: ${params.companyName} → ${newWebsite}`);
     }
     return { created: false, existing: true };
   }
@@ -61,9 +60,6 @@ export async function ensureOutreachPipelineRow(params: {
       })
       .returning({ id: outreachPipeline.id });
     const created = inserted.length > 0;
-    if (created && (params.website?.trim())) {
-      console.log(`[PIPELINE] Website mapped from Airtable: ${params.companyName} → ${params.website?.trim()}`);
-    }
     return { created, existing: !created };
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code;
