@@ -469,6 +469,7 @@ export const twilioRecordings = pgTable("twilio_recordings", {
   leadQualitySignals: text("lead_quality_signals"),
   companyName: text("company_name"),
   contactName: text("contact_name"),
+  callIntelligenceJson: text("call_intelligence_json"),
   status: text("status").default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   processedAt: timestamp("processed_at"),

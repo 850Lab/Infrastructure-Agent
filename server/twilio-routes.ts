@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { sendSms, initiateCall, getCallStatus, isTwilioConnected, listRecentCalls, listRecentMessages, downloadRecording, getRecordingsForCall, listAllRecordings, getCallDetails } from "./twilio-service";
-import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, extractFollowupDate, analyzeLeadQuality } from "./openai";
+import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, extractFollowupDate, analyzeLeadQuality, analyzeCallIntelligence } from "./openai";
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 import { db } from "./db";
@@ -33,6 +33,17 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       return;
     }
 
+    const [recRow] = await db.select().from(twilioRecordings).where(eq(twilioRecordings.recordingSid, recordingSid)).limit(1);
+    const companyName = recRow?.companyName || null;
+    if (!recRow?.toNumber || !recRow?.fromNumber) {
+      const callDetails = await getCallDetails(callSid);
+      if (callDetails) {
+        await db.update(twilioRecordings)
+          .set({ toNumber: callDetails.to || recRow?.toNumber, fromNumber: callDetails.from || recRow?.fromNumber })
+          .where(eq(twilioRecordings.recordingSid, recordingSid));
+      }
+    }
+
     log(`Transcribing recording ${recordingSid} (${(recording.buffer.length / 1024).toFixed(0)}KB, ${recording.duration}s)...`);
     const transcription = await transcribeAudio(recording.buffer, `${recordingSid}.mp3`);
 
@@ -53,8 +64,12 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       extractedFollowupDate = followupExtraction.isoDate;
     }
 
+    log(`Running call intelligence analysis for ${recordingSid}...`);
+    const callIntel = await analyzeCallIntelligence(transcription, companyName || undefined);
+    const followUpDate = callIntel.follow_up_date || extractedFollowupDate;
+
     log(`Running lead quality analysis for ${recordingSid}...`);
-    const leadQuality = await analyzeLeadQuality(transcription);
+    const leadQuality = await analyzeLeadQuality(transcription, companyName || undefined);
 
     await db.update(twilioRecordings)
       .set({
@@ -67,11 +82,12 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
         noAuthority: authorityDetected,
         authorityReason: authorityResult.reason || null,
         suggestedRole: authorityResult.suggestedRole || null,
-        followupDate: extractedFollowupDate,
+        followupDate: followUpDate,
         followupSource: followupExtraction.rawPhrase || null,
         leadQualityScore: leadQuality.score,
         leadQualityLabel: leadQuality.label,
         leadQualitySignals: JSON.stringify(leadQuality.signals),
+        callIntelligenceJson: JSON.stringify(callIntel),
         duration: recording.duration,
         status: "analyzed",
         processedAt: new Date(),
@@ -84,13 +100,14 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       recordingSid,
       transcription: transcription.slice(0, 2000),
       analysis,
+      callIntelligence: callIntel,
       problemDetected: deterministicResult.problem_detected || null,
       proposedPatchType: deterministicResult.proposed_patch_type || null,
       confidence: deterministicResult.confidence || null,
       noAuthority: authorityDetected,
       authorityReason: authorityResult.reason || null,
       suggestedRole: authorityResult.suggestedRole || null,
-      extractedFollowupDate,
+      extractedFollowupDate: followUpDate,
       followupSource: followupExtraction.rawPhrase || null,
       leadQualityScore: leadQuality.score,
       leadQualityLabel: leadQuality.label,
@@ -130,8 +147,8 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
               writebackFields.No_Authority = true;
               writebackFields.Authority_Reason = authorityResult.reason;
             }
-            if (extractedFollowupDate) {
-              writebackFields.Next_Followup = extractedFollowupDate;
+            if (followUpDate) {
+              writebackFields.Next_Followup = followUpDate;
               writebackFields.Followup_Source = `Twilio recording: "${followupExtraction.rawPhrase}" (${followupExtraction.confidence} confidence)`;
             }
 
@@ -161,8 +178,8 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
         const aiNotes: string[] = [];
         const flowUpdates: Record<string, any> = { updatedAt: new Date() };
 
-        if (extractedFollowupDate) {
-          const fuDate = new Date(extractedFollowupDate);
+        if (followUpDate) {
+          const fuDate = new Date(followUpDate);
           if (fuDate > new Date()) {
             flowUpdates.callbackAt = fuDate;
             flowUpdates.nextAction = `Follow up on ${fuDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`;
@@ -181,10 +198,6 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
           aiNotes.push(`Issue detected: ${deterministicResult.problem_detected}`);
         }
 
-        if (aiNotes.length > 0) {
-          flowUpdates.notes = aiNotes.join(" | ");
-        }
-
         const [activeFlow] = await db.select()
           .from(companyFlows)
           .where(and(
@@ -196,44 +209,74 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
           .limit(1);
 
         if (activeFlow) {
-          flowUpdates.verifiedQualityScore = leadQuality.score;
+          flowUpdates.verifiedQualityScore = callIntel.quality_score;
           flowUpdates.verifiedQualityLabel = leadQuality.label;
           flowUpdates.qualitySignals = JSON.stringify({
-            buyingSignals: leadQuality.buyingSignals,
-            objections: leadQuality.objections,
+            buyingSignals: callIntel.buying_signals.length ? callIntel.buying_signals : leadQuality.buyingSignals,
+            objections: callIntel.objections.length ? callIntel.objections : leadQuality.objections,
             signals: leadQuality.signals,
             nextStepReason: leadQuality.nextStepReason,
+            intent: callIntel.intent,
+            decisionMakerStatus: callIntel.decision_maker_status,
+            nextBestAction: callIntel.next_best_action,
           });
-          flowUpdates.transcriptSummary = leadQuality.summary;
+          flowUpdates.transcriptSummary = callIntel.summary || leadQuality.summary;
           if (leadQuality.nextStepReason) {
             flowUpdates.nextAction = leadQuality.nextStepReason;
           }
 
-          if (leadQuality.score <= 3) {
+          if (callIntel.intent === "interested" || callIntel.next_best_action === "warm_lead") {
+            flowUpdates.lastOutcome = "interested";
+            flowUpdates.warmStage = "verified_warm";
+            aiNotes.push(`Call intent: interested — moved to warm lead`);
+          } else if (callIntel.intent === "not_interested" || callIntel.next_best_action === "park") {
+            flowUpdates.lastOutcome = "not_interested";
+            flowUpdates.priority = Math.min(activeFlow.priority, 20);
+            aiNotes.push(`Call intent: not interested — parked`);
+          } else if (callIntel.intent === "callback_requested") {
+            flowUpdates.lastOutcome = "followup_scheduled";
+            if (followUpDate) {
+              flowUpdates.callbackAt = new Date(followUpDate);
+              flowUpdates.nextAction = `Callback requested — follow up ${followUpDate}`;
+            }
+            aiNotes.push(`Call intent: callback requested`);
+          } else if (callIntel.intent === "wrong_contact" || callIntel.next_best_action === "research_more") {
+            flowUpdates.bestChannel = "research_more";
+            flowUpdates.routingReason = `Wrong contact — need to find DM (${callIntel.decision_maker_status})`;
+            flowUpdates.lastOutcome = "wrong_contact";
+            aiNotes.push(`Call intent: wrong contact — push to research`);
+          }
+
+          if (callIntel.quality_score <= 3) {
             const WARM_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer"];
-            if (activeFlow.lastOutcome && WARM_OUTCOMES.includes(activeFlow.lastOutcome)) {
+            const currentOutcome = flowUpdates.lastOutcome ?? activeFlow.lastOutcome;
+            if (currentOutcome && WARM_OUTCOMES.includes(currentOutcome)) {
               flowUpdates.lastOutcome = "not_qualified_by_transcript";
               flowUpdates.priority = Math.min(activeFlow.priority, 20);
-              aiNotes.push(`Transcript override: outcome "${activeFlow.lastOutcome}" downgraded — lead scored ${leadQuality.score}/10 (${leadQuality.label})`);
-              log(`TRANSCRIPT OVERRIDE: ${rec.companyName} was "${activeFlow.lastOutcome}" but transcript analysis scored ${leadQuality.score}/10 — downgrading`, "quality-check");
+              aiNotes.push(`Transcript override: outcome "${currentOutcome}" downgraded — lead scored ${callIntel.quality_score}/10`);
+              log(`TRANSCRIPT OVERRIDE: ${rec.companyName} was "${currentOutcome}" but transcript scored ${callIntel.quality_score}/10 — downgrading`, "quality-check");
             }
-          } else if (leadQuality.score <= 5 && activeFlow.lastOutcome === "live_answer") {
-            aiNotes.push(`Transcript caution: live answer scored only ${leadQuality.score}/10 (${leadQuality.label}) — may not be a real opportunity`);
+          } else if (callIntel.quality_score <= 5 && activeFlow.lastOutcome === "live_answer") {
+            aiNotes.push(`Transcript caution: live answer scored only ${callIntel.quality_score}/10 — may not be a real opportunity`);
+          }
+
+          if (aiNotes.length > 0) {
+            flowUpdates.notes = aiNotes.join(" | ");
           }
 
           await db.update(companyFlows).set(flowUpdates).where(eq(companyFlows.id, activeFlow.id));
 
-          if (extractedFollowupDate && flowUpdates.nextAction) {
+          if (followUpDate && flowUpdates.nextAction) {
             await db.update(actionQueue).set({
               taskType: flowUpdates.nextAction,
-              dueAt: new Date(extractedFollowupDate),
+              dueAt: new Date(followUpDate),
             }).where(and(
               eq(actionQueue.flowId, activeFlow.id),
               eq(actionQueue.status, "pending"),
             ));
           }
 
-          log(`Post-analysis flow update for ${rec.companyName}: quality=${leadQuality.score}/10 (${leadQuality.label}), ${aiNotes.join("; ")}`);
+          log(`Post-analysis flow update for ${rec.companyName}: intent=${callIntel.intent} next=${callIntel.next_best_action} quality=${callIntel.quality_score}/10`);
         }
       }
     } catch (flowErr: any) {
@@ -506,9 +549,11 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         RecordingDuration,
         CallSid,
         AccountSid,
+        From,
+        To,
       } = req.body;
 
-      log(`Recording webhook: SID=${RecordingSid}, Status=${RecordingStatus}, Duration=${RecordingDuration}s, Call=${CallSid}`);
+      log(`Recording webhook: SID=${RecordingSid}, Status=${RecordingStatus}, Duration=${RecordingDuration}s, Call=${CallSid}, From=${From || "n/a"}, To=${To || "n/a"}`);
 
       if (RecordingStatus !== "completed") {
         return res.status(200).send("<Response></Response>");
@@ -532,14 +577,18 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
       let clientId: string | undefined;
 
+      const recordingPayload = {
+        recordingSid: RecordingSid,
+        duration,
+        status: "recording_ready" as const,
+        ...(From && { fromNumber: String(From) }),
+        ...(To && { toNumber: String(To) }),
+      };
+
       if (existing.length > 0) {
         clientId = existing[0].clientId || undefined;
         await db.update(twilioRecordings)
-          .set({
-            recordingSid: RecordingSid,
-            duration,
-            status: "recording_ready",
-          })
+          .set(recordingPayload)
           .where(eq(twilioRecordings.callSid, CallSid));
       } else {
         await db.insert(twilioRecordings).values({
@@ -547,6 +596,8 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           recordingSid: RecordingSid,
           duration,
           status: "recording_ready",
+          fromNumber: From ? String(From) : null,
+          toNumber: To ? String(To) : null,
         });
       }
 
@@ -680,6 +731,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         leadQualityScore: recording.leadQualityScore,
         leadQualityLabel: recording.leadQualityLabel,
         leadQualitySignals: recording.leadQualitySignals ? JSON.parse(recording.leadQualitySignals) : null,
+        callIntelligence: recording.callIntelligenceJson ? JSON.parse(recording.callIntelligenceJson) : null,
         updatedFlowAction,
         updatedFlowNotes,
         updatedFlowDueAt,
@@ -1061,7 +1113,9 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           const authorityResult = transcriptAuthority.detected ? transcriptAuthority : analysisAuthority;
           const followupExtraction = extractFollowupDate(transcription);
           const extractedFollowupDate = followupExtraction.detected && followupExtraction.isoDate ? followupExtraction.isoDate : null;
-          const leadQuality = await analyzeLeadQuality(transcription);
+          const callIntel = await analyzeCallIntelligence(transcription, companyName || undefined);
+          const leadQuality = await analyzeLeadQuality(transcription, companyName);
+          const followUpDate = callIntel.follow_up_date || extractedFollowupDate;
 
           await db.update(twilioRecordings)
             .set({
@@ -1074,11 +1128,12 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
               noAuthority: authorityDetected,
               authorityReason: authorityResult.reason || null,
               suggestedRole: authorityResult.suggestedRole || null,
-              followupDate: extractedFollowupDate,
+              followupDate: followUpDate,
               followupSource: followupExtraction.rawPhrase || null,
               leadQualityScore: leadQuality.score,
               leadQualityLabel: leadQuality.label,
               leadQualitySignals: JSON.stringify(leadQuality.signals),
+              callIntelligenceJson: JSON.stringify(callIntel),
               companyName: companyName,
               duration: rec.duration,
               status: "analyzed",
@@ -1098,25 +1153,41 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
             if (activeFlow) {
               const flowUpdates: Record<string, any> = {
-                verifiedQualityScore: leadQuality.score,
+                verifiedQualityScore: callIntel.quality_score,
                 verifiedQualityLabel: leadQuality.label,
                 qualitySignals: JSON.stringify({
-                  buyingSignals: leadQuality.buyingSignals,
-                  objections: leadQuality.objections,
+                  buyingSignals: callIntel.buying_signals.length ? callIntel.buying_signals : leadQuality.buyingSignals,
+                  objections: callIntel.objections.length ? callIntel.objections : leadQuality.objections,
                   signals: leadQuality.signals,
                   nextStepReason: leadQuality.nextStepReason,
+                  intent: callIntel.intent,
+                  decisionMakerStatus: callIntel.decision_maker_status,
+                  nextBestAction: callIntel.next_best_action,
                 }),
-                transcriptSummary: leadQuality.summary,
+                transcriptSummary: callIntel.summary || leadQuality.summary,
                 updatedAt: new Date(),
               };
               if (leadQuality.nextStepReason) {
                 flowUpdates.nextAction = leadQuality.nextStepReason;
               }
-              if (extractedFollowupDate) {
-                flowUpdates.callbackAt = new Date(extractedFollowupDate);
+              if (followUpDate) {
+                flowUpdates.callbackAt = new Date(followUpDate);
+              }
+              if (callIntel.intent === "interested" || callIntel.next_best_action === "warm_lead") {
+                flowUpdates.lastOutcome = "interested";
+                flowUpdates.warmStage = "verified_warm";
+              } else if (callIntel.intent === "not_interested" || callIntel.next_best_action === "park") {
+                flowUpdates.lastOutcome = "not_interested";
+                flowUpdates.priority = Math.min(activeFlow.priority, 20);
+              } else if (callIntel.intent === "callback_requested") {
+                flowUpdates.lastOutcome = "followup_scheduled";
+              } else if (callIntel.intent === "wrong_contact" || callIntel.next_best_action === "research_more") {
+                flowUpdates.bestChannel = "research_more";
+                flowUpdates.routingReason = `Wrong contact — need to find DM (${callIntel.decision_maker_status})`;
+                flowUpdates.lastOutcome = "wrong_contact";
               }
               await db.update(companyFlows).set(flowUpdates).where(eq(companyFlows.id, activeFlow.id));
-              log(`[sync] Updated flow for ${companyName}: quality=${leadQuality.score}/10`);
+              log(`[sync] Updated flow for ${companyName}: intent=${callIntel.intent} quality=${callIntel.quality_score}/10`);
             }
           }
 
@@ -1128,10 +1199,12 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
             leadPhone: leadPhone,
             to: callDetails.to,
             from: callDetails.from,
-            qualityScore: leadQuality.score,
+            qualityScore: callIntel.quality_score,
             qualityLabel: leadQuality.label,
-            summary: leadQuality.summary?.substring(0, 150),
-            followupDate: extractedFollowupDate,
+            summary: callIntel.summary?.substring(0, 150) || leadQuality.summary?.substring(0, 150),
+            followupDate: followUpDate,
+            intent: callIntel.intent,
+            nextBestAction: callIntel.next_best_action,
             transcriptPreview: transcription.substring(0, 100),
           });
         } catch (err: any) {

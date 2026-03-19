@@ -329,6 +329,114 @@ function parseExplicitDate(match: RegExpExecArray, ref: Date): { date: Date; con
   return null;
 }
 
+export type CallIntelligenceIntent = "interested" | "not_interested" | "neutral" | "callback_requested" | "wrong_contact";
+export type CallIntelligenceDmStatus = "reached" | "gatekeeper" | "unknown" | "wrong_person";
+export type CallIntelligenceNextAction = "call_again" | "send_email" | "park" | "research_more" | "warm_lead";
+
+export interface CallIntelligenceResult {
+  intent: CallIntelligenceIntent;
+  buying_signals: string[];
+  objections: string[];
+  decision_maker_status: CallIntelligenceDmStatus;
+  follow_up_required: boolean;
+  follow_up_date: string | null;
+  next_best_action: CallIntelligenceNextAction;
+  summary: string;
+  quality_score: number;
+}
+
+export async function analyzeCallIntelligence(transcription: string, companyName?: string): Promise<CallIntelligenceResult> {
+  log("Analyzing call intelligence from transcript...", "openai");
+
+  try {
+    const response = await proxyClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert B2B lead qualification analyst for Gulf Coast industrial service companies (insulation, trailers, mechanical contractors, maintenance). Analyze call transcripts to extract structured intelligence for routing and pipeline updates.
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "intent": "interested" | "not_interested" | "neutral" | "callback_requested" | "wrong_contact",
+  "buying_signals": ["<specific things they said indicating interest>"],
+  "objections": ["<specific pushback or deflection>"],
+  "decision_maker_status": "reached" | "gatekeeper" | "unknown" | "wrong_person",
+  "follow_up_required": boolean,
+  "follow_up_date": "<ISO date string or null if not mentioned>",
+  "next_best_action": "call_again" | "send_email" | "park" | "research_more" | "warm_lead",
+  "summary": "<2-3 sentence plain-English summary>",
+  "quality_score": <1-10>
+}
+
+Intent guide:
+- interested: clear interest, wants info, meeting, or next step
+- not_interested: said no, not a fit, not right time
+- neutral: lukewarm, unclear intent
+- callback_requested: asked to call back later, gave date/time
+- wrong_contact: receptionist, wrong person, need to find DM
+
+next_best_action guide:
+- call_again: try again later, no clear next step
+- send_email: asked for info, email follow-up
+- park: not interested, not a fit
+- research_more: wrong contact, need to find DM
+- warm_lead: interested, move to warm follow-up
+
+Be SPECIFIC. Reference what was actually said.`,
+        },
+        {
+          role: "user",
+          content: `Analyze this call transcript${companyName ? ` (company: ${companyName})` : ""}:\n\n${transcription}`,
+        },
+      ],
+      max_tokens: 600,
+    });
+
+    const raw = response.choices[0]?.message?.content || "";
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    const intent = ["interested", "not_interested", "neutral", "callback_requested", "wrong_contact"].includes(parsed.intent)
+      ? parsed.intent
+      : "neutral";
+    const dmStatus = ["reached", "gatekeeper", "unknown", "wrong_person"].includes(parsed.decision_maker_status)
+      ? parsed.decision_maker_status
+      : "unknown";
+    const nextAction = ["call_again", "send_email", "park", "research_more", "warm_lead"].includes(parsed.next_best_action)
+      ? parsed.next_best_action
+      : "call_again";
+
+    const result: CallIntelligenceResult = {
+      intent,
+      buying_signals: Array.isArray(parsed.buying_signals) ? parsed.buying_signals.map(String).slice(0, 5) : [],
+      objections: Array.isArray(parsed.objections) ? parsed.objections.map(String).slice(0, 5) : [],
+      decision_maker_status: dmStatus,
+      follow_up_required: Boolean(parsed.follow_up_required),
+      follow_up_date: parsed.follow_up_date && typeof parsed.follow_up_date === "string" ? parsed.follow_up_date.trim() : null,
+      next_best_action: nextAction,
+      summary: String(parsed.summary || ""),
+      quality_score: Math.max(1, Math.min(10, Number(parsed.quality_score) || 5)),
+    };
+
+    log(`Call intelligence: intent=${intent} dm=${dmStatus} next=${nextAction} score=${result.quality_score}`, "openai");
+    return result;
+  } catch (err: any) {
+    log(`Call intelligence analysis failed: ${err.message}`, "openai");
+    return {
+      intent: "neutral",
+      buying_signals: [],
+      objections: [],
+      decision_maker_status: "unknown",
+      follow_up_required: false,
+      follow_up_date: null,
+      next_best_action: "call_again",
+      summary: "Analysis failed — manual review needed",
+      quality_score: 5,
+    };
+  }
+}
+
 export async function analyzeLeadQuality(transcription: string, companyName?: string): Promise<{
   score: number;
   label: string;
