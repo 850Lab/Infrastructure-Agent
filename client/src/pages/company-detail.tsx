@@ -152,6 +152,18 @@ interface RecordingData {
   createdAt: string;
 }
 
+interface CallIntelligenceRecord {
+  id: number;
+  primaryOutcome: string;
+  interestScore: number;
+  summary: string | null;
+  buyingSignals: string[];
+  objections: string[];
+  nextAction: string | null;
+  suggestedFollowUpDate: string | null;
+  createdAt: string;
+}
+
 interface DetailResponse {
   company: CompanyDetail;
   contacts: Contact[];
@@ -273,6 +285,12 @@ export default function CompanyDetailPage() {
     queryKey: ["/api/twilio/recording-by-company", companyName],
     enabled: !!companyName,
   });
+
+  const { data: callIntelData } = useQuery<{ records: CallIntelligenceRecord[] }>({
+    queryKey: ["/api/call-intelligence/company", companyId],
+    enabled: !!companyId,
+  });
+  const callIntelRecords = callIntelData?.records ?? [];
 
   const recordingsByDate = useMemo(() => {
     const map = new Map<string, RecordingData>();
@@ -466,6 +484,42 @@ export default function CompanyDetailPage() {
             </div>
           </div>
         </div>
+
+        {callIntelRecords.length > 0 && (
+          <div className="rounded-xl overflow-hidden" style={{ background: "white", border: `1px solid ${BORDER}` }} data-testid="section-call-intelligence">
+            <div className="px-6 py-4">
+              <div className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: BLUE }}>Call Intelligence</div>
+              {callIntelRecords.slice(0, 3).map((rec) => (
+                <div key={rec.id} className="mb-4 last:mb-0 p-3 rounded-lg" style={{ background: `${BLUE}06`, border: `1px solid ${BLUE}15` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold" style={{ color: TEXT }}>
+                      {new Date(rec.createdAt).toLocaleDateString()} — {rec.primaryOutcome.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: rec.interestScore >= 60 ? `${EMERALD}15` : rec.interestScore >= 40 ? `${AMBER}15` : `${MUTED}15`, color: rec.interestScore >= 60 ? EMERALD : rec.interestScore >= 40 ? AMBER : MUTED }}>
+                      {rec.interestScore}/100
+                    </span>
+                  </div>
+                  {rec.summary && <p className="text-xs mb-2" style={{ color: TEXT }}>{rec.summary}</p>}
+                  {rec.buyingSignals.length > 0 && (
+                    <div className="mb-1">
+                      <span className="text-[10px] font-bold uppercase" style={{ color: EMERALD }}>Buying signals: </span>
+                      <span className="text-xs" style={{ color: TEXT }}>{rec.buyingSignals.join("; ")}</span>
+                    </div>
+                  )}
+                  {rec.objections.length > 0 && (
+                    <div className="mb-1">
+                      <span className="text-[10px] font-bold uppercase" style={{ color: AMBER }}>Objections: </span>
+                      <span className="text-xs" style={{ color: TEXT }}>{rec.objections.join("; ")}</span>
+                    </div>
+                  )}
+                  {rec.nextAction && (
+                    <div className="text-[10px] font-semibold mt-1" style={{ color: BLUE }}>Next: {rec.nextAction.replace(/_/g, " ")}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-xl overflow-hidden" style={{ background: "white", border: `1px solid ${BORDER}` }} data-testid="section-contacts">
           <div className="px-6 py-4">

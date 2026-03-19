@@ -644,3 +644,34 @@ export const inferredContacts = pgTable("inferred_contacts", {
 export const insertInferredContactSchema = createInsertSchema(inferredContacts).omit({ id: true, createdAt: true });
 export type InsertInferredContact = z.infer<typeof insertInferredContactSchema>;
 export type InferredContact = typeof inferredContacts.$inferSelect;
+
+export const callIntelligence = pgTable("call_intelligence", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  contactId: varchar("contact_id"),
+  callSid: text("call_sid"),
+  recordingSid: text("recording_sid"),
+  phoneNumber: text("phone_number").notNull(),
+  transcriptText: text("transcript_text").notNull(),
+  primaryOutcome: text("primary_outcome").notNull().default("unknown"),
+  hasHeatExposure: text("has_heat_exposure").default("unknown"),
+  currentSolution: text("current_solution").default("unknown"),
+  urgencyLevel: text("urgency_level").default("unknown"),
+  jobType: text("job_type").default("unknown"),
+  decisionMakerName: text("decision_maker_name"),
+  timeline: text("timeline").default("unknown"),
+  interestScore: integer("interest_score").default(0),
+  buyingSignals: text("buying_signals"),
+  objections: text("objections"),
+  summary: text("summary"),
+  nextAction: text("next_action").default("unknown"),
+  suggestedFollowUpDate: text("suggested_follow_up_date"),
+  analysisRaw: text("analysis_raw"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertCallIntelligenceSchema = createInsertSchema(callIntelligence).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCallIntelligence = z.infer<typeof insertCallIntelligenceSchema>;
+export type CallIntelligence = typeof callIntelligence.$inferSelect;
