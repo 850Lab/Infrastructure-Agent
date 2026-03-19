@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, RefreshCw, ChevronDown, ChevronUp,
   Mail, Phone, Search, AlertTriangle, TrendingUp, Zap, Target, Shield,
-  Microscope, ArrowRightLeft, Ban, Users, Globe,
+  Microscope, ArrowRightLeft, Ban, Users, Globe, Layers,
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -53,6 +53,9 @@ interface FlowScore {
   deepResearchSelectedRole?: string | null;
   discoveredContacts: string | null;
   phonePaths: string | null;
+  websiteStatus: string | null;
+  contactStatus: string | null;
+  outreachReadiness: string | null;
 }
 
 interface ScoresResponse {
@@ -189,6 +192,14 @@ function FlowCard({ flow }: { flow: FlowScore }) {
             <ChannelIcon className="w-3 h-3" />
             {CHANNEL_LABELS[flow.bestChannel || ""] || "Pending"}
           </div>
+          {flow.outreachReadiness && (
+            <div className="text-[9px] px-1.5 py-0.5 rounded-full font-medium" style={{
+              background: flow.outreachReadiness === "ready_email" ? `${BLUE}12` : flow.outreachReadiness === "ready_call" ? `${EMERALD}12` : flow.outreachReadiness === "needs_website_lookup" ? `${AMBER}12` : flow.outreachReadiness === "needs_contact_enrichment" ? `${PURPLE}12` : `${MUTED}12`,
+              color: flow.outreachReadiness === "ready_email" ? BLUE : flow.outreachReadiness === "ready_call" ? EMERALD : flow.outreachReadiness === "needs_website_lookup" ? AMBER : flow.outreachReadiness === "needs_contact_enrichment" ? PURPLE : MUTED,
+            }}>
+              {flow.outreachReadiness.replace(/_/g, " ")}
+            </div>
+          )}
           {flow.warmStage && (
             <div className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: `${PURPLE}12`, color: PURPLE }}>
               {flow.warmStage.replace(/_/g, " ")}
@@ -408,6 +419,15 @@ interface DeepResearchStatus {
   blockerBreakdown: Record<string, number>;
 }
 
+interface TriageSummary {
+  websiteStatus: Record<string, number>;
+  contactStatus: Record<string, number>;
+  outreachReadiness: Record<string, number>;
+  totalActiveFlows: number;
+  triagedCount: number;
+  triagedAt: string | null;
+}
+
 interface WebsiteFinderStatus {
   processed: number;
   websitesFound: number;
@@ -431,6 +451,7 @@ export default function LeadIntelligencePage() {
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
   const [filter, setFilter] = useState<string>("all");
+  const [readinessFilter, setReadinessFilter] = useState<string>("all");
 
   const { data, isLoading } = useQuery<ScoresResponse>({
     queryKey: ["/api/lead-intelligence/scores"],
@@ -457,6 +478,26 @@ export default function LeadIntelligencePage() {
     enabled: isAuthenticated,
   });
 
+  const { data: triageSummary } = useQuery<TriageSummary>({
+    queryKey: ["/api/lead-triage/summary"],
+    enabled: isAuthenticated,
+  });
+
+  const triageRunMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/lead-triage/run");
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-triage/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      toast({ title: "Triage complete", description: `${result.triaged} flows triaged, ${result.errors ?? 0} errors` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Triage failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const scoreMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/lead-intelligence/score-all");
@@ -464,6 +505,7 @@ export default function LeadIntelligencePage() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-triage/summary"] });
       toast({ title: "Scoring complete", description: `${data.scored} flows scored, ${data.errors} errors` });
     },
     onError: (err: any) => {
@@ -528,9 +570,12 @@ export default function LeadIntelligencePage() {
   });
 
   const flows = data?.flows || [];
-  const filtered = filter === "all" ? flows
+  const channelFiltered = filter === "all" ? flows
     : filter === "unscored" ? flows.filter(f => f.compositeScore === null)
     : flows.filter(f => f.bestChannel === filter);
+  const filtered = readinessFilter === "all"
+    ? channelFiltered
+    : channelFiltered.filter(f => f.outreachReadiness === readinessFilter);
 
   return (
     <AppLayout title="Lead Intelligence">
@@ -591,6 +636,68 @@ export default function LeadIntelligencePage() {
                     <div className="text-[8px]" style={{ color: MUTED }}>{b.label}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {triageSummary && (
+          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="triage-summary-panel">
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4" style={{ color: PURPLE }} />
+                <div>
+                  <div className="text-[12px] font-bold" style={{ color: TEXT }}>Lead Triage</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>
+                    {triageSummary.triagedCount} of {triageSummary.totalActiveFlows} triaged
+                    {triageSummary.triagedAt && ` · Last run ${new Date(triageSummary.triagedAt).toLocaleString()}`}
+                  </div>
+                </div>
+              </div>
+              <Button
+                onClick={() => triageRunMutation.mutate()}
+                disabled={triageRunMutation.isPending}
+                className="gap-1.5 text-[11px]"
+                style={{ background: PURPLE }}
+                data-testid="run-triage"
+              >
+                {triageRunMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Run Triage
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-4 p-4">
+              <div>
+                <div className="text-[9px] font-bold uppercase mb-2" style={{ color: MUTED }}>Website</div>
+                <div className="flex flex-wrap gap-2">
+                  {["has_website", "no_website", "website_candidate", "website_blocked"].map(k => (
+                    <div key={k} className="text-center px-2 py-1 rounded" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+                      <div className="text-[13px] font-bold" style={{ color: TEXT }}>{triageSummary.websiteStatus[k] ?? 0}</div>
+                      <div className="text-[8px]" style={{ color: MUTED }}>{k.replace(/_/g, " ")}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] font-bold uppercase mb-2" style={{ color: MUTED }}>Contact</div>
+                <div className="flex flex-wrap gap-2">
+                  {["has_named_contact", "has_generic_email", "has_phone_only", "no_contact_info"].map(k => (
+                    <div key={k} className="text-center px-2 py-1 rounded" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+                      <div className="text-[13px] font-bold" style={{ color: TEXT }}>{triageSummary.contactStatus[k] ?? 0}</div>
+                      <div className="text-[8px]" style={{ color: MUTED }}>{k.replace(/_/g, " ")}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] font-bold uppercase mb-2" style={{ color: MUTED }}>Outreach Readiness</div>
+                <div className="flex flex-wrap gap-2">
+                  {["ready_email", "ready_call", "needs_website_lookup", "needs_contact_enrichment", "parked_low_value"].map(k => (
+                    <div key={k} className="text-center px-2 py-1 rounded" style={{ background: SUBTLE, border: `1px solid ${BORDER}` }}>
+                      <div className="text-[13px] font-bold" style={{ color: TEXT }}>{triageSummary.outreachReadiness[k] ?? 0}</div>
+                      <div className="text-[8px]" style={{ color: MUTED }}>{k.replace(/_/g, " ")}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -837,6 +944,43 @@ export default function LeadIntelligencePage() {
           ))}
         </div>
 
+        {triageSummary && triageSummary.triagedCount > 0 && (
+          <div className="flex items-center gap-2 flex-wrap" data-testid="readiness-filters">
+            <span className="text-[10px] font-medium" style={{ color: MUTED }}>Readiness:</span>
+            {[
+              { key: "all", label: "All", color: MUTED },
+              { key: "ready_email", label: "Ready Email", color: BLUE },
+              { key: "ready_call", label: "Ready Call", color: EMERALD },
+              { key: "needs_website_lookup", label: "Needs Website", color: AMBER },
+              { key: "needs_contact_enrichment", label: "Needs Enrichment", color: PURPLE },
+              { key: "parked_low_value", label: "Parked", color: ERROR },
+            ].map(f => {
+              const count = f.key === "all" ? flows.length : flows.filter(fl => fl.outreachReadiness === f.key).length;
+              const active = readinessFilter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-semibold transition-all"
+                  style={{
+                    background: active ? `${f.color}12` : "white",
+                    color: active ? f.color : MUTED,
+                    border: `1px solid ${active ? `${f.color}30` : BORDER}`,
+                  }}
+                  onClick={() => setReadinessFilter(f.key)}
+                  data-testid={`readiness-${f.key}`}
+                >
+                  {f.label}
+                  <span className="ml-0.5 px-1 py-0 rounded-full text-[9px]" style={{
+                    background: active ? `${f.color}20` : `${MUTED}15`,
+                  }}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: EMERALD }} />
@@ -845,7 +989,11 @@ export default function LeadIntelligencePage() {
           <div className="text-center py-16">
             <Zap className="w-8 h-8 mx-auto mb-2" style={{ color: MUTED }} />
             <div className="text-[12px] font-medium" style={{ color: MUTED }}>
-              {filter === "unscored" ? "All flows have been scored" : "No flows match this filter"}
+              {readinessFilter !== "all"
+                ? `No flows in ${readinessFilter.replace(/_/g, " ")}`
+                : filter === "unscored"
+                  ? "All flows have been scored"
+                  : "No flows match this filter"}
             </div>
             {data?.unscored && data.unscored > 0 && (
               <Button

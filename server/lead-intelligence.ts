@@ -3,6 +3,7 @@ import { companyFlows, inferredContacts, outreachPipeline } from "@shared/schema
 import { eq, and, isNull } from "drizzle-orm";
 import { log } from "./logger";
 import { ensureOutreachPipelineRow } from "./outreach-pipeline-helper";
+import { runLeadTriageForFlow } from "./lead-triage";
 
 const TAG = "lead-intelligence";
 
@@ -433,6 +434,13 @@ export async function scoreAndUpdateFlow(flowId: number): Promise<ScoringResult 
       contactName: flow.contactName ?? null,
     });
     if (created) log(`Created outreach_pipeline row for research_more flow ${flow.companyName} (${flow.companyId})`, TAG);
+  }
+
+  try {
+    const triage = await runLeadTriageForFlow(flow.clientId, flowId);
+    if (triage) log(`Triage flow #${flowId}: website=${triage.websiteStatus} contact=${triage.contactStatus} readiness=${triage.outreachReadiness}`, TAG);
+  } catch (e: unknown) {
+    log(`Triage failed for flow #${flowId}: ${(e as Error).message}`, TAG);
   }
 
   log(`Scored flow #${flowId} (${flow.companyName}): composite=${result.compositeScore}, channel=${result.bestChannel}`, TAG);

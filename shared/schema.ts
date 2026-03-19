@@ -525,6 +525,10 @@ export const companyFlows = pgTable("company_flows", {
   discoveredContacts: text("discovered_contacts"),
   phonePaths: text("phone_paths"),
   lastEnrichedAt: timestamp("last_enriched_at"),
+  websiteStatus: text("website_status"),
+  contactStatus: text("contact_status"),
+  outreachReadiness: text("outreach_readiness"),
+  triageAt: timestamp("triage_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

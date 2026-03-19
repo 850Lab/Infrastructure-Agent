@@ -2378,6 +2378,9 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         deepResearchSelectedRole: companyFlows.deepResearchSelectedRole,
         discoveredContacts: companyFlows.discoveredContacts,
         phonePaths: companyFlows.phonePaths,
+        websiteStatus: companyFlows.websiteStatus,
+        contactStatus: companyFlows.contactStatus,
+        outreachReadiness: companyFlows.outreachReadiness,
       }).from(companyFlows)
         .where(and(
           eq(companyFlows.clientId, clientId),
@@ -2432,6 +2435,179 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         .orderBy(desc(inferredContacts.emailConfidenceScore), desc(inferredContacts.createdAt));
       res.json({ contacts });
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lead-triage/summary", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const [totalResult, rows] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(companyFlows)
+          .where(and(eq(companyFlows.clientId, clientId), eq(companyFlows.status, "active"))),
+        db
+          .select({
+            websiteStatus: companyFlows.websiteStatus,
+            contactStatus: companyFlows.contactStatus,
+            outreachReadiness: companyFlows.outreachReadiness,
+            triageAt: companyFlows.triageAt,
+          })
+          .from(companyFlows)
+          .where(
+            and(
+              eq(companyFlows.clientId, clientId),
+              eq(companyFlows.status, "active"),
+              sql`${companyFlows.websiteStatus} IS NOT NULL`
+            )
+          ),
+      ]);
+
+      const websiteStatus: Record<string, number> = {
+        has_website: 0,
+        no_website: 0,
+        website_candidate: 0,
+        website_blocked: 0,
+      };
+      const contactStatus: Record<string, number> = {
+        has_named_contact: 0,
+        has_generic_email: 0,
+        has_phone_only: 0,
+        no_contact_info: 0,
+      };
+      const outreachReadiness: Record<string, number> = {
+        ready_email: 0,
+        ready_call: 0,
+        needs_website_lookup: 0,
+        needs_contact_enrichment: 0,
+        parked_low_value: 0,
+      };
+
+      for (const r of rows) {
+        if (r.websiteStatus && websiteStatus[r.websiteStatus] !== undefined) websiteStatus[r.websiteStatus]++;
+        if (r.contactStatus && contactStatus[r.contactStatus] !== undefined) contactStatus[r.contactStatus]++;
+        if (r.outreachReadiness && outreachReadiness[r.outreachReadiness] !== undefined) outreachReadiness[r.outreachReadiness]++;
+      }
+
+      const triagedAt =
+        rows.length > 0
+          ? rows
+              .map((r) => r.triageAt?.getTime() ?? 0)
+              .reduce((a, b) => Math.max(a, b), 0)
+          : 0;
+      const triagedAtIso = triagedAt > 0 ? new Date(triagedAt).toISOString() : null;
+
+      res.json({
+        websiteStatus,
+        contactStatus,
+        outreachReadiness,
+        totalActiveFlows: totalResult[0]?.count ?? 0,
+        triagedCount: rows.length,
+        triagedAt: triagedAtIso,
+      });
+    } catch (err: any) {
+      log(`Lead triage summary error: ${err.message}`, "lead-triage");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/lead-triage/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const { runLeadTriage } = await import("./lead-triage");
+      const result = await runLeadTriage(clientId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Lead triage run error: ${err.message}`, "lead-triage");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lead-triage/debug-sample", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      let clientId = (req as any).user?.clientId;
+      if (!clientId) {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const { runLeadTriageForFlow } = await import("./lead-triage");
+
+      const flows = await db
+        .select({
+          id: companyFlows.id,
+          companyId: companyFlows.companyId,
+          companyName: companyFlows.companyName,
+          contactName: companyFlows.contactName,
+          compositeScore: companyFlows.compositeScore,
+          websiteStatus: companyFlows.websiteStatus,
+          contactStatus: companyFlows.contactStatus,
+          outreachReadiness: companyFlows.outreachReadiness,
+          triageAt: companyFlows.triageAt,
+        })
+        .from(companyFlows)
+        .where(and(eq(companyFlows.clientId, clientId), eq(companyFlows.status, "active")))
+        .orderBy(desc(companyFlows.compositeScore))
+        .limit(10);
+
+      const results: Array<{
+        flowId: number;
+        companyName: string;
+        compositeScore: number | null;
+        source: { website: string | null; websiteLookupStatus: string | null; websiteCandidate: string | null; contactEmail: string | null; contactName: string | null; phone: string | null };
+        triage: { websiteStatus: string; contactStatus: string; outreachReadiness: string };
+      }> = [];
+
+      for (const f of flows) {
+        const triage = await runLeadTriageForFlow(clientId, f.id);
+        const [pipeline] = await db
+          .select({
+            website: outreachPipeline.website,
+            websiteLookupStatus: outreachPipeline.websiteLookupStatus,
+            websiteCandidate: outreachPipeline.websiteCandidate,
+            contactEmail: outreachPipeline.contactEmail,
+            contactName: outreachPipeline.contactName,
+            phone: outreachPipeline.phone,
+          })
+          .from(outreachPipeline)
+          .where(and(eq(outreachPipeline.clientId, clientId), eq(outreachPipeline.companyId, f.companyId)));
+
+        results.push({
+          flowId: f.id,
+          companyName: f.companyName,
+          compositeScore: f.compositeScore,
+          source: {
+            website: pipeline?.website ?? null,
+            websiteLookupStatus: pipeline?.websiteLookupStatus ?? null,
+            websiteCandidate: pipeline?.websiteCandidate ?? null,
+            contactEmail: pipeline?.contactEmail ?? null,
+            contactName: pipeline?.contactName ?? null,
+            phone: pipeline?.phone ?? null,
+          },
+          triage: triage
+            ? { websiteStatus: triage.websiteStatus, contactStatus: triage.contactStatus, outreachReadiness: triage.outreachReadiness }
+            : { websiteStatus: f.websiteStatus ?? "", contactStatus: f.contactStatus ?? "", outreachReadiness: f.outreachReadiness ?? "" },
+        });
+      }
+
+      res.json({ count: results.length, flows: results });
+    } catch (err: any) {
+      log(`Lead triage debug-sample error: ${err.message}`, "lead-triage");
       res.status(500).json({ error: err.message });
     }
   });
