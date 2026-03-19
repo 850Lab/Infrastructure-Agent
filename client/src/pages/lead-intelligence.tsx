@@ -640,7 +640,7 @@ export default function LeadIntelligencePage() {
           </div>
         )}
 
-        {websiteFinderStatus && (websiteFinderStatus.processed > 0 || websiteFinderStatus.websitesFound > 0 || (researchStatus?.researchBacklog ?? 0) > 0) && (
+        {(
           <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="website-finder-panel">
             <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
               <div className="flex items-center gap-2">
