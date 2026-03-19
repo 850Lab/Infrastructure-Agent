@@ -44,6 +44,12 @@ interface FlowScore {
   researchBlockerReasons: string | null;
   researchConvertedFrom: string | null;
   deepEnrichmentRan: boolean;
+  deepResearchRan?: boolean;
+  deepResearchBlockerReasons?: string | null;
+  deepResearchSignals?: string | null;
+  deepResearchBestInferredEmail?: string | null;
+  deepResearchBestInferredEmailConfidence?: number | null;
+  deepResearchSelectedRole?: string | null;
   discoveredContacts: string | null;
   phonePaths: string | null;
 }
@@ -90,10 +96,68 @@ function ScoreBar({ value, color, label }: { value: number | null; color: string
   );
 }
 
+interface InferredContact {
+  id: number;
+  inferredEmail: string;
+  emailConfidenceScore: number;
+  decisionMakerRole: string;
+  roleConfidenceScore: number;
+  evidence: string | null;
+  personName: string | null;
+  personTitle: string | null;
+}
+
+function InferredContactRow({ contact }: { contact: InferredContact }) {
+  const [showEvidence, setShowEvidence] = useState(false);
+  return (
+    <div className="text-[10px]">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <Users className="w-3 h-3 shrink-0" style={{ color: BLUE }} />
+        <span className="font-medium">{contact.personName || "Unknown"}</span>
+        {contact.personTitle && <span style={{ color: MUTED }}>— {contact.personTitle}</span>}
+        <span style={{ color: BLUE }}>{contact.inferredEmail}</span>
+        <span className="px-1 py-0 rounded text-[9px] font-semibold" style={{ background: `${BLUE}15`, color: BLUE }}>{contact.emailConfidenceScore}</span>
+      </div>
+      {contact.evidence && (
+        <button
+          type="button"
+          onClick={() => setShowEvidence(!showEvidence)}
+          className="text-[9px] mt-0.5 font-medium"
+          style={{ color: MUTED }}
+        >
+          {showEvidence ? "Hide evidence" : "Show evidence"}
+        </button>
+      )}
+      {showEvidence && contact.evidence && (
+        <div className="mt-0.5 p-1.5 rounded text-[9px]" style={{ background: `${BLUE}08`, color: TEXT }}>{contact.evidence}</div>
+      )}
+    </div>
+  );
+}
+
+function parseDeepResearchSignals(signals: string | null | undefined): { roleConfidenceScore?: number; selectedRole?: string } {
+  if (!signals || typeof signals !== "string") return {};
+  try {
+    const parsed = JSON.parse(signals) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return {};
+    const roleConfidenceScore = typeof parsed.roleConfidenceScore === "number" ? parsed.roleConfidenceScore : undefined;
+    const selectedRole = typeof parsed.selectedRole === "string" ? parsed.selectedRole : undefined;
+    return { roleConfidenceScore, selectedRole };
+  } catch {
+    return {};
+  }
+}
+
 function FlowCard({ flow }: { flow: FlowScore }) {
   const [expanded, setExpanded] = useState(false);
   const channelColor = CHANNEL_COLORS[flow.bestChannel || ""] || MUTED;
   const ChannelIcon = CHANNEL_ICONS[flow.bestChannel || ""] || Target;
+
+  const { data: inferredData } = useQuery<{ contacts: InferredContact[] }>({
+    queryKey: ["/api/lead-intelligence/inferred", flow.companyId],
+    enabled: expanded && !!flow.companyId,
+  });
+  const inferredContacts = inferredData?.contacts || [];
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid={`intelligence-card-${flow.id}`}>
@@ -154,6 +218,32 @@ function FlowCard({ flow }: { flow: FlowScore }) {
             </div>
           )}
 
+          {flow.deepResearchRan && (
+            <div className="flex flex-wrap gap-1.5">
+              {flow.deepResearchBestInferredEmailConfidence != null && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${BLUE}12`, color: BLUE }}>
+                  Email {flow.deepResearchBestInferredEmailConfidence}%
+                </span>
+              )}
+              {flow.deepResearchSelectedRole && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${PURPLE}12`, color: PURPLE }}>
+                  {flow.deepResearchSelectedRole}
+                </span>
+              )}
+              {(() => {
+                const { roleConfidenceScore } = parseDeepResearchSignals(flow.deepResearchSignals);
+                if (roleConfidenceScore != null) {
+                  return (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${ORANGE}12`, color: ORANGE }}>
+                      Role {roleConfidenceScore}%
+                    </span>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          )}
+
           {flow.scoringSignals && (
             <div className="space-y-2">
               {Object.entries(flow.scoringSignals as Record<string, string[]>).map(([key, reasons]) => {
@@ -191,13 +281,31 @@ function FlowCard({ flow }: { flow: FlowScore }) {
           {flow.researchBlockerReasons && (() => {
             try {
               const reasons: string[] = JSON.parse(flow.researchBlockerReasons);
-              if (reasons.length === 0) return null;
+              if (!Array.isArray(reasons) || reasons.length === 0) return null;
               return (
                 <div className="p-2 rounded space-y-1" style={{ background: `${AMBER}06`, border: `1px solid ${AMBER}15` }}>
                   <div className="text-[9px] font-bold uppercase" style={{ color: AMBER }}>Research Blockers</div>
                   {reasons.map((r, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: TEXT }}>
                       <Ban className="w-3 h-3 shrink-0" style={{ color: AMBER }} />
+                      {BLOCKER_LABELS[r] || r}
+                    </div>
+                  ))}
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {flow.deepResearchBlockerReasons && (() => {
+            try {
+              const reasons: string[] = JSON.parse(flow.deepResearchBlockerReasons);
+              if (!Array.isArray(reasons) || reasons.length === 0) return null;
+              return (
+                <div className="p-2 rounded space-y-1" style={{ background: `${PURPLE}06`, border: `1px solid ${PURPLE}15` }}>
+                  <div className="text-[9px] font-bold uppercase" style={{ color: PURPLE }}>Deep Research Blockers</div>
+                  {reasons.map((r, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: TEXT }}>
+                      <Ban className="w-3 h-3 shrink-0" style={{ color: PURPLE }} />
                       {BLOCKER_LABELS[r] || r}
                     </div>
                   ))}
@@ -245,6 +353,15 @@ function FlowCard({ flow }: { flow: FlowScore }) {
             } catch { return null; }
           })()}
 
+          {inferredContacts.length > 0 && (
+            <div className="p-2 rounded space-y-1" style={{ background: `${BLUE}06`, border: `1px solid ${BLUE}15` }}>
+              <div className="text-[9px] font-bold uppercase" style={{ color: BLUE }}>Inferred Contacts</div>
+              {inferredContacts.slice(0, 5).map((c) => (
+                <InferredContactRow key={c.id} contact={c} />
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-2 text-[9px]" style={{ color: MUTED }}>
             <span>Status: {flow.enrichmentStatus || "pending"}</span>
             {flow.deepEnrichmentRan && <span>| Deep Enriched</span>}
@@ -279,6 +396,17 @@ interface ResearchStatus {
   blockerBreakdown: Record<string, number>;
 }
 
+interface DeepResearchStatus {
+  totalActive: number;
+  remainingBacklog: number;
+  convertedToEmail: number;
+  convertedToCall: number;
+  totalConverted: number;
+  deepResearched: number;
+  blocked: number;
+  blockerBreakdown: Record<string, number>;
+}
+
 export default function LeadIntelligencePage() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("all");
@@ -289,6 +417,10 @@ export default function LeadIntelligencePage() {
 
   const { data: researchStatus } = useQuery<ResearchStatus>({
     queryKey: ["/api/research-engine/status"],
+  });
+
+  const { data: deepResearchStatus } = useQuery<DeepResearchStatus>({
+    queryKey: ["/api/deep-research-engine/status"],
   });
 
   const scoreMutation = useMutation({
@@ -320,6 +452,25 @@ export default function LeadIntelligencePage() {
     },
     onError: (err: any) => {
       toast({ title: "Research engine failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deepResearchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/deep-research-engine/run");
+      return res.json();
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/deep-research-engine/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-intelligence/inferred"] });
+      toast({
+        title: "Deep research complete",
+        description: result.totalProcessed != null ? `${result.totalProcessed} processed` : "Run finished",
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Deep research failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -446,6 +597,66 @@ export default function LeadIntelligencePage() {
                       <Ban className="w-3 h-3" style={{ color: AMBER }} />
                       {BLOCKER_LABELS[reason] || reason}
                       <span className="font-bold ml-0.5" style={{ color: AMBER }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {deepResearchStatus && (deepResearchStatus.remainingBacklog > 0 || deepResearchStatus.totalConverted > 0) && (
+          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "white" }} data-testid="deep-research-panel">
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: BORDER }}>
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4" style={{ color: PURPLE }} />
+                <div>
+                  <div className="text-[12px] font-bold" style={{ color: TEXT }}>Deep Research Engine</div>
+                  <div className="text-[10px]" style={{ color: MUTED }}>Contact inference and role scoring for research_more flows</div>
+                </div>
+              </div>
+              <Button
+                onClick={() => deepResearchMutation.mutate()}
+                disabled={deepResearchMutation.isPending || deepResearchStatus.remainingBacklog === 0}
+                className="gap-1.5 text-[11px]"
+                style={{ background: PURPLE }}
+                data-testid="run-deep-research"
+              >
+                {deepResearchMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                Run Deep Research ({deepResearchStatus.remainingBacklog})
+              </Button>
+            </div>
+            <div className="grid grid-cols-5 gap-3 p-4">
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: PURPLE }}>{deepResearchStatus.remainingBacklog}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Backlog</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: BLUE }}>{deepResearchStatus.convertedToEmail}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>→ Email</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: EMERALD }}>{deepResearchStatus.convertedToCall}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>→ Call</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: PURPLE }}>{deepResearchStatus.deepResearched}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Researched</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[16px] font-bold" style={{ color: ERROR }}>{deepResearchStatus.blocked}</div>
+                <div className="text-[9px]" style={{ color: MUTED }}>Blocked</div>
+              </div>
+            </div>
+            {Object.keys(deepResearchStatus.blockerBreakdown || {}).length > 0 && (
+              <div className="px-4 pb-4">
+                <div className="text-[9px] font-bold uppercase mb-2" style={{ color: PURPLE }}>Deep Research Blockers</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(deepResearchStatus.blockerBreakdown || {}).sort((a, b) => b[1] - a[1]).map(([reason, count]) => (
+                    <div key={reason} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ background: `${PURPLE}08`, border: `1px solid ${PURPLE}20`, color: TEXT }}>
+                      <Ban className="w-3 h-3" style={{ color: PURPLE }} />
+                      {BLOCKER_LABELS[reason] || reason}
+                      <span className="font-bold ml-0.5" style={{ color: PURPLE }}>{count}</span>
                     </div>
                   ))}
                 </div>

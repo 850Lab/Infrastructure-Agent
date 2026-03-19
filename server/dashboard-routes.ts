@@ -14,7 +14,7 @@ import { getQueryIntelSummary } from "./query-intel";
 import { log } from "./logger";
 import { db } from "./db";
 import { manualLeads, clients, companyFlows, flowAttempts, actionQueue, outreachPipeline, targetProfiles, emailSends, emailReplies, twilioRecordings, inboundMessages } from "@shared/schema";
-import { eq, and, gte, lte, inArray, sql, desc, or, asc, isNotNull } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, sql, desc, or, asc, isNotNull, isNull } from "drizzle-orm";
 import { authMiddleware, createToken, extractToken, getEmailFromToken, getTokenEntry, validateToken, verifyPassword, seedPlatformAdmin, getPermissions, requirePermission } from "./auth";
 import { enrichCompany, writeDMsToAirtable } from "./dm-enrichment";
 import { gatherCompanyIntel } from "./web-intel";
@@ -2370,6 +2370,12 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         researchBlockerReasons: companyFlows.researchBlockerReasons,
         researchConvertedFrom: companyFlows.researchConvertedFrom,
         deepEnrichmentRan: companyFlows.deepEnrichmentRan,
+        deepResearchRan: companyFlows.deepResearchRan,
+        deepResearchBlockerReasons: companyFlows.deepResearchBlockerReasons,
+        deepResearchSignals: companyFlows.deepResearchSignals,
+        deepResearchBestInferredEmail: companyFlows.deepResearchBestInferredEmail,
+        deepResearchBestInferredEmailConfidence: companyFlows.deepResearchBestInferredEmailConfidence,
+        deepResearchSelectedRole: companyFlows.deepResearchSelectedRole,
         discoveredContacts: companyFlows.discoveredContacts,
         phonePaths: companyFlows.phonePaths,
       }).from(companyFlows)
@@ -2398,10 +2404,13 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
         unscored: unscored.length,
         avgCompositeScore: avgComposite,
         channelBreakdown,
-        flows: flows.map(f => ({
-          ...f,
-          scoringSignals: f.scoringSignals ? JSON.parse(f.scoringSignals) : null,
-        })),
+        flows: flows.map(f => {
+          let scoringSignals: unknown = null;
+          if (f.scoringSignals) {
+            try { scoringSignals = JSON.parse(f.scoringSignals); } catch { /* ignore malformed */ }
+          }
+          return { ...f, scoringSignals };
+        }),
       });
     } catch (err: any) {
       log(`Lead intelligence scores error: ${err.message}`, "lead-intelligence");
@@ -2420,7 +2429,7 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
       const companyId = req.params.companyId;
       const contacts = await db.select().from(inferredContacts)
         .where(and(eq(inferredContacts.companyId, companyId), eq(inferredContacts.clientId, clientId)))
-        .orderBy(desc(inferredContacts.createdAt));
+        .orderBy(desc(inferredContacts.emailConfidenceScore), desc(inferredContacts.createdAt));
       res.json({ contacts });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2528,6 +2537,116 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/deep-research-engine/run", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const { runDeepResearchEngine } = await import("./deep-research-engine");
+      const result = await runDeepResearchEngine(clientId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Deep research engine error: ${err.message}`, "deep-research-engine");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/deep-research-engine/enrich/:flowId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const flowId = parseInt(req.params.flowId);
+      if (isNaN(flowId)) return res.status(400).json({ error: "Invalid flow ID" });
+
+      const [flow] = await db.select({ id: companyFlows.id, clientId: companyFlows.clientId })
+        .from(companyFlows).where(and(eq(companyFlows.id, flowId), eq(companyFlows.clientId, clientId)));
+      if (!flow) return res.status(404).json({ error: "Flow not found" });
+
+      const { deepResearchFlow } = await import("./deep-research-engine");
+      const result = await deepResearchFlow(flowId);
+      if (!result) return res.status(404).json({ error: "Enrichment failed" });
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      log(`Deep research enrich error: ${err.message}`, "deep-research-engine");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/deep-research-engine/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      let clientId = user?.clientId;
+      if (!clientId && user?.role === "platform_admin") {
+        const allClients = await storage.getAllClients();
+        if (allClients.length > 0) clientId = allClients[0].id;
+      }
+      if (!clientId) return res.status(400).json({ error: "Client context required" });
+
+      const allActive = await db.select({
+        bestChannel: companyFlows.bestChannel,
+        deepEnrichmentRan: companyFlows.deepEnrichmentRan,
+        deepResearchRan: companyFlows.deepResearchRan,
+        deepResearchBlockerReasons: companyFlows.deepResearchBlockerReasons,
+        enrichmentStatus: companyFlows.enrichmentStatus,
+        researchConvertedFrom: companyFlows.researchConvertedFrom,
+        deepResearchBestInferredEmail: companyFlows.deepResearchBestInferredEmail,
+      }).from(companyFlows)
+        .where(and(eq(companyFlows.clientId, clientId), eq(companyFlows.status, "active")));
+
+      let remainingBacklog = 0;
+      let convertedToEmail = 0;
+      let convertedToCall = 0;
+      let deepResearched = 0;
+      let blocked = 0;
+      const blockerBreakdown: Record<string, number> = {};
+
+      for (const f of allActive) {
+        const deepResearchIsDone = !!f.deepResearchRan;
+
+        if (f.bestChannel === "research_more" && f.deepEnrichmentRan && !deepResearchIsDone) remainingBacklog++;
+
+        if (deepResearchIsDone && f.researchConvertedFrom === "research_more") {
+          if (f.bestChannel === "email") convertedToEmail++;
+          else if (f.bestChannel === "call") convertedToCall++;
+        }
+
+        if (deepResearchIsDone) deepResearched++;
+        if (deepResearchIsDone && f.enrichmentStatus === "research_blocked") blocked++;
+
+        if (f.deepResearchBlockerReasons) {
+          try {
+            const reasons = JSON.parse(f.deepResearchBlockerReasons);
+            for (const r of reasons) blockerBreakdown[r] = (blockerBreakdown[r] || 0) + 1;
+          } catch {}
+        }
+      }
+
+      res.json({
+        totalActive: allActive.length,
+        remainingBacklog,
+        convertedToEmail,
+        convertedToCall,
+        totalConverted: convertedToEmail + convertedToCall,
+        deepResearched,
+        blocked,
+        blockerBreakdown,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   const WARM_LEAD_OUTCOMES = ["interested", "meeting_requested", "followup_scheduled", "replied", "live_answer", "callback"];
   const WARM_STAGES = ["initial_interest", "proposal_sent", "meeting_scheduled", "negotiating", "verbal_commit", "closed_won", "closed_lost"];
 
@@ -2549,8 +2668,10 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
 
       let pipelineMap = new Map<string, any>();
       if (companyIds.length > 0) {
-        const pipelineRows = await db.select().from(outreachPipeline)
-          .where(sql`${outreachPipeline.companyId} IN (${sql.join(companyIds.map(id => sql`${id}`), sql`, `)})`);
+        const pipelineWhere = clientId
+          ? and(eq(outreachPipeline.clientId, clientId), inArray(outreachPipeline.companyId, companyIds))
+          : inArray(outreachPipeline.companyId, companyIds);
+        const pipelineRows = await db.select().from(outreachPipeline).where(pipelineWhere);
         pipelineRows.forEach(p => { pipelineMap.set(p.companyId, p); });
       }
 
@@ -2609,6 +2730,13 @@ export async function registerDashboardRoutes(app: Express): Promise<void> {
           routingReason: f.routingReason,
           bestContactPath: f.bestContactPath,
           enrichmentStatus: f.enrichmentStatus,
+          researchBlockerReasons: f.researchBlockerReasons,
+          deepResearchRan: f.deepResearchRan,
+          deepResearchBestInferredEmail: f.deepResearchBestInferredEmail,
+          deepResearchBestInferredEmailConfidence: f.deepResearchBestInferredEmailConfidence,
+          deepResearchSelectedRole: f.deepResearchSelectedRole,
+          deepResearchSignals: f.deepResearchSignals,
+          deepResearchBlockerReasons: f.deepResearchBlockerReasons,
         };
       });
 

@@ -72,6 +72,13 @@ interface WarmLead {
   routingReason: string | null;
   bestContactPath: string | null;
   enrichmentStatus: string | null;
+  researchBlockerReasons?: string | null;
+  deepResearchRan?: boolean;
+  deepResearchBestInferredEmail?: string | null;
+  deepResearchBestInferredEmailConfidence?: number | null;
+  deepResearchSelectedRole?: string | null;
+  deepResearchSignals?: string | null;
+  deepResearchBlockerReasons?: string | null;
 }
 
 interface TimelineEvent {
@@ -391,6 +398,61 @@ function WarmLeadRow({ lead }: { lead: WarmLead }) {
               {lead.bestContactPath && (
                 <div className="text-[10px] mt-1" style={{ color: MUTED }}>
                   <span className="font-semibold">Path:</span> {lead.bestContactPath}
+                </div>
+              )}
+              {lead.deepResearchRan && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {lead.deepResearchBestInferredEmailConfidence != null && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${BLUE}12`, color: BLUE }}>
+                      Email {lead.deepResearchBestInferredEmailConfidence}%
+                    </span>
+                  )}
+                  {lead.deepResearchSelectedRole && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${PURPLE}12`, color: PURPLE }}>
+                      {lead.deepResearchSelectedRole}
+                    </span>
+                  )}
+                  {(() => {
+                    if (!lead.deepResearchSignals || typeof lead.deepResearchSignals !== "string") return null;
+                    try {
+                      const parsed = JSON.parse(lead.deepResearchSignals) as Record<string, unknown>;
+                      const rc = typeof parsed?.roleConfidenceScore === "number" ? parsed.roleConfidenceScore : null;
+                      if (rc == null) return null;
+                      return (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${AMBER}12`, color: AMBER }}>
+                          Role {rc}%
+                        </span>
+                      );
+                    } catch { return null; }
+                  })()}
+                </div>
+              )}
+              {lead.bestChannel === "research_more" && (lead.researchBlockerReasons || lead.deepResearchBlockerReasons) && (
+                <div className="mt-1.5 space-y-1">
+                  {lead.researchBlockerReasons && (() => {
+                    try {
+                      const reasons: string[] = JSON.parse(lead.researchBlockerReasons);
+                      if (!Array.isArray(reasons) || reasons.length === 0) return null;
+                      return (
+                        <div className="p-1.5 rounded text-[9px]" style={{ background: `${AMBER}06`, border: `1px solid ${AMBER}15` }}>
+                          <span className="font-bold" style={{ color: AMBER }}>Research Blockers: </span>
+                          {reasons.join(", ")}
+                        </div>
+                      );
+                    } catch { return null; }
+                  })()}
+                  {lead.deepResearchBlockerReasons && (() => {
+                    try {
+                      const reasons: string[] = JSON.parse(lead.deepResearchBlockerReasons);
+                      if (!Array.isArray(reasons) || reasons.length === 0) return null;
+                      return (
+                        <div className="p-1.5 rounded text-[9px]" style={{ background: `${PURPLE}06`, border: `1px solid ${PURPLE}15` }}>
+                          <span className="font-bold" style={{ color: PURPLE }}>Deep Research Blockers: </span>
+                          {reasons.join(", ")}
+                        </div>
+                      );
+                    } catch { return null; }
+                  })()}
                 </div>
               )}
             </div>

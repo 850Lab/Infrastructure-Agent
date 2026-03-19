@@ -347,6 +347,14 @@ async function executeRun(run_id: string, opts?: WebRunOptions): Promise<void> {
       }
 
       try {
+        const { runDeepResearchEngine } = await import("./deep-research-engine");
+        const deepResult = await runDeepResearchEngine(clientId);
+        log(`Deep research engine: processed=${deepResult.totalProcessed} email=${deepResult.convertedToEmail} call=${deepResult.convertedToCall} remaining=${deepResult.remainingResearch}`, "daily-web");
+      } catch (e: any) {
+        log(`Deep research engine failed (non-blocking): ${e.message}`, "daily-web");
+      }
+
+      try {
         const trendCount = await snapshotAuthorityTrends(clientId);
         log(`Authority trend snapshot: ${trendCount} titles recorded`, "daily-web");
       } catch (e: any) {

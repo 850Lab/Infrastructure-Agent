@@ -471,8 +471,108 @@ export async function storeInferredContacts(params: {
   const patterns = generateEmailPatterns(firstName, lastName, params.domain);
 
   let stored = 0;
+
+  const roleFromTitle = inferDecisionMakerRoleFromTitle(params.personTitle || "");
+  const roleConfidenceScore = inferRoleConfidenceScore(roleFromTitle);
+
+  const emailConfidenceFromLabel = (label: string): number => {
+    const l = (label || "").toLowerCase().trim();
+    if (l === "high") return 85;
+    if (l === "medium") return 65;
+    if (l === "low") return 45;
+    return 40;
+  };
+
+  const trimmedEvidenceLen = (v: any): number => {
+    const s = typeof v === "string" ? v.trim() : "";
+    return s.length;
+  };
+
+  const isBetterEvidence = (existingEvidence: any, nextEvidence: any): boolean => {
+    // storeInferredContacts never provides evidence (null), so this mostly prevents overwriting.
+    const existingLen = trimmedEvidenceLen(existingEvidence);
+    const nextLen = trimmedEvidenceLen(nextEvidence);
+    if (nextLen <= 0) return false;
+    if (existingLen <= 0) return true;
+    return nextLen > existingLen + 20;
+  };
+
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+  let insertedLogs = 0;
+  let updatedLogs = 0;
+  let skippedLogs = 0;
+  const LOG_LIMIT = 5;
+
   for (const p of patterns) {
     try {
+      const [existing] = await db.select()
+        .from(inferredContacts)
+        .where(
+          and(
+            eq(inferredContacts.clientId, params.clientId),
+            eq(inferredContacts.companyId, params.companyId),
+            eq(inferredContacts.personName, params.personName),
+            eq(inferredContacts.inferredEmail, p.email),
+            eq(inferredContacts.pattern, p.pattern),
+          )
+        )
+        .limit(1);
+
+      const emailConfidenceScore = emailConfidenceFromLabel(p.confidence);
+
+      if (existing) {
+        // Only update if strictly higher scores, or better evidence quality.
+        // storeInferredContacts does not provide evidence, so evidenceQuality will be false.
+        const emailIsHigher = existing.emailConfidenceScore < emailConfidenceScore;
+        const roleIsHigher = existing.roleConfidenceScore < roleConfidenceScore;
+        const evidenceIsBetter = isBetterEvidence(existing.evidence, null);
+
+        const shouldUpdate = emailIsHigher || roleIsHigher || evidenceIsBetter;
+
+        if (!shouldUpdate) {
+          skipped++;
+          if (skippedLogs < LOG_LIMIT) {
+            log(
+              `inferred_contacts skip: client=${params.clientId} company=${params.companyId} person="${params.personName}" email=${p.email} pattern=${p.pattern} (emailScore=${existing.emailConfidenceScore} roleScore=${existing.roleConfidenceScore})`,
+              TAG
+            );
+            skippedLogs++;
+          }
+          continue;
+        }
+
+        const set: Record<string, any> = {
+          source: existing.source ? `${existing.source};pattern_generation` : "pattern_generation",
+        };
+        if (emailIsHigher) {
+          set.emailConfidenceScore = emailConfidenceScore;
+          set.confidence = p.confidence;
+        }
+        if (roleIsHigher) {
+          set.decisionMakerRole = roleFromTitle;
+          set.roleConfidenceScore = roleConfidenceScore;
+          set.personTitle = params.personTitle || null;
+        }
+        if (evidenceIsBetter) {
+          set.evidence = null;
+        }
+
+        await db.update(inferredContacts).set(set).where(eq(inferredContacts.id, existing.id));
+        updated++;
+        stored++;
+        if (updatedLogs < LOG_LIMIT) {
+          log(
+            `inferred_contacts update: client=${params.clientId} company=${params.companyId} person="${params.personName}" email=${p.email} pattern=${p.pattern} (emailScore ${existing.emailConfidenceScore}->${emailIsHigher ? emailConfidenceScore : existing.emailConfidenceScore}, roleScore ${existing.roleConfidenceScore}->${roleIsHigher ? roleConfidenceScore : existing.roleConfidenceScore})`,
+            TAG
+          );
+          updatedLogs++;
+        }
+        continue;
+      }
+
+      inserted++;
       await db.insert(inferredContacts).values({
         clientId: params.clientId,
         companyId: params.companyId,
@@ -481,15 +581,54 @@ export async function storeInferredContacts(params: {
         inferredEmail: p.email,
         pattern: p.pattern,
         confidence: p.confidence,
+        emailConfidenceScore: emailConfidenceFromLabel(p.confidence),
+        decisionMakerRole: roleFromTitle,
+        roleConfidenceScore,
         source: "pattern_generation",
         personName: params.personName,
         personTitle: params.personTitle || null,
+        evidence: null,
       });
       stored++;
-    } catch {
-      // duplicate or constraint violation — skip
+      if (insertedLogs < LOG_LIMIT) {
+        log(
+          `inferred_contacts insert: client=${params.clientId} company=${params.companyId} person="${params.personName}" email=${p.email} pattern=${p.pattern} (emailScore=${emailConfidenceScore} roleScore=${roleConfidenceScore})`,
+          TAG
+        );
+        insertedLogs++;
+      }
+    } catch (e) {
+      // Query/insert errors should not kill the whole research run.
+      // Duplicate/constraint violations are expected in production.
     }
   }
 
+  log(
+    `storeInferredContacts summary: client=${params.clientId} company=${params.companyId} person="${params.personName}" inserted=${inserted} updated=${updated} skipped=${skipped}`,
+    TAG
+  );
+
   return stored;
+}
+
+function inferDecisionMakerRoleFromTitle(title: string): "owner" | "ops_manager" | "project_manager" | "unknown" {
+  const t = (title || "").toLowerCase();
+  if (!t) return "unknown";
+  if (t.includes("owner") || t.includes("president") || t.includes("ceo") || t.includes("chief executive") || t.includes("founder")) {
+    return "owner";
+  }
+  if (t.includes("operations") || t.includes("ops manager") || t.includes("superintendent") || t.includes("facility manager") || t.includes("plant manager")) {
+    return "ops_manager";
+  }
+  if (t.includes("project manager") || t.includes("project director") || t.includes("project") || t.includes("maintenance") || t.includes("construction superintendent")) {
+    return "project_manager";
+  }
+  return "unknown";
+}
+
+function inferRoleConfidenceScore(role: "owner" | "ops_manager" | "project_manager" | "unknown"): number {
+  if (role === "owner") return 80;
+  if (role === "ops_manager") return 70;
+  if (role === "project_manager") return 70;
+  return 30;
 }
