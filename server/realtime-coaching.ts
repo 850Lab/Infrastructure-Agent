@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HTTPServer } from "http";
 import { log as appLog } from "./index";
+import { buildAiCallBotLeadTrackSessionPartial } from "./ai-call-bot/prompt-contract";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 
@@ -73,6 +74,72 @@ interface ActiveSession {
   lastTranscriptPush: number;
   /** AI Call Bot: once set, stop forwarding media to OpenAI — human has taken over. */
   humanTakeoverAt: number | null;
+  /** Linked `ai_call_bot_sessions.id` — prompt contract applies to lead track only when set. */
+  aiCallBotSessionId: number | null;
+}
+
+const LONG_CALL_DRIFT_THRESHOLD_SEC = Math.max(
+  60,
+  parseInt(process.env.AI_CALL_BOT_LONG_CALL_THRESHOLD_SEC || "120", 10) || 120
+);
+
+function sendLeadTrackPromptContractUpdate(session: ActiveSession): void {
+  if (session.aiCallBotSessionId == null) return;
+  const ws = session.openaiWsInbound;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  try {
+    ws.send(
+      JSON.stringify({
+        type: "session.update",
+        session: buildAiCallBotLeadTrackSessionPartial(),
+      })
+    );
+  } catch (e: any) {
+    log(`AI Call Bot session.update failed: ${e.message}`);
+  }
+}
+
+function extractAssistantTextFromRealtimeEvent(event: any): string | null {
+  if (event.type === "response.audio_transcript.done" && event.transcript) {
+    return String(event.transcript).trim() || null;
+  }
+  if (event.type === "response.text.done" && event.text) {
+    return String(event.text).trim() || null;
+  }
+  const chunks: string[] = [];
+  const walk = (o: unknown) => {
+    if (o == null) return;
+    if (typeof o === "string") {
+      const t = o.trim();
+      if (t) chunks.push(t);
+      return;
+    }
+    if (Array.isArray(o)) {
+      for (const x of o) walk(x);
+      return;
+    }
+    if (typeof o === "object") {
+      const r = o as Record<string, unknown>;
+      if (typeof r.text === "string") walk(r.text);
+      if (typeof r.transcript === "string") walk(r.transcript);
+      if (r.content !== undefined) walk(r.content);
+      if (r.output !== undefined) walk(r.output);
+    }
+  };
+  if (event.type === "response.done") walk(event.response);
+  if (event.type === "response.output_item.done") walk(event.item);
+  const joined = chunks.join(" ").trim();
+  return joined.length ? joined : null;
+}
+
+async function maybeLogAssistantReplyDrift(session: ActiveSession, event: any): Promise<void> {
+  if (session.aiCallBotSessionId == null) return;
+  const text = extractAssistantTextFromRealtimeEvent(event);
+  if (!text) return;
+  const { exceedsSentenceContract, logReplyExceedsContract, countSentences } = await import("./ai-call-bot/anti-drift");
+  if (exceedsSentenceContract(text, 2)) {
+    logReplyExceedsContract(session.callSid, text, countSentences(text), text.length);
+  }
 }
 
 const activeSessions = new Map<string, ActiveSession>();
@@ -190,21 +257,25 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
 
   ws.on("open", () => {
     log(`OpenAI Realtime connected for ${speaker} track (call ${session.callSid})`);
+    const sessionUpdate: Record<string, unknown> = {
+      modalities: ["text"],
+      input_audio_format: "g711_ulaw",
+      input_audio_transcription: {
+        model: "whisper-1",
+      },
+      turn_detection: {
+        type: "server_vad",
+        threshold: 0.4,
+        prefix_padding_ms: 500,
+        silence_duration_ms: 800,
+      },
+    };
+    if (speaker === "lead" && session.aiCallBotSessionId != null) {
+      Object.assign(sessionUpdate, buildAiCallBotLeadTrackSessionPartial());
+    }
     ws.send(JSON.stringify({
       type: "session.update",
-      session: {
-        modalities: ["text"],
-        input_audio_format: "g711_ulaw",
-        input_audio_transcription: {
-          model: "whisper-1",
-        },
-        turn_detection: {
-          type: "server_vad",
-          threshold: 0.4,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 800,
-        },
-      },
+      session: sessionUpdate,
     }));
   });
 
@@ -241,6 +312,13 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
       if (event.type === "error") {
         log(`OpenAI error (${speaker}) for ${session.callSid}: ${JSON.stringify(event.error)}`);
       }
+
+      if (
+        speaker === "lead" &&
+        (event.type === "response.done" || event.type === "response.output_item.done")
+      ) {
+        void maybeLogAssistantReplyDrift(session, event);
+      }
     } catch (e: any) {
       log(`OpenAI message parse error (${speaker}): ${e.message}`);
     }
@@ -248,7 +326,7 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
 
   ws.on("close", (code) => {
     log(`OpenAI Realtime disconnected (${speaker}) for ${session.callSid} (code: ${code})`);
-    if (speaker === "inbound") session.openaiWsInbound = null;
+    if (speaker === "lead") session.openaiWsInbound = null;
     else session.openaiWsOutbound = null;
   });
 
@@ -285,6 +363,10 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
             const streamSid = msg.start?.streamSid;
             log(`Media Stream started: callSid=${callSid}, streamSid=${streamSid}`);
 
+            const parentSidRaw = msg.start?.customParameters?.parentCallSid ?? msg.start?.parentCallSid;
+            const parentCallSid =
+              typeof parentSidRaw === "string" && parentSidRaw.length > 0 ? parentSidRaw : undefined;
+
             const existing = activeSessions.get(callSid);
             if (existing) {
               existing.streamSid = streamSid;
@@ -304,11 +386,27 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
                 startedAt: Date.now(),
                 lastTranscriptPush: 0,
                 humanTakeoverAt: null,
+                aiCallBotSessionId: null,
               };
               activeSessions.set(callSid, currentSession);
             }
 
             connectToOpenAI(currentSession);
+
+            void (async () => {
+              const sess = currentSession;
+              if (!sess) return;
+              try {
+                const { findAiCallBotSessionForTwilioStatus } = await import("./ai-call-bot/transfer-controller");
+                const row = await findAiCallBotSessionForTwilioStatus(sess.callSid, parentCallSid || null);
+                if (row) {
+                  sess.aiCallBotSessionId = row.id;
+                  sendLeadTrackPromptContractUpdate(sess);
+                }
+              } catch (e: any) {
+                log(`AI Call Bot media-stream link: ${e.message}`);
+              }
+            })();
             break;
           }
 
@@ -370,6 +468,12 @@ function endSession(callSid: string) {
 
   const fullTranscript = session.transcript.join("\n");
   const duration = Math.round((Date.now() - session.startedAt) / 1000);
+
+  if (session.aiCallBotSessionId != null && duration >= LONG_CALL_DRIFT_THRESHOLD_SEC) {
+    void import("./ai-call-bot/anti-drift").then(({ logRepeatedLongCall }) => {
+      logRepeatedLongCall(callSid, duration, LONG_CALL_DRIFT_THRESHOLD_SEC);
+    });
+  }
 
   pushToSSEClients(session, "call_ended", {
     callSid,
@@ -465,7 +569,13 @@ async function processPostCallTranscript(
   }
 }
 
-export function registerCoachingSession(callSid: string, companyName: string, contactName: string, talkingPoints: string[]) {
+export function registerCoachingSession(
+  callSid: string,
+  companyName: string,
+  contactName: string,
+  talkingPoints: string[],
+  opts?: { aiCallBotSessionId?: number }
+) {
   let session = activeSessions.get(callSid);
   if (!session) {
     session = {
@@ -482,12 +592,16 @@ export function registerCoachingSession(callSid: string, companyName: string, co
       startedAt: Date.now(),
       lastTranscriptPush: 0,
       humanTakeoverAt: null,
+      aiCallBotSessionId: opts?.aiCallBotSessionId ?? null,
     };
     activeSessions.set(callSid, session);
   } else {
     session.companyName = companyName;
     session.contactName = contactName;
     session.talkingPoints = talkingPoints;
+    if (opts?.aiCallBotSessionId != null) {
+      session.aiCallBotSessionId = opts.aiCallBotSessionId;
+    }
   }
   log(`Coaching session registered: ${callSid} — ${companyName} (${talkingPoints.length} talking points)`);
   return session;

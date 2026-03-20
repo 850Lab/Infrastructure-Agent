@@ -40,6 +40,8 @@ const TRANSITIONS: Record<AiCallBotTransferState, Partial<Record<TransferMachine
     callee_classified_dm: "decision_maker_detected",
     callee_classified_influencer: "strong_influencer_detected",
     callee_classified_unknown: "unknown_callee",
+    /** Twilio call completed (hangup) without transfer path — clean terminal */
+    terminal_reached: "terminal",
   },
   voicemail_detected: {
     terminal_reached: "terminal",
@@ -55,30 +57,35 @@ const TRANSITIONS: Record<AiCallBotTransferState, Partial<Record<TransferMachine
     rules_transfer_blocked: "transfer_blocked",
     fallback_capture_started: "fallback_capture",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   decision_maker_detected: {
     rules_transfer_eligible: "transfer_eligible",
     rules_transfer_blocked: "transfer_blocked",
     fallback_capture_started: "fallback_capture",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   strong_influencer_detected: {
     rules_transfer_eligible: "transfer_eligible",
     rules_transfer_blocked: "transfer_blocked",
     fallback_capture_started: "fallback_capture",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   unknown_callee: {
     rules_transfer_eligible: "transfer_eligible",
     rules_transfer_blocked: "transfer_blocked",
     fallback_capture_started: "fallback_capture",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   transfer_eligible: {
     offer_transfer: "transfer_offered",
     rules_transfer_blocked: "transfer_blocked",
     fallback_capture_started: "fallback_capture",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   transfer_blocked: {
     fallback_capture_started: "fallback_capture",
@@ -90,11 +97,13 @@ const TRANSITIONS: Record<AiCallBotTransferState, Partial<Record<TransferMachine
     fallback_capture_started: "fallback_capture",
     rules_transfer_blocked: "transfer_blocked",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   transfer_agreed: {
     initiate_transfer: "transfer_initiated",
     bridge_failed: "transfer_failed",
     human_intercept: "human_takeover_active",
+    terminal_reached: "terminal",
   },
   transfer_initiated: {
     transfer_success: "transfer_completed",

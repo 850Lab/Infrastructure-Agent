@@ -6,6 +6,7 @@
  * (use short Say or connect in same Response).
  */
 import { getTransferPhraseSpoken } from "./transfer-constants";
+import { logMissingTransferTargetEnv } from "./anti-drift";
 
 export function getAgentNumberForTransfer(): string | null {
   const raw = process.env.AI_CALL_BOT_TRANSFER_TARGET_E164 || process.env.AGENT_PHONE || process.env.AI_CALL_BOT_AGENT_E164 || "";
@@ -19,7 +20,10 @@ export function getAgentNumberForTransfer(): string | null {
  */
 export function buildPostAgreementTransferTwiml(): string | null {
   const agent = getAgentNumberForTransfer();
-  if (!agent) return null;
+  if (!agent) {
+    logMissingTransferTargetEnv("buildPostAgreementTransferTwiml");
+    return null;
+  }
   const phrase = getTransferPhraseSpoken();
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Say>${escapeXml(phrase)}</Say><Dial>${escapeXml(agent)}</Dial></Response>`;
 }

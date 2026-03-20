@@ -435,15 +435,6 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         };
         activeCallMeta.set(result.sid, sessionMeta);
 
-        if (coachingActive) {
-          registerCoachingSession(
-            result.sid,
-            companyName || "",
-            contactName || "",
-            Array.isArray(talkingPoints) ? talkingPoints : []
-          );
-        }
-
         if (createAiCallBotSession && clientId && companyId && outreachReason) {
           try {
             const { createSession, transitionSession } = await import("./ai-call-bot/transfer-controller");
@@ -460,6 +451,16 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           } catch (e: any) {
             log(`AI Call Bot session create failed (non-blocking): ${e.message}`);
           }
+        }
+
+        if (coachingActive) {
+          registerCoachingSession(
+            result.sid,
+            companyName || "",
+            contactName || "",
+            Array.isArray(talkingPoints) ? talkingPoints : [],
+            typeof aiCallBotSessionId !== "undefined" ? { aiCallBotSessionId } : undefined
+          );
         }
       }
 
@@ -493,10 +494,21 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.post("/api/twilio/webhook/status", async (req: Request, res: Response) => {
     try {
-      const { CallSid, CallStatus, CallDuration } = req.body;
+      const { CallSid, CallStatus, CallDuration, AnsweredBy, ParentCallSid, Direction } = req.body;
       if (!CallSid || !CallStatus) {
         return res.status(200).send("<Response></Response>");
       }
+
+      void import("./ai-call-bot/transfer-controller").then(({ applyTwilioWebhookToAiCallBotFsm }) =>
+        applyTwilioWebhookToAiCallBotFsm({
+          CallSid,
+          CallStatus,
+          CallDuration,
+          AnsweredBy,
+          ParentCallSid,
+          Direction,
+        })
+      );
 
       const statusMap: Record<string, string> = {
         initiated: "dialing",

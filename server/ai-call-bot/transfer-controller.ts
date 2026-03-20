@@ -7,6 +7,8 @@ import { eq, and, desc } from "drizzle-orm";
 import type { AiCallBotTransferState, AiCallTerminalOutcome } from "./types";
 import { applyTransition, type TransferMachineEvent } from "./transfer-state-machine";
 import { defaultSupervisedMode } from "./transfer-constants";
+import { logTransferInitiatedWithoutAgreement } from "./anti-drift";
+import { mapTwilioStatusToFsmEvent, logRejectedTransition, type TwilioStatusPayload } from "./twilio-status-mapper";
 
 export async function createSession(params: {
   clientId: string;
@@ -54,6 +56,61 @@ export async function getSessionByCallSid(callSid: string, clientId: string) {
   return row ?? null;
 }
 
+/** Internal: Twilio webhooks / media stream — resolve session by parent or child CallSid. */
+export async function findAiCallBotSessionForTwilioStatus(callSid: string, parentCallSid?: string | null) {
+  const [bySid] = await db
+    .select()
+    .from(aiCallBotSessions)
+    .where(eq(aiCallBotSessions.callSid, callSid))
+    .orderBy(desc(aiCallBotSessions.createdAt))
+    .limit(1);
+  if (bySid) return bySid;
+  if (parentCallSid) {
+    const [byParent] = await db
+      .select()
+      .from(aiCallBotSessions)
+      .where(eq(aiCallBotSessions.callSid, parentCallSid))
+      .orderBy(desc(aiCallBotSessions.createdAt))
+      .limit(1);
+    return byParent ?? null;
+  }
+  return null;
+}
+
+/**
+ * Single path: map Twilio status → at most one FSM event → transitionSession.
+ * Invalid transitions are logged and skipped (no silent state corruption).
+ */
+export async function applyTwilioWebhookToAiCallBotFsm(payload: TwilioStatusPayload): Promise<void> {
+  try {
+    const row = await findAiCallBotSessionForTwilioStatus(payload.CallSid, payload.ParentCallSid || null);
+    if (!row) return;
+
+    const currentState = row.currentState as AiCallBotTransferState;
+    if (currentState === "terminal") return;
+
+    /** Transfer child leg (Dial) answered — ParentCallSid present; avoid parent-call in-progress noise. */
+    if (currentState === "transfer_initiated" && payload.ParentCallSid) {
+      const st = (payload.CallStatus || "").toLowerCase().trim();
+      if (st === "in-progress" || st === "answered") {
+        await markAgentAnswered(row.id, row.clientId);
+        return;
+      }
+    }
+
+    const event = mapTwilioStatusToFsmEvent(currentState, payload);
+    if (!event) return;
+
+    const result = await transitionSession(row.id, row.clientId, event);
+    if (!result.ok) {
+      logRejectedTransition(payload.CallSid, event, result.error);
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[ai-call-bot-fsm] applyTwilioWebhook error: ${msg}`);
+  }
+}
+
 export async function transitionSession(
   id: number,
   clientId: string,
@@ -71,6 +128,18 @@ export async function transitionSession(
   const current = row.currentState as AiCallBotTransferState;
   const result = applyTransition(current, event);
   if (!result.ok) return { ok: false, error: result.reason };
+
+  if (event === "initiate_transfer") {
+    if (!row.transferAgreedAt) {
+      const allowUnsafe =
+        process.env.AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER === "1" ||
+        process.env.AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER === "true";
+      if (!allowUnsafe) {
+        logTransferInitiatedWithoutAgreement(row.id, row.clientId);
+        return { ok: false, error: "initiate_transfer blocked: transfer_agreed_at required (set AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER only for debug)" };
+      }
+    }
+  }
 
   const now = new Date();
   const updates: Record<string, unknown> = {
@@ -92,6 +161,11 @@ export async function transitionSession(
   }
 
   await db.update(aiCallBotSessions).set(updates as any).where(eq(aiCallBotSessions.id, id));
+
+  if (event === "fallback_capture_started") {
+    const { recordFallbackTriggered } = await import("./anti-drift");
+    recordFallbackTriggered("fsm_fallback_capture_started");
+  }
 
   return { ok: true, state: result.next };
 }
@@ -136,6 +210,8 @@ export async function finalizeTerminal(params: {
   buyingSignals?: string[] | null;
 }): Promise<void> {
   if (params.outcome === "other" && !(params.otherNotes || "").trim()) {
+    const { logMissingOtherNotes } = await import("./anti-drift");
+    logMissingOtherNotes(params.id);
     throw new Error("Terminal outcome 'other' requires other_notes");
   }
 

@@ -29,6 +29,7 @@ import { buildPostAgreementTransferTwiml, buildAgentNoAnswerFallbackTwiml } from
 import { isValidTerminalOutcome } from "./ai-call-bot/types";
 import { setHumanTakeoverActive } from "./realtime-coaching";
 import { TRANSFER_MACHINE_EVENTS } from "./ai-call-bot/transfer-machine-events";
+import { recordFallbackTriggered, logManualCleanupRequiredTrue } from "./ai-call-bot/anti-drift";
 
 const TAG = "ai-call-bot";
 
@@ -200,6 +201,10 @@ export function registerAiCallBotRoutes(app: Express, authMw: any) {
 
       const twiml = allowed ? buildPostAgreementTransferTwiml() : null;
 
+      if (infoCapture) {
+        recordFallbackTriggered("evaluate_transfer_switchToInformationCapture");
+      }
+
       res.json({
         transferAllowed: allowed,
         transferBlocked: blocked,
@@ -278,6 +283,9 @@ export function registerAiCallBotRoutes(app: Express, authMw: any) {
       if (!cid) return res.status(400).json({ error: "No client context" });
       const row = await getSessionByCallSid(req.params.callSid, cid);
       if (!row) return res.status(404).json({ error: "Not found" });
+      if (row.manualCleanupRequired) {
+        logManualCleanupRequiredTrue(row.id, "get_by_callSid");
+      }
       res.json({ session: row });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
