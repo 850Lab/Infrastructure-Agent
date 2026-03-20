@@ -26,7 +26,9 @@ export function registerAiCallBotSupervisorRoutes(app: Express, authMw: any) {
     try {
       const cid = clientId(req);
       if (!cid) return res.status(400).json({ error: "No client context" });
-      const rows = await listActiveAiCallBotSessionsForSupervisor(cid);
+      const includeSandbox =
+        req.query.includeSandbox === "1" || req.query.includeSandbox === "true" || req.query.includeSandbox === "yes";
+      const rows = await listActiveAiCallBotSessionsForSupervisor(cid, 8, 50, { includeSandbox });
       const views = await Promise.all(
         rows.map((row) =>
           buildSupervisorLiveSessionView(row, row.callSid ? getCoachingStartedAtMs(row.callSid) : null)

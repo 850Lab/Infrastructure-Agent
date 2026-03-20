@@ -19,7 +19,10 @@ export async function createSession(params: {
   callSid?: string | null;
   streamSid?: string | null;
   outreachReason: string;
+  isSandboxSession?: boolean;
+  sandboxContactId?: number | null;
 }): Promise<typeof aiCallBotSessions.$inferSelect> {
+  const isSandbox = params.isSandboxSession === true;
   const [row] = await db
     .insert(aiCallBotSessions)
     .values({
@@ -31,8 +34,10 @@ export async function createSession(params: {
       streamSid: params.streamSid ?? null,
       outreachReason: params.outreachReason.trim(),
       currentState: "queued_ready_call",
-      supervisedMode: defaultSupervisedMode(),
+      supervisedMode: isSandbox ? true : defaultSupervisedMode(),
       manualCleanupRequired: false,
+      isSandboxSession: isSandbox,
+      sandboxContactId: isSandbox ? (params.sandboxContactId ?? null) : null,
     })
     .returning();
   return row;
@@ -51,19 +56,22 @@ export async function getSessionById(id: number, clientId: string) {
 export async function listActiveAiCallBotSessionsForSupervisor(
   clientId: string,
   maxHoursStale = 8,
-  limit = 50
+  limit = 50,
+  options?: { includeSandbox?: boolean }
 ): Promise<(typeof aiCallBotSessions.$inferSelect)[]> {
   const cutoff = new Date(Date.now() - maxHoursStale * 3600 * 1000);
+  const parts = [
+    eq(aiCallBotSessions.clientId, clientId),
+    ne(aiCallBotSessions.currentState, "terminal"),
+    gte(aiCallBotSessions.updatedAt, cutoff),
+  ];
+  if (!options?.includeSandbox) {
+    parts.push(eq(aiCallBotSessions.isSandboxSession, false));
+  }
   return db
     .select()
     .from(aiCallBotSessions)
-    .where(
-      and(
-        eq(aiCallBotSessions.clientId, clientId),
-        ne(aiCallBotSessions.currentState, "terminal"),
-        gte(aiCallBotSessions.updatedAt, cutoff)
-      )
-    )
+    .where(and(...parts))
     .orderBy(desc(aiCallBotSessions.updatedAt))
     .limit(limit);
 }

@@ -9,7 +9,11 @@ import { getRecentDriftEvents, getDriftReviewSummary } from "./anti-drift";
 import { verifyAiCallBotSessionRow } from "./session-verify";
 import { parseSupervisorAttentionReasonsJson } from "./supervisor-escalation";
 import { getLongCallThresholdSec, getSupervisorFallbackFsmEscalationThreshold } from "./supervisor-thresholds";
-import { buildOperatorGuidanceFromLiveView, type OperatorGuidancePayload } from "./supervisor-operator-guidance";
+import {
+  buildOperatorGuidanceFromLiveView,
+  type OperatorGuidancePayload,
+  type OperatorGuidanceInput,
+} from "./supervisor-operator-guidance";
 
 export interface SupervisorLiveSessionView {
   sessionId: number;
@@ -48,6 +52,8 @@ export interface SupervisorLiveSessionView {
   supervisorPauseReason: string | null;
   sessionFallbackFsmCount: number;
   gatheredAtIso: string;
+  isSandboxSession: boolean;
+  sandboxContactId: number | null;
   /** Deterministic operator quick-reference from driftFlags + session shape (see runbook). */
   operatorGuidance: OperatorGuidancePayload;
 }
@@ -151,10 +157,22 @@ export async function buildSupervisorLiveSessionView(
     supervisorPauseReason: row.supervisorPauseReason ?? null,
     sessionFallbackFsmCount: row.sessionFallbackFsmCount ?? 0,
     gatheredAtIso: new Date(now).toISOString(),
+    isSandboxSession: row.isSandboxSession ?? false,
+    sandboxContactId: row.sandboxContactId ?? null,
+  };
+
+  const guidanceInput: OperatorGuidanceInput = {
+    currentFsmState: core.currentFsmState,
+    transferEligibility: core.transferEligibility,
+    supervisorPauseAutoTransfer: core.supervisorPauseAutoTransfer,
+    rejectedTransitionCount: core.rejectedTransitionCount,
+    agentIntercepted: core.agentIntercepted,
+    durationSecondsSoFar: core.durationSecondsSoFar,
+    driftFlags: core.driftFlags,
   };
 
   return {
     ...core,
-    operatorGuidance: buildOperatorGuidanceFromLiveView(core),
+    operatorGuidance: buildOperatorGuidanceFromLiveView(guidanceInput),
   };
 }

@@ -469,6 +469,8 @@ export const twilioRecordings = pgTable("twilio_recordings", {
   leadQualitySignals: text("lead_quality_signals"),
   companyName: text("company_name"),
   contactName: text("contact_name"),
+  /** When true, exclude from production reporting / cohort analytics. */
+  isSandboxCall: boolean("is_sandbox_call").notNull().default(false),
   callIntelligenceJson: text("call_intelligence_json"),
   status: text("status").default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -729,6 +731,54 @@ export const aiCallBotSessions = pgTable("ai_call_bot_sessions", {
   supervisorAttentionReasons: text("supervisor_attention_reasons"),
   /** Count of successful FSM fallback_capture_started transitions on this session (escalation input). */
   sessionFallbackFsmCount: integer("session_fallback_fsm_count").notNull().default(0),
+  /** Isolated test calls — never join to production outreach queues. */
+  isSandboxSession: boolean("is_sandbox_session").notNull().default(false),
+  sandboxContactId: integer("sandbox_contact_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** Trusted testers — explicit consent; no pipeline rows. */
+export const aiCallBotSandboxContacts = pgTable("ai_call_bot_sandbox_contacts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  fullName: text("full_name").notNull(),
+  phoneE164: text("phone_e164").notNull(),
+  companyName: text("company_name").notNull(),
+  titleOrRole: text("title_or_role"),
+  relationshipTag: text("relationship_tag").notNull(),
+  testScenarioType: text("test_scenario_type").notNull(),
+  /** When true, satisfies “ready_call-style” gate for sandbox dialer only. */
+  sandboxReadyCall: boolean("sandbox_ready_call").notNull().default(true),
+  outreachReason: text("outreach_reason").notNull(),
+  notes: text("notes"),
+  consentConfirmed: boolean("consent_confirmed").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  /** Supervised rollout: sandbox dials require true (no unsupervised sandbox). */
+  supervisedModeRequired: boolean("supervised_mode_required").notNull().default(true),
+  preferredOpeningStyle: text("preferred_opening_style"),
+  expectedBehavior: text("expected_behavior"),
+  expectedOutcome: text("expected_outcome"),
+  scenarioDifficulty: text("scenario_difficulty"),
+  referralName: text("referral_name"),
+  callbackPreference: text("callback_preference"),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** One row per sandbox test dial — review + operator sign-off. */
+export const aiCallBotSandboxRuns = pgTable("ai_call_bot_sandbox_runs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  sandboxContactId: integer("sandbox_contact_id").notNull(),
+  sessionId: integer("session_id"),
+  callSid: text("call_sid"),
+  intendedScenarioType: text("intended_scenario_type").notNull(),
+  operatorNotes: text("operator_notes"),
+  testPassed: boolean("test_passed"),
+  issuesExposed: text("issues_exposed"),
+  driftFlagsSnapshot: text("drift_flags_snapshot"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -736,3 +786,6 @@ export const aiCallBotSessions = pgTable("ai_call_bot_sessions", {
 export const insertAiCallBotSessionSchema = createInsertSchema(aiCallBotSessions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAiCallBotSession = z.infer<typeof insertAiCallBotSessionSchema>;
 export type AiCallBotSession = typeof aiCallBotSessions.$inferSelect;
+
+export type AiCallBotSandboxContact = typeof aiCallBotSandboxContacts.$inferSelect;
+export type AiCallBotSandboxRun = typeof aiCallBotSandboxRuns.$inferSelect;

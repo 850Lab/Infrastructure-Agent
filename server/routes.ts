@@ -25,6 +25,7 @@ import { registerCallIntelligenceRoutes } from "./call-intelligence-routes";
 import { registerAiCallBotRoutes } from "./ai-call-bot-routes";
 import { registerAiCallBotStagingRoutes } from "./ai-call-bot/staging-routes";
 import { registerAiCallBotSupervisorRoutes } from "./ai-call-bot/supervisor-routes";
+import { registerAiCallBotSandboxRoutes } from "./ai-call-bot/sandbox-routes";
 import { authMiddleware } from "./auth";
 import { log } from "./index";
 
@@ -197,6 +198,7 @@ export async function registerRoutes(
   registerCallIntelligenceRoutes(app, authMiddleware);
   registerAiCallBotRoutes(app, authMiddleware);
   registerAiCallBotSupervisorRoutes(app, authMiddleware);
+  registerAiCallBotSandboxRoutes(app, authMiddleware);
   registerAiCallBotStagingRoutes(app);
 
   app.get("/api/webhook-logs", async (_req, res) => {

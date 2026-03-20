@@ -25,6 +25,7 @@ import LngProjectsPage from "@/pages/lng-projects";
 import TargetingPage from "@/pages/targeting";
 import WarmLeadsPage from "@/pages/warm-leads";
 import LeadIntelligencePage from "@/pages/lead-intelligence";
+import AiCallBotSandboxPage from "@/pages/ai-call-bot-sandbox";
 import LandingPage from "@/pages/landing";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
@@ -164,6 +165,7 @@ function Router() {
         <Route path="/machine/targeting"><MachineRoute><TargetingPage /></MachineRoute></Route>
         <Route path="/machine/warm-leads"><MachineRoute><WarmLeadsPage /></MachineRoute></Route>
         <Route path="/machine/lead-intelligence"><MachineRoute><LeadIntelligencePage /></MachineRoute></Route>
+        <Route path="/machine/ai-call-bot-sandbox"><MachineRoute><AiCallBotSandboxPage /></MachineRoute></Route>
 
         <Route path="/dashboard"><RoleRedirect /></Route>
         <Route path="/onboarding"><Redirect to="/machine/onboarding" /></Route>

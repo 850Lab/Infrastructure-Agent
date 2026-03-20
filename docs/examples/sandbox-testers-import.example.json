@@ -1,0 +1,16 @@
+{
+  "contacts": [
+    {
+      "fullName": "Example Trusted Tester",
+      "phoneE164": "+15551234567",
+      "companyName": "Example Industrial Co",
+      "titleOrRole": "Operations",
+      "relationshipTag": "trusted_tester",
+      "testScenarioType": "decision_maker_transfer",
+      "outreachReason": "Supervised sandbox test — agreed verbally to one test call.",
+      "notes": "Replace with real opted-in testers only.",
+      "consentConfirmed": true,
+      "expectedBehavior": "Agrees to brief qualification and optional transfer."
+    }
+  ]
+}
