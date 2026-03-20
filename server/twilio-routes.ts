@@ -355,15 +355,40 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.post("/api/twilio/call", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { to, companyName, contactName, talkingPoints, flowId, companyId, contactId, flowType, taskId } = req.body;
+      const {
+        to,
+        companyName,
+        contactName,
+        talkingPoints,
+        flowId,
+        companyId,
+        contactId,
+        flowType,
+        taskId,
+        enforceAiCallBotDial,
+        outreachReason,
+        createAiCallBotSession,
+      } = req.body;
       if (!to) {
         return res.status(400).json({ error: "Phone number 'to' is required" });
+      }
+
+      const clientId = (req as any).user?.clientId || null;
+      if (enforceAiCallBotDial && clientId && flowId && outreachReason) {
+        const { validateReadyCallDial } = await import("./ai-call-bot/dial-guard");
+        const guard = await validateReadyCallDial({
+          clientId,
+          flowId: Number(flowId),
+          outreachReason: String(outreachReason),
+        });
+        if (!guard.allowed) {
+          return res.status(403).json({ error: guard.message || "Dial guard rejected", reason: guard.reason });
+        }
       }
 
       const baseUrl = getBaseUrl(req);
       const statusCallbackUrl = `${baseUrl}/api/twilio/webhook/status`;
       const recordingCallbackUrl = `${baseUrl}/api/twilio/webhook/recording`;
-      const clientId = (req as any).user?.clientId || null;
 
       let coachingActive = false;
       if (clientId) {
@@ -382,6 +407,8 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       if (!result.success) {
         return res.status(400).json({ error: result.error });
       }
+
+      let aiCallBotSessionId: number | undefined;
 
       if (result.sid) {
         try {
@@ -416,10 +443,34 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
             Array.isArray(talkingPoints) ? talkingPoints : []
           );
         }
+
+        if (createAiCallBotSession && clientId && companyId && outreachReason) {
+          try {
+            const { createSession, transitionSession } = await import("./ai-call-bot/transfer-controller");
+            const row = await createSession({
+              clientId,
+              companyId: String(companyId),
+              contactId: contactId ? String(contactId) : null,
+              flowId: flowId ? Number(flowId) : null,
+              callSid: result.sid,
+              outreachReason: String(outreachReason),
+            });
+            await transitionSession(row.id, clientId, "dial_started");
+            aiCallBotSessionId = row.id;
+          } catch (e: any) {
+            log(`AI Call Bot session create failed (non-blocking): ${e.message}`);
+          }
+        }
       }
 
       log(`Call initiated by user to ${to} (recording: yes, coaching: ${coachingActive ? "yes" : "off"}, SID: ${result.sid}, flow: ${flowId || "none"}, company: ${companyId || "none"})`);
-      res.json({ ok: true, sid: result.sid, recordingEnabled: true, coachingEnabled: coachingActive });
+      res.json({
+        ok: true,
+        sid: result.sid,
+        recordingEnabled: true,
+        coachingEnabled: coachingActive,
+        aiCallBotSessionId: typeof aiCallBotSessionId !== "undefined" ? aiCallBotSessionId : undefined,
+      });
     } catch (err: any) {
       log(`Call route error: ${err.message}`);
       res.status(500).json({ error: err.message });
@@ -785,8 +836,12 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       const baseUrl = getBaseUrl(req);
       const recordingCallbackUrl = `${baseUrl}/api/twilio/webhook/recording`;
 
-      const agentPhone = process.env.AGENT_PHONE || "+14093387109";
+      const agentPhone = process.env.AGENT_PHONE || process.env.AI_CALL_BOT_AGENT_E164 || "";
 
+      if (!agentPhone) {
+        log("Inbound voice: AGENT_PHONE / AI_CALL_BOT_AGENT_E164 not set — cannot forward");
+        return res.type("text/xml").send("<Response><Say>Service unavailable.</Say></Response>");
+      }
       const twiml = `<Response><Dial record="record-from-answer-dual" callerId="${To}" recordingStatusCallback="${recordingCallbackUrl}" recordingStatusCallbackMethod="POST">${agentPhone}</Dial></Response>`;
 
       let clientId: string | null = null;
@@ -821,8 +876,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       res.type("text/xml").send(twiml);
     } catch (err: any) {
       log(`Inbound call webhook error: ${err.message}`);
-      const agentPhone = process.env.AGENT_PHONE || "+14093387109";
-      res.type("text/xml").send(`<Response><Dial>${agentPhone}</Dial></Response>`);
+      res.type("text/xml").send("<Response><Say>Service unavailable.</Say></Response>");
     }
   });
 
@@ -1018,7 +1072,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
             continue;
           }
 
-          const agentDigits = (process.env.AGENT_PHONE || "+14093387109").replace(/[^0-9]/g, "").slice(-10);
+          const agentDigits = (process.env.AGENT_PHONE || process.env.AI_CALL_BOT_AGENT_E164 || "").replace(/[^0-9]/g, "").slice(-10);
           const toDigits = (callDetails.to || "").replace(/[^0-9]/g, "").slice(-10);
           const fromDigits = (callDetails.from || "").replace(/[^0-9]/g, "").slice(-10);
 

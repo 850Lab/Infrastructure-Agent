@@ -71,6 +71,8 @@ interface ActiveSession {
   sseClients: Set<any>;
   startedAt: number;
   lastTranscriptPush: number;
+  /** AI Call Bot: once set, stop forwarding media to OpenAI — human has taken over. */
+  humanTakeoverAt: number | null;
 }
 
 const activeSessions = new Map<string, ActiveSession>();
@@ -301,6 +303,7 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
                 sseClients: new Set(),
                 startedAt: Date.now(),
                 lastTranscriptPush: 0,
+                humanTakeoverAt: null,
               };
               activeSessions.set(callSid, currentSession);
             }
@@ -312,7 +315,7 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
           case "media": {
             const audioPayload = msg.media?.payload;
             const track = msg.media?.track;
-            if (audioPayload && currentSession) {
+            if (audioPayload && currentSession && !currentSession.humanTakeoverAt) {
               const targetWs = track === "outbound"
                 ? currentSession.openaiWsOutbound
                 : currentSession.openaiWsInbound;
@@ -478,6 +481,7 @@ export function registerCoachingSession(callSid: string, companyName: string, co
       sseClients: new Set(),
       startedAt: Date.now(),
       lastTranscriptPush: 0,
+      humanTakeoverAt: null,
     };
     activeSessions.set(callSid, session);
   } else {
@@ -536,4 +540,25 @@ export function getActiveSessions(): { callSid: string; companyName: string; sta
     transcriptLength: s.transcript.length,
     alertCount: s.alerts.length,
   }));
+}
+
+/**
+ * AI Call Bot supervised mode: human intercept — stop AI from receiving/sending audio on this call.
+ */
+export function setHumanTakeoverActive(callSid: string): boolean {
+  const session = activeSessions.get(callSid);
+  if (!session) return false;
+  const at = Date.now();
+  session.humanTakeoverAt = at;
+  if (session.openaiWsInbound?.readyState === WebSocket.OPEN) {
+    try { session.openaiWsInbound.close(); } catch {}
+  }
+  if (session.openaiWsOutbound?.readyState === WebSocket.OPEN) {
+    try { session.openaiWsOutbound.close(); } catch {}
+  }
+  session.openaiWsInbound = null;
+  session.openaiWsOutbound = null;
+  pushToSSEClients(session, "human_takeover", { callSid, agentInterceptedAt: at });
+  log(`Human takeover active for ${callSid} at ${at}`);
+  return true;
 }

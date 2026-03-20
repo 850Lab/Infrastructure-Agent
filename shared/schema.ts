@@ -675,3 +675,52 @@ export const callIntelligence = pgTable("call_intelligence", {
 export const insertCallIntelligenceSchema = createInsertSchema(callIntelligence).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCallIntelligence = z.infer<typeof insertCallIntelligenceSchema>;
 export type CallIntelligence = typeof callIntelligence.$inferSelect;
+
+/** AI Call Bot supervised transfer + post-call contract fields (checklist-aligned). */
+export const aiCallBotSessions = pgTable("ai_call_bot_sessions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  clientId: varchar("client_id").notNull(),
+  companyId: varchar("company_id").notNull(),
+  contactId: varchar("contact_id"),
+  flowId: integer("flow_id"),
+  callSid: text("call_sid"),
+  streamSid: text("stream_sid"),
+  outreachReason: text("outreach_reason").notNull().default(""),
+  currentState: text("current_state").notNull().default("queued_ready_call"),
+  callOutcome: text("call_outcome"),
+  decisionMakerName: text("decision_maker_name"),
+  decisionMakerTitle: text("decision_maker_title"),
+  interestLevel: text("interest_level"),
+  objections: text("objections"),
+  followUpDate: text("follow_up_date"),
+  nextBestAction: text("next_best_action"),
+  transferStatus: text("transfer_status"),
+  transferBlockReason: text("transfer_block_reason"),
+  transferFailureReason: text("transfer_failure_reason"),
+  transferFailureDetail: text("transfer_failure_detail"),
+  transferOfferedAt: timestamp("transfer_offered_at"),
+  transferAgreedAt: timestamp("transfer_agreed_at"),
+  transferInitiatedAt: timestamp("transfer_initiated_at"),
+  transferCompletedAt: timestamp("transfer_completed_at"),
+  agentAnswered: boolean("agent_answered").notNull().default(false),
+  agentAnsweredAt: timestamp("agent_answered_at"),
+  agentIntercepted: boolean("agent_intercepted").notNull().default(false),
+  agentInterceptedAt: timestamp("agent_intercepted_at"),
+  supervisedMode: boolean("supervised_mode").notNull().default(true),
+  calleeType: text("callee_type"),
+  relevanceStatus: text("relevance_status"),
+  opennessStatus: text("openness_status"),
+  hesitationDetected: boolean("hesitation_detected").notNull().default(false),
+  hesitationReason: text("hesitation_reason"),
+  fallbackCaptureUsed: boolean("fallback_capture_used").notNull().default(false),
+  fallbackCaptureType: text("fallback_capture_type"),
+  otherNotes: text("other_notes"),
+  manualCleanupRequired: boolean("manual_cleanup_required").notNull().default(false),
+  buyingSignals: text("buying_signals"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertAiCallBotSessionSchema = createInsertSchema(aiCallBotSessions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiCallBotSession = z.infer<typeof insertAiCallBotSessionSchema>;
+export type AiCallBotSession = typeof aiCallBotSessions.$inferSelect;

@@ -22,6 +22,7 @@ import { registerLngRoutes } from "./lng-projects";
 import { registerTwilioRoutes } from "./twilio-routes";
 import { registerFlowRoutes } from "./flow-routes";
 import { registerCallIntelligenceRoutes } from "./call-intelligence-routes";
+import { registerAiCallBotRoutes } from "./ai-call-bot-routes";
 import { authMiddleware } from "./auth";
 import { log } from "./index";
 
@@ -192,6 +193,7 @@ export async function registerRoutes(
   registerTwilioRoutes(app, authMiddleware);
   registerFlowRoutes(app);
   registerCallIntelligenceRoutes(app, authMiddleware);
+  registerAiCallBotRoutes(app, authMiddleware);
 
   app.get("/api/webhook-logs", async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);

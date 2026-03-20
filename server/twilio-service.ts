@@ -122,7 +122,8 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
   }
 }
 
-const AGENT_PHONE = process.env.AGENT_PHONE || "+14093387109";
+/** Agent leg for click-to-call; must be set via env (no hardcoded numbers). */
+const AGENT_PHONE = () => process.env.AGENT_PHONE || process.env.AI_CALL_BOT_AGENT_E164 || "";
 
 export async function initiateCall(
   to: string,
@@ -142,9 +143,9 @@ export async function initiateCall(
       return { success: false, error: "Invalid phone number" };
     }
 
-    const normalizedAgent = normalizePhone(AGENT_PHONE);
+    const normalizedAgent = normalizePhone(AGENT_PHONE());
     if (!normalizedAgent) {
-      return { success: false, error: "Agent phone number not configured" };
+      return { success: false, error: "Agent phone not configured — set AGENT_PHONE or AI_CALL_BOT_AGENT_E164" };
     }
 
     let twiml = `<Response>`;
@@ -339,7 +340,7 @@ export async function getCallDetails(callSid: string): Promise<any | null> {
   }
 }
 
-function normalizePhone(phone: string): string | null {
+export function normalizePhone(phone: string): string | null {
   if (!phone) return null;
   const digits = phone.replace(/[^\d+]/g, "");
   if (digits.startsWith("+")) {
