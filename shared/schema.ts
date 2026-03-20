@@ -717,6 +717,9 @@ export const aiCallBotSessions = pgTable("ai_call_bot_sessions", {
   otherNotes: text("other_notes"),
   manualCleanupRequired: boolean("manual_cleanup_required").notNull().default(false),
   buyingSignals: text("buying_signals"),
+  /** Auditable count of FSM transition attempts rejected by transfer-controller (invalid edge or guardrail). */
+  fsmRejectedTransitionCount: integer("fsm_rejected_transition_count").notNull().default(0),
+  lastFsmRejectedReason: text("last_fsm_rejected_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

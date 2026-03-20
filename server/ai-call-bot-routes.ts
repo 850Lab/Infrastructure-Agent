@@ -30,6 +30,7 @@ import { isValidTerminalOutcome } from "./ai-call-bot/types";
 import { setHumanTakeoverActive } from "./realtime-coaching";
 import { TRANSFER_MACHINE_EVENTS } from "./ai-call-bot/transfer-machine-events";
 import { recordFallbackTriggered, logManualCleanupRequiredTrue } from "./ai-call-bot/anti-drift";
+import { verifyAiCallBotSessionRow } from "./ai-call-bot/session-verify";
 
 const TAG = "ai-call-bot";
 
@@ -272,6 +273,20 @@ export function registerAiCallBotRoutes(app: Express, authMw: any) {
       const { callSid } = z.object({ callSid: z.string().min(1) }).parse(req.body);
       await attachCallSid(id, cid, callSid);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/ai-call-bot/sessions/:id/verify-report", authMw, async (req: Request, res: Response) => {
+    try {
+      const cid = clientId(req);
+      if (!cid) return res.status(400).json({ error: "No client context" });
+      const id = parseInt(req.params.id, 10);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      const row = await getSessionById(id, cid);
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json({ verify: verifyAiCallBotSessionRow(row) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

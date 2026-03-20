@@ -3,7 +3,7 @@
  */
 import { db } from "../db";
 import { aiCallBotSessions } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import type { AiCallBotTransferState, AiCallTerminalOutcome } from "./types";
 import { applyTransition, type TransferMachineEvent } from "./transfer-state-machine";
 import { defaultSupervisedMode } from "./transfer-constants";
@@ -81,6 +81,31 @@ export async function findAiCallBotSessionForTwilioStatus(callSid: string, paren
  * Single path: map Twilio status → at most one FSM event → transitionSession.
  * Invalid transitions are logged and skipped (no silent state corruption).
  */
+/** Single write path: persist rejected transition attempt for staging verify / audit. */
+async function recordFsmRejection(id: number, clientId: string, reason: string, callSid: string | null): Promise<void> {
+  try {
+    await db
+      .update(aiCallBotSessions)
+      .set({
+        fsmRejectedTransitionCount: sql`${aiCallBotSessions.fsmRejectedTransitionCount} + 1`,
+        lastFsmRejectedReason: reason.slice(0, 2000),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(aiCallBotSessions.id, id), eq(aiCallBotSessions.clientId, clientId)));
+    const { recordDriftEvent } = await import("./anti-drift");
+    recordDriftEvent({
+      kind: "fsm_rejected_transition",
+      sessionId: id,
+      clientId,
+      callSid: callSid ?? undefined,
+      detail: reason,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[ai-call-bot] recordFsmRejection failed: ${msg}`);
+  }
+}
+
 export async function applyTwilioWebhookToAiCallBotFsm(payload: TwilioStatusPayload): Promise<void> {
   try {
     const row = await findAiCallBotSessionForTwilioStatus(payload.CallSid, payload.ParentCallSid || null);
@@ -127,7 +152,10 @@ export async function transitionSession(
 
   const current = row.currentState as AiCallBotTransferState;
   const result = applyTransition(current, event);
-  if (!result.ok) return { ok: false, error: result.reason };
+  if (!result.ok) {
+    await recordFsmRejection(id, clientId, result.reason, row.callSid ?? null);
+    return { ok: false, error: result.reason };
+  }
 
   if (event === "initiate_transfer") {
     if (!row.transferAgreedAt) {
@@ -136,6 +164,12 @@ export async function transitionSession(
         process.env.AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER === "true";
       if (!allowUnsafe) {
         logTransferInitiatedWithoutAgreement(row.id, row.clientId);
+        await recordFsmRejection(
+          id,
+          clientId,
+          "initiate_transfer blocked: transfer_agreed_at required (set AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER only for debug)",
+          row.callSid ?? null
+        );
         return { ok: false, error: "initiate_transfer blocked: transfer_agreed_at required (set AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER only for debug)" };
       }
     }
