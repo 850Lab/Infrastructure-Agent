@@ -125,11 +125,29 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
 /** Agent leg for click-to-call; must be set via env (no hardcoded numbers). */
 const AGENT_PHONE = () => process.env.AGENT_PHONE || process.env.AI_CALL_BOT_AGENT_E164 || "";
 
+export type InitiateCallOptions = {
+  /**
+   * Public https base (e.g. https://app.example.com). When set with mediaStreamUrl, Twilio fetches
+   * TwiML from our webhook so the answered callee leg can use &lt;Connect&gt;&lt;Stream&gt; (bidirectional PSTN audio).
+   * Without this, &lt;Start&gt;&lt;Stream&gt; is used (transcription-only; cannot inject audio per Twilio).
+   */
+  coachingPublicBaseUrl?: string;
+};
+
+export function twilioXmlAttrEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export async function initiateCall(
   to: string,
   statusCallbackUrl?: string,
   recordingCallbackUrl?: string,
-  mediaStreamUrl?: string
+  mediaStreamUrl?: string,
+  options?: InitiateCallOptions
 ): Promise<{ success: boolean; sid?: string; error?: string }> {
   try {
     const client = await getTwilioClient();
@@ -148,24 +166,41 @@ export async function initiateCall(
       return { success: false, error: "Agent phone not configured — set AGENT_PHONE or AI_CALL_BOT_AGENT_E164" };
     }
 
-    let twiml = `<Response>`;
-    if (mediaStreamUrl) {
-      twiml += `<Start><Stream url="${mediaStreamUrl}" track="both_tracks" /></Start>`;
-      log(`initiateCall: TwiML includes <Stream> url=${mediaStreamUrl} (realtime coaching / AI path can attach)`);
-    } else {
-      log(`initiateCall: TwiML has NO <Stream> — coaching/media inactive; OpenAI realtime will not receive call audio`);
-    }
-    twiml += `<Say>Connecting you to ${normalizedLead}.</Say>`;
-    twiml += `<Dial record="record-from-answer-dual" callerId="${from}">${normalizedLead}</Dial>`;
-    twiml += `</Response>`;
+    const useBidirectionalCoaching =
+      !!mediaStreamUrl && !!options?.coachingPublicBaseUrl?.trim();
 
     const callParams: any = {
       to: normalizedAgent,
       from,
-      twiml,
       record: true,
       recordingChannels: "dual",
     };
+
+    if (useBidirectionalCoaching) {
+      const base = options!.coachingPublicBaseUrl!.replace(/\/$/, "");
+      const q = new URLSearchParams({
+        leadE164: normalizedLead,
+        streamWss: mediaStreamUrl!,
+      });
+      const voiceUrl = `${base}/api/twilio/webhook/coaching-outbound-twiml?${q.toString()}`;
+      callParams.url = voiceUrl;
+      callParams.method = "POST";
+      log(
+        `initiateCall: bidirectional coaching TwiML url=${voiceUrl.split("?")[0]}?... (callee &lt;Connect&gt;&lt;Stream&gt; for PSTN playback)`
+      );
+    } else {
+      let twiml = `<Response>`;
+      if (mediaStreamUrl) {
+        twiml += `<Start><Stream url="${mediaStreamUrl}" track="both_tracks" /></Start>`;
+        log(`initiateCall: TwiML includes <Start><Stream> url=${mediaStreamUrl} (unidirectional; PSTN inject not supported)`);
+      } else {
+        log(`initiateCall: TwiML has NO <Stream> — coaching/media inactive; OpenAI realtime will not receive call audio`);
+      }
+      twiml += `<Say>Connecting you to ${normalizedLead}.</Say>`;
+      twiml += `<Dial record="record-from-answer-dual" callerId="${from}">${normalizedLead}</Dial>`;
+      twiml += `</Response>`;
+      callParams.twiml = twiml;
+    }
 
     if (statusCallbackUrl) {
       callParams.statusCallback = statusCallbackUrl;

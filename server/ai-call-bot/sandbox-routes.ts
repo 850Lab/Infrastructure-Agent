@@ -346,7 +346,9 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
         ...(contact.notes ? [`Notes: ${contact.notes}`] : []),
       ];
 
-      const result = await initiateCall(guard.normalizedPhone, statusCallbackUrl, recordingCallbackUrl, mediaStreamUrl);
+      const result = await initiateCall(guard.normalizedPhone, statusCallbackUrl, recordingCallbackUrl, mediaStreamUrl, {
+        coachingPublicBaseUrl: mediaStreamUrl ? baseUrl : undefined,
+      });
       log(`sandbox/calls: Twilio initiateCall success=${result.success} sid=${result.sid ?? "n/a"} err=${result.error ?? "n/a"}`, TAG);
       if (!result.success) {
         return res.status(400).json({ error: result.error });
@@ -367,7 +369,7 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
             `[SANDBOX] ${contact.companyName}`,
             contact.fullName,
             talkingPoints,
-            { aiCallBotClientId: client }
+            { aiCallBotClientId: client, voiceToPstn: true }
           );
           coachingRegistered = true;
           log(`sandbox/calls: registerCoachingSession (pre-DB) callSid=${result.sid}`, TAG);
@@ -410,7 +412,7 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
               `[SANDBOX] ${contact.companyName}`,
               contact.fullName,
               talkingPoints,
-              { aiCallBotSessionId: sessionId, aiCallBotClientId: client }
+              { aiCallBotSessionId: sessionId, aiCallBotClientId: client, voiceToPstn: true }
             );
             log(`sandbox/calls: registerCoachingSession merged aiCallBotSessionId=${sessionId}`, TAG);
           }

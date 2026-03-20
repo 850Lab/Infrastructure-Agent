@@ -79,6 +79,12 @@ interface ActiveSession {
   aiCallBotSessionId: number | null;
   /** Client id for linked AI Call Bot row (supervisor escalation). */
   aiCallBotClientId: string | null;
+  /** Twilio Media Stream WebSocket when callee leg uses &lt;Connect&gt;&lt;Stream&gt; (bidirectional). */
+  twilioMediaWs: WebSocket | null;
+  /** When true, stream assistant audio (g711_ulaw) to Twilio for PSTN playback. */
+  voiceToPstn: boolean;
+  /** How this coaching call is wired to Twilio Media Streams. */
+  mediaStreamMode: "none" | "legacy_start_both" | "bidi_callee_leg";
 }
 
 function sendLeadTrackPromptContractUpdate(session: ActiveSession): void {
@@ -86,10 +92,18 @@ function sendLeadTrackPromptContractUpdate(session: ActiveSession): void {
   const ws = session.openaiWsInbound;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   try {
+    const partial: Record<string, unknown> = {
+      ...buildAiCallBotLeadTrackSessionPartial(),
+    };
+    if (session.voiceToPstn) {
+      partial.modalities = ["text", "audio"];
+      partial.output_audio_format = "g711_ulaw";
+      partial.input_audio_format = "g711_ulaw";
+    }
     ws.send(
       JSON.stringify({
         type: "session.update",
-        session: buildAiCallBotLeadTrackSessionPartial(),
+        session: partial,
       })
     );
   } catch (e: any) {
@@ -145,6 +159,61 @@ async function maybeLogAssistantReplyDrift(session: ActiveSession, event: any): 
 
 const activeSessions = new Map<string, ActiveSession>();
 const loggedFirstAssistantDone = new Set<string>();
+const loggedFirstAssistantText = new Set<string>();
+const loggedFirstAssistantAudio = new Set<string>();
+const loggedFirstPstnSend = new Set<string>();
+
+function outboundAudioEnabled(session: ActiveSession): boolean {
+  return !!(session.voiceToPstn && !session.humanTakeoverAt && session.twilioMediaWs?.readyState === WebSocket.OPEN && session.streamSid);
+}
+
+function sendTwilioStreamClear(session: ActiveSession, reason: string): void {
+  if (!session.twilioMediaWs || session.twilioMediaWs.readyState !== WebSocket.OPEN || !session.streamSid) return;
+  try {
+    session.twilioMediaWs.send(JSON.stringify({ event: "clear", streamSid: session.streamSid }));
+    log(`playback_clear_sent callSid=${session.callSid} reason=${reason} streamSid=${session.streamSid}`);
+  } catch (e: any) {
+    log(`playback_clear_error callSid=${session.callSid}: ${e.message}`);
+  }
+}
+
+function sendAssistantAudioToTwilio(session: ActiveSession, base64Mulaw: string): boolean {
+  if (!outboundAudioEnabled(session)) return false;
+  try {
+    (session.twilioMediaWs as WebSocket).send(
+      JSON.stringify({
+        event: "media",
+        streamSid: session.streamSid,
+        media: { payload: base64Mulaw },
+      })
+    );
+    if (!loggedFirstPstnSend.has(session.callSid)) {
+      loggedFirstPstnSend.add(session.callSid);
+      log(
+        `first_assistant_audio_sent_to_twilio callSid=${session.callSid} media_stream_mode=${session.mediaStreamMode} outbound_audio_enabled=true`
+      );
+    }
+    return true;
+  } catch (e: any) {
+    log(`playback_ack_or_error: twilio_send_failed callSid=${session.callSid} err=${e.message}`);
+    return false;
+  }
+}
+
+function extractRealtimeAudioDelta(event: any): string | null {
+  const d =
+    event?.delta ??
+    event?.audio ??
+    (typeof event?.audio_base64 === "string" ? event.audio_base64 : null);
+  if (typeof d === "string" && d.length > 0) return d;
+  return null;
+}
+
+function extractRealtimeTextDelta(event: any): string | null {
+  const t = event?.delta ?? event?.text;
+  if (typeof t === "string" && t.length > 0) return t;
+  return null;
+}
 
 function detectAlerts(text: string, fullTranscript: string[]): CoachingAlert[] {
   const alerts: CoachingAlert[] = [];
@@ -257,12 +326,15 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
     },
   });
 
+  const enablePstnVoice = speaker === "lead" && session.voiceToPstn;
+
   ws.on("open", () => {
+    const modalities = enablePstnVoice ? (["text", "audio"] as const) : (["text"] as const);
     log(
-      `OpenAI Realtime connected for ${speaker} track (call ${session.callSid}) aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} modalities=text (transcription/coaching; PSTN playback not in this path)`
+      `OpenAI Realtime connected for ${speaker} track (call ${session.callSid}) aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} modalities=${modalities.join("+")} media_stream_mode=${session.mediaStreamMode} voiceToPstn=${session.voiceToPstn} outbound_audio_enabled=${outboundAudioEnabled(session)}`
     );
     const sessionUpdate: Record<string, unknown> = {
-      modalities: ["text"],
+      modalities: [...modalities],
       input_audio_format: "g711_ulaw",
       input_audio_transcription: {
         model: "whisper-1",
@@ -274,6 +346,9 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
         silence_duration_ms: 800,
       },
     };
+    if (enablePstnVoice) {
+      sessionUpdate.output_audio_format = "g711_ulaw";
+    }
     if (speaker === "lead" && session.aiCallBotSessionId != null) {
       Object.assign(sessionUpdate, buildAiCallBotLeadTrackSessionPartial());
     }
@@ -282,15 +357,28 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
       session: sessionUpdate,
     }));
     log(
-      `OpenAI session.update sent for ${speaker} callSid=${session.callSid} hasAiCallBotContract=${speaker === "lead" && session.aiCallBotSessionId != null}`
+      `OpenAI session.update sent for ${speaker} callSid=${session.callSid} hasAiCallBotContract=${speaker === "lead" && session.aiCallBotSessionId != null} output_audio_format=${enablePstnVoice ? "g711_ulaw" : "none"}`
     );
+
+    if (enablePstnVoice) {
+      setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        try {
+          ws.send(JSON.stringify({ type: "response.create" }));
+          log(`response.create sent (initial assistant turn) callSid=${session.callSid}`);
+        } catch (e: any) {
+          log(`response.create failed callSid=${session.callSid}: ${e.message}`);
+        }
+      }, 900);
+    }
   });
 
   ws.on("message", (data) => {
     try {
       const event = JSON.parse(data.toString());
+      const t = event.type as string;
 
-      if (event.type === "conversation.item.input_audio_transcription.completed") {
+      if (t === "conversation.item.input_audio_transcription.completed") {
         const text = event.transcript?.trim();
         if (text && text.length > 0) {
           const label = speaker === "agent" ? "You" : (session.contactName || "Them");
@@ -316,11 +404,54 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
         }
       }
 
-      if (event.type === "error") {
+      if (t === "error") {
         log(`OpenAI error (${speaker}) for ${session.callSid}: ${JSON.stringify(event.error)}`);
+        log(`playback_ack_or_error: openai_error callSid=${session.callSid}`);
       }
 
-      if (speaker === "lead" && event.type === "response.done") {
+      if (speaker === "lead" && session.voiceToPstn) {
+        if (t === "input_audio_buffer.speech_started") {
+          sendTwilioStreamClear(session, "barge_in_speech_started");
+        }
+
+        const isAudioDelta =
+          t === "response.audio.delta" ||
+          t === "response.output_audio.delta" ||
+          (typeof t === "string" && t.includes("output_audio") && t.includes("delta"));
+        if (isAudioDelta) {
+          const chunk = extractRealtimeAudioDelta(event);
+          if (chunk) {
+            if (!loggedFirstAssistantAudio.has(session.callSid)) {
+              loggedFirstAssistantAudio.add(session.callSid);
+              log(`first_assistant_audio_created callSid=${session.callSid} eventType=${t}`);
+            }
+            sendAssistantAudioToTwilio(session, chunk);
+          }
+        }
+
+        const textDeltaTypes = new Set([
+          "response.audio_transcript.delta",
+          "response.output_audio_transcript.delta",
+          "response.text.delta",
+        ]);
+        if (textDeltaTypes.has(t) || t.includes("audio_transcript.delta")) {
+          const td = extractRealtimeTextDelta(event);
+          if (td && !loggedFirstAssistantText.has(session.callSid)) {
+            loggedFirstAssistantText.add(session.callSid);
+            log(`first_assistant_text_created callSid=${session.callSid} eventType=${t}`);
+          }
+        }
+
+        if (
+          t === "response.audio.done" ||
+          t === "response.output_audio.done" ||
+          t === "response.audio.completed"
+        ) {
+          log(`playback_ack_or_error: openai_audio_done callSid=${session.callSid} type=${t}`);
+        }
+      }
+
+      if (speaker === "lead" && t === "response.done") {
         if (!loggedFirstAssistantDone.has(session.callSid)) {
           loggedFirstAssistantDone.add(session.callSid);
           log(`OpenAI first response.done (lead) callSid=${session.callSid}`);
@@ -329,7 +460,7 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
 
       if (
         speaker === "lead" &&
-        (event.type === "response.done" || event.type === "response.output_item.done")
+        (t === "response.done" || t === "response.output_item.done")
       ) {
         void maybeLogAssistantReplyDrift(session, event);
       }
@@ -352,7 +483,9 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
 }
 
 function connectToOpenAI(session: ActiveSession) {
-  log(`connectToOpenAI: callSid=${session.callSid} aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} aiCallBotClientId=${session.aiCallBotClientId ?? "none"}`);
+  log(
+    `connectToOpenAI: callSid=${session.callSid} aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} aiCallBotClientId=${session.aiCallBotClientId ?? "none"} voiceToPstn=${session.voiceToPstn} media_stream_mode=${session.mediaStreamMode} outbound_audio_enabled=${outboundAudioEnabled(session)}`
+  );
   session.openaiWsInbound = createOpenAIConnection(session, "lead");
   session.openaiWsOutbound = createOpenAIConnection(session, "agent");
 }
@@ -363,6 +496,8 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
   wss.on("connection", (ws, req) => {
     log(`Twilio Media Stream connected from ${req.socket.remoteAddress}`);
     let currentSession: ActiveSession | null = null;
+    /** Parent coaching key for endSession (child streams use parent CallSid). */
+    let sessionEndCallSid: string | null = null;
 
     ws.on("message", (message) => {
       try {
@@ -374,8 +509,70 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
             break;
 
           case "start": {
-            const callSid = msg.start?.callSid;
-            const streamSid = msg.start?.streamSid;
+            const callSid = msg.start?.callSid as string | undefined;
+            const streamSid = msg.start?.streamSid as string | undefined;
+            const custom = (msg.start?.customParameters || {}) as Record<string, string>;
+            const leg = custom.leg;
+            const parentFromStream = custom.parentCallSid;
+
+            if (leg === "child" && typeof parentFromStream === "string" && parentFromStream.startsWith("CA")) {
+              sessionEndCallSid = parentFromStream;
+              const preReg = activeSessions.get(parentFromStream);
+              log(
+                `Media Stream started (bidi callee leg): childCallSid=${callSid} parentCallSid=${parentFromStream} streamSid=${streamSid} preRegistered=${!!preReg}`
+              );
+              let sess = preReg;
+              if (!sess) {
+                log(`bidi child stream: no pre-registered session for parent ${parentFromStream}; creating placeholder`);
+                sess = {
+                  callSid: parentFromStream,
+                  streamSid: streamSid ?? null,
+                  companyName: "",
+                  contactName: "",
+                  talkingPoints: [],
+                  transcript: [],
+                  alerts: [],
+                  openaiWsInbound: null,
+                  openaiWsOutbound: null,
+                  sseClients: new Set(),
+                  startedAt: Date.now(),
+                  lastTranscriptPush: 0,
+                  humanTakeoverAt: null,
+                  aiCallBotSessionId: null,
+                  aiCallBotClientId: null,
+                  twilioMediaWs: ws,
+                  voiceToPstn: false,
+                  mediaStreamMode: "bidi_callee_leg",
+                };
+                activeSessions.set(parentFromStream, sess);
+              } else {
+                sess.streamSid = streamSid ?? null;
+                sess.twilioMediaWs = ws;
+                sess.mediaStreamMode = "bidi_callee_leg";
+              }
+              currentSession = sess;
+              log(
+                `media_stream_mode=bidi_callee_leg parentCallSid=${parentFromStream} outbound_audio_enabled=${outboundAudioEnabled(sess)} voiceToPstn=${sess.voiceToPstn}`
+              );
+              if (!sess.openaiWsInbound || sess.openaiWsInbound.readyState !== WebSocket.OPEN) {
+                connectToOpenAI(sess);
+              }
+              void (async () => {
+                try {
+                  const { findAiCallBotSessionForTwilioStatus } = await import("./ai-call-bot/transfer-controller");
+                  const row = await findAiCallBotSessionForTwilioStatus(sess.callSid, null);
+                  if (row) {
+                    sess.aiCallBotSessionId = row.id;
+                    sess.aiCallBotClientId = row.clientId;
+                    sendLeadTrackPromptContractUpdate(sess);
+                  }
+                } catch (e: any) {
+                  log(`AI Call Bot media-stream link: ${e.message}`);
+                }
+              })();
+              break;
+            }
+
             const preReg = callSid ? activeSessions.get(callSid) : undefined;
             log(
               `Media Stream started: callSid=${callSid}, streamSid=${streamSid} preRegistered=${!!preReg} preRegAiId=${preReg?.aiCallBotSessionId ?? "n/a"}`
@@ -385,14 +582,17 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
             const parentCallSid =
               typeof parentSidRaw === "string" && parentSidRaw.length > 0 ? parentSidRaw : undefined;
 
-            const existing = activeSessions.get(callSid);
+            sessionEndCallSid = callSid ?? null;
+            const existing = callSid ? activeSessions.get(callSid) : undefined;
             if (existing) {
-              existing.streamSid = streamSid;
+              existing.streamSid = streamSid ?? null;
+              existing.mediaStreamMode = "legacy_start_both";
+              existing.twilioMediaWs = null;
               currentSession = existing;
-            } else {
+            } else if (callSid) {
               currentSession = {
                 callSid,
-                streamSid,
+                streamSid: streamSid ?? null,
                 companyName: "",
                 contactName: "",
                 talkingPoints: [],
@@ -406,27 +606,35 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
                 humanTakeoverAt: null,
                 aiCallBotSessionId: null,
                 aiCallBotClientId: null,
+                twilioMediaWs: null,
+                voiceToPstn: preReg?.voiceToPstn ?? false,
+                mediaStreamMode: "legacy_start_both",
               };
               activeSessions.set(callSid, currentSession);
             }
 
-            connectToOpenAI(currentSession);
+            if (currentSession) {
+              log(
+                `media_stream_mode=${currentSession.mediaStreamMode} callSid=${currentSession.callSid} voiceToPstn=${currentSession.voiceToPstn} outbound_audio_enabled=${outboundAudioEnabled(currentSession)}`
+              );
+              connectToOpenAI(currentSession);
 
-            void (async () => {
-              const sess = currentSession;
-              if (!sess) return;
-              try {
-                const { findAiCallBotSessionForTwilioStatus } = await import("./ai-call-bot/transfer-controller");
-                const row = await findAiCallBotSessionForTwilioStatus(sess.callSid, parentCallSid || null);
-                if (row) {
-                  sess.aiCallBotSessionId = row.id;
-                  sess.aiCallBotClientId = row.clientId;
-                  sendLeadTrackPromptContractUpdate(sess);
+              void (async () => {
+                const sess = currentSession;
+                if (!sess) return;
+                try {
+                  const { findAiCallBotSessionForTwilioStatus } = await import("./ai-call-bot/transfer-controller");
+                  const row = await findAiCallBotSessionForTwilioStatus(sess.callSid, parentCallSid || null);
+                  if (row) {
+                    sess.aiCallBotSessionId = row.id;
+                    sess.aiCallBotClientId = row.clientId;
+                    sendLeadTrackPromptContractUpdate(sess);
+                  }
+                } catch (e: any) {
+                  log(`AI Call Bot media-stream link: ${e.message}`);
                 }
-              } catch (e: any) {
-                log(`AI Call Bot media-stream link: ${e.message}`);
-              }
-            })();
+              })();
+            }
             break;
           }
 
@@ -434,9 +642,12 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
             const audioPayload = msg.media?.payload;
             const track = msg.media?.track;
             if (audioPayload && currentSession && !currentSession.humanTakeoverAt) {
-              const targetWs = track === "outbound"
-                ? currentSession.openaiWsOutbound
-                : currentSession.openaiWsInbound;
+              const childLeg = currentSession.mediaStreamMode === "bidi_callee_leg";
+              const targetWs = childLeg
+                ? currentSession.openaiWsInbound
+                : track === "outbound"
+                  ? currentSession.openaiWsOutbound
+                  : currentSession.openaiWsInbound;
               if (targetWs?.readyState === WebSocket.OPEN) {
                 targetWs.send(JSON.stringify({
                   type: "input_audio_buffer.append",
@@ -447,11 +658,16 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
             break;
           }
 
+          case "mark":
+            log(
+              `playback_ack_or_error: twilio_mark_received name=${(msg as any).mark?.name ?? "n/a"} coachingCallSid=${currentSession?.callSid ?? sessionEndCallSid ?? "n/a"}`
+            );
+            break;
+
           case "stop": {
-            log(`Media Stream stopped for call ${currentSession?.callSid}`);
-            if (currentSession) {
-              endSession(currentSession.callSid);
-            }
+            const endKey = sessionEndCallSid || currentSession?.callSid;
+            log(`Media Stream stopped for call ${endKey}`);
+            if (endKey) endSession(endKey);
             break;
           }
         }
@@ -461,10 +677,9 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
     });
 
     ws.on("close", () => {
-      log(`Twilio Media Stream WebSocket closed`);
-      if (currentSession) {
-        endSession(currentSession.callSid);
-      }
+      log(`Twilio Media Stream WebSocket closed coachingCallSid=${sessionEndCallSid || currentSession?.callSid || "n/a"}`);
+      const endKey = sessionEndCallSid || currentSession?.callSid;
+      if (endKey) endSession(endKey);
     });
 
     ws.on("error", (err) => {
@@ -478,6 +693,8 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
 function endSession(callSid: string) {
   const session = activeSessions.get(callSid);
   if (!session) return;
+
+  session.twilioMediaWs = null;
 
   if (session.openaiWsInbound?.readyState === WebSocket.OPEN) {
     session.openaiWsInbound.close();
@@ -513,6 +730,9 @@ function endSession(callSid: string) {
   log(`Session ended for ${callSid}: ${session.transcript.length} transcript chunks, ${session.alerts.length} alerts, ${duration}s`);
 
   loggedFirstAssistantDone.delete(callSid);
+  loggedFirstAssistantText.delete(callSid);
+  loggedFirstAssistantAudio.delete(callSid);
+  loggedFirstPstnSend.delete(callSid);
 
   if (fullTranscript.length > 20) {
     processPostCallTranscript(callSid, fullTranscript, session.companyName, session.alerts).catch(err => {
@@ -600,7 +820,7 @@ export function registerCoachingSession(
   companyName: string,
   contactName: string,
   talkingPoints: string[],
-  opts?: { aiCallBotSessionId?: number; aiCallBotClientId?: string | null }
+  opts?: { aiCallBotSessionId?: number; aiCallBotClientId?: string | null; voiceToPstn?: boolean }
 ) {
   let session = activeSessions.get(callSid);
   if (!session) {
@@ -620,6 +840,9 @@ export function registerCoachingSession(
       humanTakeoverAt: null,
       aiCallBotSessionId: opts?.aiCallBotSessionId ?? null,
       aiCallBotClientId: opts?.aiCallBotClientId ?? null,
+      twilioMediaWs: null,
+      voiceToPstn: opts?.voiceToPstn === true,
+      mediaStreamMode: "none",
     };
     activeSessions.set(callSid, session);
   } else {
@@ -632,11 +855,16 @@ export function registerCoachingSession(
     if (opts?.aiCallBotClientId != null && opts.aiCallBotClientId !== undefined) {
       session.aiCallBotClientId = opts.aiCallBotClientId;
     }
+    if (opts?.voiceToPstn === true) {
+      session.voiceToPstn = true;
+    }
   }
   if (session.aiCallBotSessionId != null) {
     sendLeadTrackPromptContractUpdate(session);
   }
-  log(`Coaching session registered: ${callSid} — ${companyName} (${talkingPoints.length} talking points) aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"}`);
+  log(
+    `Coaching session registered: ${callSid} — ${companyName} (${talkingPoints.length} talking points) aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} voiceToPstn=${session.voiceToPstn}`
+  );
   return session;
 }
 
@@ -703,6 +931,8 @@ export function setHumanTakeoverActive(callSid: string): boolean {
   if (!session) return false;
   const at = Date.now();
   session.humanTakeoverAt = at;
+  log(`outbound_audio_enabled=false (human_takeover) callSid=${callSid}`);
+  sendTwilioStreamClear(session, "human_takeover");
   if (session.openaiWsInbound?.readyState === WebSocket.OPEN) {
     try { session.openaiWsInbound.close(); } catch {}
   }
