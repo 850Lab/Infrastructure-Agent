@@ -3,7 +3,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, gte, or, ne, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   aiCallBotSandboxContacts,
@@ -123,6 +123,58 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
       if (e instanceof z.ZodError) return res.status(400).json({ error: "Invalid payload", details: e.flatten() });
       const msg = e instanceof Error ? e.message : String(e);
       log(`sandbox create contact: ${msg}`, TAG);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  /**
+   * Sandbox-only aggregates for dashboard card. Never mixed into command-center / production metrics.
+   */
+  app.get("/api/ai-call-bot/sandbox/dashboard-summary", authMw, async (req: Request, res: Response) => {
+    try {
+      const client = cid(req);
+      if (!client) return res.status(400).json({ error: "No client context" });
+
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+      const [activeRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(aiCallBotSandboxContacts)
+        .where(
+          and(
+            eq(aiCallBotSandboxContacts.clientId, client),
+            eq(aiCallBotSandboxContacts.active, true),
+            isNull(aiCallBotSandboxContacts.archivedAt)
+          )
+        );
+
+      const [runsRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(aiCallBotSandboxRuns)
+        .where(and(eq(aiCallBotSandboxRuns.clientId, client), gte(aiCallBotSandboxRuns.createdAt, sevenDaysAgo)));
+
+      const [flaggedRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(aiCallBotSandboxRuns)
+        .where(
+          and(
+            eq(aiCallBotSandboxRuns.clientId, client),
+            or(
+              eq(aiCallBotSandboxRuns.testPassed, false),
+              and(isNotNull(aiCallBotSandboxRuns.issuesExposed), ne(aiCallBotSandboxRuns.issuesExposed, ""))
+            )
+          )
+        );
+
+      res.json({
+        scope: "sandbox_only",
+        activeSandboxContacts: activeRow?.count ?? 0,
+        recentSandboxRuns7d: runsRow?.count ?? 0,
+        flaggedSandboxIssues: flaggedRow?.count ?? 0,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log(`sandbox dashboard-summary: ${msg}`, TAG);
       res.status(500).json({ error: msg });
     }
   });

@@ -13,7 +13,7 @@ import {
   ArrowRight, Flame, Clock, AlertTriangle, Calendar, Zap,
   Building2, MessageSquare, Briefcase, ChevronRight, Activity,
   Brain, Sparkles, Eye, UserPlus, Search, BarChart3,
-  CheckCircle2, XCircle, Loader2, FileText, Star
+  CheckCircle2, XCircle, Loader2, FileText, Star, FlaskConical
 } from "lucide-react";
 
 const EMERALD = "#10B981";
@@ -146,6 +146,18 @@ export default function DashboardPage() {
     enabled: !!token,
   });
 
+  /** Sandbox-scoped only; not part of command-center or production pipeline metrics. */
+  const { data: sandboxSummary } = useQuery<{
+    scope: string;
+    activeSandboxContacts: number;
+    recentSandboxRuns7d: number;
+    flaggedSandboxIssues: number;
+  }>({
+    queryKey: ["/api/ai-call-bot/sandbox/dashboard-summary"],
+    enabled: !!token,
+    staleTime: 60_000,
+  });
+
   const { data: cmd, isLoading, isError, refetch } = useQuery<CommandCenterData>({
     queryKey: ["/api/command-center"],
     enabled: !!token,
@@ -244,6 +256,67 @@ export default function DashboardPage() {
             </button>
           )}
         </div>
+
+        {token && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className="mb-6"
+          >
+            <div
+              className="rounded-xl p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-4"
+              style={{
+                background: `${PURPLE}06`,
+                border: `1px solid ${PURPLE}28`,
+              }}
+              data-testid="card-ai-call-bot-sandbox"
+            >
+              <div className="flex items-start gap-3 flex-1 min-w-0">
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ background: `${PURPLE}14` }}
+                >
+                  <FlaskConical className="w-5 h-5" style={{ color: PURPLE }} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold" style={{ color: TEXT }}>
+                    AI Call Bot Sandbox
+                  </h2>
+                  <p className="text-[11px] mt-1 leading-relaxed" style={{ color: MUTED }}>
+                    Supervised test contacts and sandbox test calls only. Does not use production outreach queues or
+                    merge into dashboard pipeline metrics.
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] font-semibold" style={{ color: MUTED }}>
+                    <span data-testid="sandbox-stat-contacts">
+                      Active sandbox contacts:{" "}
+                      <span style={{ color: TEXT }}>{sandboxSummary?.activeSandboxContacts ?? "—"}</span>
+                    </span>
+                    <span data-testid="sandbox-stat-runs">
+                      Runs (7d): <span style={{ color: TEXT }}>{sandboxSummary?.recentSandboxRuns7d ?? "—"}</span>
+                    </span>
+                    <span data-testid="sandbox-stat-flagged">
+                      Flagged issues:{" "}
+                      <span style={{ color: sandboxSummary && sandboxSummary.flaggedSandboxIssues > 0 ? AMBER : TEXT }}>
+                        {sandboxSummary?.flaggedSandboxIssues ?? "—"}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                onClick={() => navigate("/machine/ai-call-bot-sandbox")}
+                className="gap-2 flex-shrink-0 h-10 px-4 text-xs font-semibold"
+                style={{ background: PURPLE, color: "#fff" }}
+                data-testid="button-open-ai-call-bot-sandbox"
+              >
+                Sandbox test calls
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -577,6 +650,7 @@ export default function DashboardPage() {
                     { label: "View Follow-ups", route: "/machine/followups", icon: Calendar, color: AMBER },
                     { label: "Review Leads", route: "/machine/pipeline", icon: Users, color: BLUE },
                     { label: "Add Company", route: "/machine/my-leads", icon: UserPlus, color: PURPLE },
+                    { label: "AI Call Bot Sandbox", route: "/machine/ai-call-bot-sandbox", icon: FlaskConical, color: PURPLE },
                     ...(meData?.client?.client_name === "Texas Cool Down Trailers"
                       ? [{ label: "View LNG Projects", route: "/machine/lng-projects", icon: Briefcase, color: AMBER }]
                       : []),
