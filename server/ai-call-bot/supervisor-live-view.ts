@@ -9,6 +9,7 @@ import { getRecentDriftEvents, getDriftReviewSummary } from "./anti-drift";
 import { verifyAiCallBotSessionRow } from "./session-verify";
 import { parseSupervisorAttentionReasonsJson } from "./supervisor-escalation";
 import { getLongCallThresholdSec, getSupervisorFallbackFsmEscalationThreshold } from "./supervisor-thresholds";
+import { buildOperatorGuidanceFromLiveView, type OperatorGuidancePayload } from "./supervisor-operator-guidance";
 
 export interface SupervisorLiveSessionView {
   sessionId: number;
@@ -47,6 +48,8 @@ export interface SupervisorLiveSessionView {
   supervisorPauseReason: string | null;
   sessionFallbackFsmCount: number;
   gatheredAtIso: string;
+  /** Deterministic operator quick-reference from driftFlags + session shape (see runbook). */
+  operatorGuidance: OperatorGuidancePayload;
 }
 
 async function resolveCompanyName(clientId: string, companyId: string): Promise<string> {
@@ -100,7 +103,29 @@ export async function buildSupervisorLiveSessionView(
       kinds.has("missing_transfer_target_env") &&
       !row.supervisorPauseAutoTransfer);
 
-  return {
+  const driftFlags = {
+    persistentSupervisorAttentionRequired: row.supervisorAttentionRequired,
+    persistentAttentionReasons: [...persistentReasons],
+    replyOverContract: kinds.has("reply_over_contract") || persistentReasons.includes("reply_over_contract"),
+    longCallExceedsThreshold:
+      durationSec >= longTh ||
+      kinds.has("long_call") ||
+      kinds.has("repeated_long_call_pattern") ||
+      persistentReasons.includes("long_call_threshold_exceeded"),
+    transferAttemptedWithoutAgreement:
+      kinds.has("transfer_without_agreement") || persistentReasons.includes("transfer_attempted_without_agreement"),
+    fsmRejectedTransition:
+      (row.fsmRejectedTransitionCount ?? 0) > 0 ||
+      kinds.has("fsm_rejected_transition") ||
+      persistentReasons.includes("fsm_rejected_transition"),
+    missingTransferTargetTransferEligible: missingTarget,
+    repeatedFallbackInSession:
+      (row.sessionFallbackFsmCount ?? 0) >= fallbackTh || persistentReasons.includes("repeated_fallback_in_session"),
+    processWideFallbackHighRate: summary.fallbackInWindow >= summary.fallbackAlertThreshold,
+    terminalContractGaps: verify.terminalFieldGaps.length > 0,
+  };
+
+  const core = {
     sessionId: row.id,
     clientId: row.clientId,
     callSid: row.callSid,
@@ -116,27 +141,7 @@ export async function buildSupervisorLiveSessionView(
     fallbackTriggered: row.fallbackCaptureUsed || (row.sessionFallbackFsmCount ?? 0) > 0,
     agentAnswered: row.agentAnswered,
     agentIntercepted: row.agentIntercepted,
-    driftFlags: {
-      persistentSupervisorAttentionRequired: row.supervisorAttentionRequired,
-      persistentAttentionReasons: [...persistentReasons],
-      replyOverContract: kinds.has("reply_over_contract") || persistentReasons.includes("reply_over_contract"),
-      longCallExceedsThreshold:
-        durationSec >= longTh ||
-        kinds.has("long_call") ||
-        kinds.has("repeated_long_call_pattern") ||
-        persistentReasons.includes("long_call_threshold_exceeded"),
-      transferAttemptedWithoutAgreement:
-        kinds.has("transfer_without_agreement") || persistentReasons.includes("transfer_attempted_without_agreement"),
-      fsmRejectedTransition:
-        (row.fsmRejectedTransitionCount ?? 0) > 0 ||
-        kinds.has("fsm_rejected_transition") ||
-        persistentReasons.includes("fsm_rejected_transition"),
-      missingTransferTargetTransferEligible: missingTarget,
-      repeatedFallbackInSession:
-        (row.sessionFallbackFsmCount ?? 0) >= fallbackTh || persistentReasons.includes("repeated_fallback_in_session"),
-      processWideFallbackHighRate: summary.fallbackInWindow >= summary.fallbackAlertThreshold,
-      terminalContractGaps: verify.terminalFieldGaps.length > 0,
-    },
+    driftFlags,
     rejectedTransitionCount: row.fsmRejectedTransitionCount ?? 0,
     lastRejectedTransitionReason: row.lastFsmRejectedReason ?? null,
     startedAtIso: new Date(startedMs).toISOString(),
@@ -146,5 +151,10 @@ export async function buildSupervisorLiveSessionView(
     supervisorPauseReason: row.supervisorPauseReason ?? null,
     sessionFallbackFsmCount: row.sessionFallbackFsmCount ?? 0,
     gatheredAtIso: new Date(now).toISOString(),
+  };
+
+  return {
+    ...core,
+    operatorGuidance: buildOperatorGuidanceFromLiveView(core),
   };
 }
