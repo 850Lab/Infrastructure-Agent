@@ -144,6 +144,7 @@ async function maybeLogAssistantReplyDrift(session: ActiveSession, event: any): 
 }
 
 const activeSessions = new Map<string, ActiveSession>();
+const loggedFirstAssistantDone = new Set<string>();
 
 function detectAlerts(text: string, fullTranscript: string[]): CoachingAlert[] {
   const alerts: CoachingAlert[] = [];
@@ -257,7 +258,9 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
   });
 
   ws.on("open", () => {
-    log(`OpenAI Realtime connected for ${speaker} track (call ${session.callSid})`);
+    log(
+      `OpenAI Realtime connected for ${speaker} track (call ${session.callSid}) aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} modalities=text (transcription/coaching; PSTN playback not in this path)`
+    );
     const sessionUpdate: Record<string, unknown> = {
       modalities: ["text"],
       input_audio_format: "g711_ulaw",
@@ -278,6 +281,9 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
       type: "session.update",
       session: sessionUpdate,
     }));
+    log(
+      `OpenAI session.update sent for ${speaker} callSid=${session.callSid} hasAiCallBotContract=${speaker === "lead" && session.aiCallBotSessionId != null}`
+    );
   });
 
   ws.on("message", (data) => {
@@ -314,6 +320,13 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
         log(`OpenAI error (${speaker}) for ${session.callSid}: ${JSON.stringify(event.error)}`);
       }
 
+      if (speaker === "lead" && event.type === "response.done") {
+        if (!loggedFirstAssistantDone.has(session.callSid)) {
+          loggedFirstAssistantDone.add(session.callSid);
+          log(`OpenAI first response.done (lead) callSid=${session.callSid}`);
+        }
+      }
+
       if (
         speaker === "lead" &&
         (event.type === "response.done" || event.type === "response.output_item.done")
@@ -339,6 +352,7 @@ function createOpenAIConnection(session: ActiveSession, speaker: "agent" | "lead
 }
 
 function connectToOpenAI(session: ActiveSession) {
+  log(`connectToOpenAI: callSid=${session.callSid} aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"} aiCallBotClientId=${session.aiCallBotClientId ?? "none"}`);
   session.openaiWsInbound = createOpenAIConnection(session, "lead");
   session.openaiWsOutbound = createOpenAIConnection(session, "agent");
 }
@@ -362,7 +376,10 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
           case "start": {
             const callSid = msg.start?.callSid;
             const streamSid = msg.start?.streamSid;
-            log(`Media Stream started: callSid=${callSid}, streamSid=${streamSid}`);
+            const preReg = callSid ? activeSessions.get(callSid) : undefined;
+            log(
+              `Media Stream started: callSid=${callSid}, streamSid=${streamSid} preRegistered=${!!preReg} preRegAiId=${preReg?.aiCallBotSessionId ?? "n/a"}`
+            );
 
             const parentSidRaw = msg.start?.customParameters?.parentCallSid ?? msg.start?.parentCallSid;
             const parentCallSid =
@@ -495,6 +512,8 @@ function endSession(callSid: string) {
 
   log(`Session ended for ${callSid}: ${session.transcript.length} transcript chunks, ${session.alerts.length} alerts, ${duration}s`);
 
+  loggedFirstAssistantDone.delete(callSid);
+
   if (fullTranscript.length > 20) {
     processPostCallTranscript(callSid, fullTranscript, session.companyName, session.alerts).catch(err => {
       log(`Post-call processing error: ${err.message}`);
@@ -614,7 +633,10 @@ export function registerCoachingSession(
       session.aiCallBotClientId = opts.aiCallBotClientId;
     }
   }
-  log(`Coaching session registered: ${callSid} — ${companyName} (${talkingPoints.length} talking points)`);
+  if (session.aiCallBotSessionId != null) {
+    sendLeadTrackPromptContractUpdate(session);
+  }
+  log(`Coaching session registered: ${callSid} — ${companyName} (${talkingPoints.length} talking points) aiCallBotSessionId=${session.aiCallBotSessionId ?? "none"}`);
   return session;
 }
 

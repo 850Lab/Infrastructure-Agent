@@ -151,6 +151,9 @@ export async function initiateCall(
     let twiml = `<Response>`;
     if (mediaStreamUrl) {
       twiml += `<Start><Stream url="${mediaStreamUrl}" track="both_tracks" /></Start>`;
+      log(`initiateCall: TwiML includes <Stream> url=${mediaStreamUrl} (realtime coaching / AI path can attach)`);
+    } else {
+      log(`initiateCall: TwiML has NO <Stream> — coaching/media inactive; OpenAI realtime will not receive call audio`);
     }
     twiml += `<Say>Connecting you to ${normalizedLead}.</Say>`;
     twiml += `<Dial record="record-from-answer-dual" callerId="${from}">${normalizedLead}</Dial>`;

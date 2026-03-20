@@ -250,16 +250,20 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
     try {
       const client = cid(req);
       if (!client) return res.status(400).json({ error: "No client context" });
+      log(`sandbox/calls: request clientId=${client}`, TAG);
+
       const { sandboxContactId } = z.object({ sandboxContactId: z.number().int().positive() }).parse(req.body);
 
       const guard = await validateSandboxTestDial({ clientId: client, sandboxContactId });
       if (!guard.allowed || !guard.contact || !guard.normalizedPhone) {
+        log(`sandbox/calls: dial guard rejected reason=${guard.reason}`, TAG);
         return res.status(403).json({
           error: guard.message || "Sandbox dial not allowed",
           reason: guard.reason,
         });
       }
       const contact = guard.contact;
+      log(`sandbox/calls: contact validated id=${contact.id} phone=${guard.normalizedPhone}`, TAG);
 
       const baseUrl = getBaseUrl(req);
       const statusCallbackUrl = `${baseUrl}/api/twilio/webhook/status`;
@@ -272,15 +276,26 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
         .where(eq(clients.id, client))
         .limit(1);
       coachingActive = clientRecord?.coachingEnabled ?? true;
+      log(`sandbox/calls: coachingActive=${coachingActive} baseUrl=${baseUrl}`, TAG);
 
       let mediaStreamUrl: string | undefined;
       if (coachingActive) {
         const wsProtocol = baseUrl.startsWith("https") ? "wss" : "ws";
         const host = baseUrl.replace(/^https?:\/\//, "");
         mediaStreamUrl = `${wsProtocol}://${host}/media-stream`;
+      } else {
+        log(`sandbox/calls: WARNING client coaching disabled — Twilio call will have no <Stream>; AI layer cannot join`, TAG);
       }
 
+      const talkingPoints = [
+        `[SANDBOX] ${contact.testScenarioType}`,
+        contact.outreachReason,
+        ...(contact.expectedBehavior ? [`Expected: ${contact.expectedBehavior}`] : []),
+        ...(contact.notes ? [`Notes: ${contact.notes}`] : []),
+      ];
+
       const result = await initiateCall(guard.normalizedPhone, statusCallbackUrl, recordingCallbackUrl, mediaStreamUrl);
+      log(`sandbox/calls: Twilio initiateCall success=${result.success} sid=${result.sid ?? "n/a"} err=${result.error ?? "n/a"}`, TAG);
       if (!result.success) {
         return res.status(400).json({ error: result.error });
       }
@@ -290,8 +305,22 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
 
       let sessionId: number | undefined;
       let runId: number | undefined;
+      let coachingRegistered = false;
 
       if (result.sid) {
+        /** Register coaching map entry immediately so Media Stream "start" never races ahead of HTTP handler. */
+        if (coachingActive) {
+          registerCoachingSession(
+            result.sid,
+            `[SANDBOX] ${contact.companyName}`,
+            contact.fullName,
+            talkingPoints,
+            { aiCallBotClientId: client }
+          );
+          coachingRegistered = true;
+          log(`sandbox/calls: registerCoachingSession (pre-DB) callSid=${result.sid}`, TAG);
+        }
+
         try {
           await db.insert(twilioRecordings).values({
             callSid: result.sid,
@@ -303,6 +332,7 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
             status: "call_initiated",
             isSandboxCall: true,
           });
+          log(`sandbox/calls: twilioRecordings inserted callSid=${result.sid}`, TAG);
         } catch (e: unknown) {
           log(`sandbox recording insert: ${e instanceof Error ? e.message : e}`, TAG);
         }
@@ -320,25 +350,20 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
           });
           await transitionSession(sessionRow.id, client, "dial_started");
           sessionId = sessionRow.id;
+          log(`sandbox/calls: ai_call_bot_session created id=${sessionId} callSid=${result.sid}`, TAG);
+
+          if (coachingActive) {
+            registerCoachingSession(
+              result.sid,
+              `[SANDBOX] ${contact.companyName}`,
+              contact.fullName,
+              talkingPoints,
+              { aiCallBotSessionId: sessionId, aiCallBotClientId: client }
+            );
+            log(`sandbox/calls: registerCoachingSession merged aiCallBotSessionId=${sessionId}`, TAG);
+          }
         } catch (e: unknown) {
           log(`sandbox session create: ${e instanceof Error ? e.message : e}`, TAG);
-        }
-
-        const talkingPoints = [
-          `[SANDBOX] ${contact.testScenarioType}`,
-          contact.outreachReason,
-          ...(contact.expectedBehavior ? [`Expected: ${contact.expectedBehavior}`] : []),
-          ...(contact.notes ? [`Notes: ${contact.notes}`] : []),
-        ];
-
-        if (coachingActive && sessionId != null) {
-          registerCoachingSession(
-            result.sid,
-            `[SANDBOX] ${contact.companyName}`,
-            contact.fullName,
-            talkingPoints,
-            { aiCallBotSessionId: sessionId, aiCallBotClientId: client }
-          );
         }
 
         const [run] = await db
@@ -352,6 +377,7 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
           })
           .returning();
         runId = run?.id;
+        log(`sandbox/calls: sandbox_run id=${runId ?? "n/a"}`, TAG);
       }
 
       res.json({
@@ -361,6 +387,8 @@ export function registerAiCallBotSandboxRoutes(app: Express, authMw: any) {
         aiCallBotSessionId: sessionId,
         sandboxRunId: runId,
         coachingEnabled: coachingActive,
+        mediaStreamInTwiml: !!mediaStreamUrl,
+        coachingSessionRegistered: coachingRegistered,
       });
     } catch (e: unknown) {
       if (e instanceof z.ZodError) return res.status(400).json({ error: "Invalid payload", details: e.flatten() });
