@@ -720,6 +720,15 @@ export const aiCallBotSessions = pgTable("ai_call_bot_sessions", {
   /** Auditable count of FSM transition attempts rejected by transfer-controller (invalid edge or guardrail). */
   fsmRejectedTransitionCount: integer("fsm_rejected_transition_count").notNull().default(0),
   lastFsmRejectedReason: text("last_fsm_rejected_reason"),
+  /** Operator: block initiate_transfer until cleared (live rollout). */
+  supervisorPauseAutoTransfer: boolean("supervisor_pause_auto_transfer").notNull().default(false),
+  supervisorPausedAt: timestamp("supervisor_paused_at"),
+  supervisorPauseReason: text("supervisor_pause_reason"),
+  /** Persistent “needs supervisor attention” — JSON string[] of reason codes (see supervisor-escalation.ts). */
+  supervisorAttentionRequired: boolean("supervisor_attention_required").notNull().default(false),
+  supervisorAttentionReasons: text("supervisor_attention_reasons"),
+  /** Count of successful FSM fallback_capture_started transitions on this session (escalation input). */
+  sessionFallbackFsmCount: integer("session_fallback_fsm_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

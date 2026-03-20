@@ -3,12 +3,13 @@
  */
 import { db } from "../db";
 import { aiCallBotSessions } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, ne, gte } from "drizzle-orm";
 import type { AiCallBotTransferState, AiCallTerminalOutcome } from "./types";
 import { applyTransition, type TransferMachineEvent } from "./transfer-state-machine";
 import { defaultSupervisedMode } from "./transfer-constants";
 import { logTransferInitiatedWithoutAgreement } from "./anti-drift";
 import { mapTwilioStatusToFsmEvent, logRejectedTransition, type TwilioStatusPayload } from "./twilio-status-mapper";
+import { parseSupervisorAttentionReasonsJson } from "./supervisor-escalation";
 
 export async function createSession(params: {
   clientId: string;
@@ -46,6 +47,65 @@ export async function getSessionById(id: number, clientId: string) {
   return row ?? null;
 }
 
+/** Non-terminal sessions recently updated — live supervisor list (auditable filter). */
+export async function listActiveAiCallBotSessionsForSupervisor(
+  clientId: string,
+  maxHoursStale = 8,
+  limit = 50
+): Promise<(typeof aiCallBotSessions.$inferSelect)[]> {
+  const cutoff = new Date(Date.now() - maxHoursStale * 3600 * 1000);
+  return db
+    .select()
+    .from(aiCallBotSessions)
+    .where(
+      and(
+        eq(aiCallBotSessions.clientId, clientId),
+        ne(aiCallBotSessions.currentState, "terminal"),
+        gte(aiCallBotSessions.updatedAt, cutoff)
+      )
+    )
+    .orderBy(desc(aiCallBotSessions.updatedAt))
+    .limit(limit);
+}
+
+/** Append a stable reason code; sets supervisor_attention_required. Single write path for operator escalation flags. */
+export async function appendSupervisorAttentionReason(id: number, clientId: string, reason: string): Promise<void> {
+  const row = await getSessionById(id, clientId);
+  if (!row) return;
+  const existing = parseSupervisorAttentionReasonsJson(row.supervisorAttentionReasons);
+  if (!existing.includes(reason)) existing.push(reason);
+  await db
+    .update(aiCallBotSessions)
+    .set({
+      supervisorAttentionRequired: true,
+      supervisorAttentionReasons: JSON.stringify(existing),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(aiCallBotSessions.id, id), eq(aiCallBotSessions.clientId, clientId)));
+}
+
+export async function setSupervisorPauseAutoTransfer(
+  id: number,
+  clientId: string,
+  paused: boolean,
+  reason?: string | null
+): Promise<void> {
+  const now = new Date();
+  await db
+    .update(aiCallBotSessions)
+    .set({
+      supervisorPauseAutoTransfer: paused,
+      supervisorPausedAt: paused ? now : null,
+      supervisorPauseReason: paused ? (reason ?? null) : null,
+      updatedAt: now,
+    })
+    .where(and(eq(aiCallBotSessions.id, id), eq(aiCallBotSessions.clientId, clientId)));
+}
+
+export async function clearSupervisorPauseAutoTransfer(id: number, clientId: string): Promise<void> {
+  await setSupervisorPauseAutoTransfer(id, clientId, false, null);
+}
+
 export async function getSessionByCallSid(callSid: string, clientId: string) {
   const [row] = await db
     .select()
@@ -78,10 +138,9 @@ export async function findAiCallBotSessionForTwilioStatus(callSid: string, paren
 }
 
 /**
- * Single path: map Twilio status → at most one FSM event → transitionSession.
- * Invalid transitions are logged and skipped (no silent state corruption).
+ * Twilio → FSM: single path via transitionSession. Invalid transitions are logged and skipped.
+ * Persist rejected transition attempts for audit / supervisor escalation (no silent corruption).
  */
-/** Single write path: persist rejected transition attempt for staging verify / audit. */
 async function recordFsmRejection(id: number, clientId: string, reason: string, callSid: string | null): Promise<void> {
   try {
     await db
@@ -100,6 +159,7 @@ async function recordFsmRejection(id: number, clientId: string, reason: string, 
       callSid: callSid ?? undefined,
       detail: reason,
     });
+    await appendSupervisorAttentionReason(id, clientId, "fsm_rejected_transition");
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[ai-call-bot] recordFsmRejection failed: ${msg}`);
@@ -150,6 +210,16 @@ export async function transitionSession(
   const row = await getSessionById(id, clientId);
   if (!row) return { ok: false, error: "Session not found" };
 
+  if (event === "initiate_transfer" && row.supervisorPauseAutoTransfer) {
+    await recordFsmRejection(
+      id,
+      clientId,
+      "initiate_transfer blocked: supervisor_pause_auto_transfer active",
+      row.callSid ?? null
+    );
+    return { ok: false, error: "initiate_transfer blocked: supervisor pause (do-not-auto-transfer) is active" };
+  }
+
   const current = row.currentState as AiCallBotTransferState;
   const result = applyTransition(current, event);
   if (!result.ok) {
@@ -170,6 +240,7 @@ export async function transitionSession(
           "initiate_transfer blocked: transfer_agreed_at required (set AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER only for debug)",
           row.callSid ?? null
         );
+        await appendSupervisorAttentionReason(id, clientId, "transfer_attempted_without_agreement");
         return { ok: false, error: "initiate_transfer blocked: transfer_agreed_at required (set AI_CALL_BOT_ALLOW_UNSAFE_TRANSFER only for debug)" };
       }
     }
@@ -194,11 +265,24 @@ export async function transitionSession(
     updates.transferFailureReason = "agent_no_answer";
   }
 
-  await db.update(aiCallBotSessions).set(updates as any).where(eq(aiCallBotSessions.id, id));
+  if (event === "fallback_capture_started") {
+    updates.sessionFallbackFsmCount = sql`${aiCallBotSessions.sessionFallbackFsmCount} + 1`;
+  }
+
+  const [updatedRow] = await db
+    .update(aiCallBotSessions)
+    .set(updates as any)
+    .where(eq(aiCallBotSessions.id, id))
+    .returning({ sessionFallbackFsmCount: aiCallBotSessions.sessionFallbackFsmCount });
 
   if (event === "fallback_capture_started") {
     const { recordFallbackTriggered } = await import("./anti-drift");
     recordFallbackTriggered("fsm_fallback_capture_started");
+    const th = (await import("./supervisor-thresholds")).getSupervisorFallbackFsmEscalationThreshold();
+    const cnt = updatedRow?.sessionFallbackFsmCount ?? 0;
+    if (cnt >= th) {
+      await appendSupervisorAttentionReason(id, clientId, "repeated_fallback_in_session");
+    }
   }
 
   return { ok: true, state: result.next };

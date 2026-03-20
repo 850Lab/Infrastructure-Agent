@@ -96,33 +96,64 @@ export function clearDriftTelemetryForTests(): void {
   longCallRepeatCount.clear();
 }
 
-export function logReplyExceedsContract(callSid: string, textSample: string, sentenceCount: number, charCount: number): void {
+export function logReplyExceedsContract(
+  callSid: string,
+  textSample: string,
+  sentenceCount: number,
+  charCount: number,
+  opts?: { sessionId?: number; clientId?: string }
+): void {
   recordDriftEvent({
     kind: "reply_over_contract",
     callSid,
+    sessionId: opts?.sessionId,
+    clientId: opts?.clientId,
     detail: `sentences=${sentenceCount} chars=${charCount} sample=${textSample.slice(0, 120)}`,
   });
   log(
     `[DRIFT] reply_over_contract callSid=${callSid} sentences=${sentenceCount} chars=${charCount} sample=${JSON.stringify(textSample.slice(0, 120))}`,
     TAG
   );
+  if (opts?.sessionId != null && opts.clientId) {
+    void import("./transfer-controller").then(({ appendSupervisorAttentionReason }) =>
+      appendSupervisorAttentionReason(opts.sessionId!, opts.clientId!, "reply_over_contract")
+    );
+  }
 }
 
-export function logRepeatedLongCall(callSid: string, durationSec: number, thresholdSec: number): void {
+export function logRepeatedLongCall(
+  callSid: string,
+  durationSec: number,
+  thresholdSec: number,
+  opts?: { sessionId?: number; clientId?: string }
+): void {
   if (durationSec < thresholdSec) return;
   const n = (longCallRepeatCount.get(callSid) || 0) + 1;
   longCallRepeatCount.set(callSid, n);
   recordDriftEvent({
     kind: "long_call",
     callSid,
+    sessionId: opts?.sessionId,
+    clientId: opts?.clientId,
     detail: `durationSec=${durationSec} threshold=${thresholdSec} repeatInProcess=${n}`,
   });
   log(
     `[DRIFT] long_call callSid=${callSid} durationSec=${durationSec} threshold=${thresholdSec} repeatInProcess=${n}`,
     TAG
   );
+  if (opts?.sessionId != null && opts.clientId) {
+    void import("./transfer-controller").then(({ appendSupervisorAttentionReason }) =>
+      appendSupervisorAttentionReason(opts.sessionId!, opts.clientId!, "long_call_threshold_exceeded")
+    );
+  }
   if (n >= 2) {
-    recordDriftEvent({ kind: "repeated_long_call_pattern", callSid, detail: `count=${n}` });
+    recordDriftEvent({
+      kind: "repeated_long_call_pattern",
+      callSid,
+      sessionId: opts?.sessionId,
+      clientId: opts?.clientId,
+      detail: `count=${n}`,
+    });
     log(`[DRIFT] repeated_long_call_pattern callSid=${callSid} count=${n}`, TAG);
   }
 }

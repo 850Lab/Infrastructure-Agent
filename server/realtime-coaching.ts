@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HTTPServer } from "http";
 import { log as appLog } from "./index";
 import { buildAiCallBotLeadTrackSessionPartial } from "./ai-call-bot/prompt-contract";
+import { getLongCallThresholdSec } from "./ai-call-bot/supervisor-thresholds";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 
@@ -76,12 +77,9 @@ interface ActiveSession {
   humanTakeoverAt: number | null;
   /** Linked `ai_call_bot_sessions.id` — prompt contract applies to lead track only when set. */
   aiCallBotSessionId: number | null;
+  /** Client id for linked AI Call Bot row (supervisor escalation). */
+  aiCallBotClientId: string | null;
 }
-
-const LONG_CALL_DRIFT_THRESHOLD_SEC = Math.max(
-  60,
-  parseInt(process.env.AI_CALL_BOT_LONG_CALL_THRESHOLD_SEC || "120", 10) || 120
-);
 
 function sendLeadTrackPromptContractUpdate(session: ActiveSession): void {
   if (session.aiCallBotSessionId == null) return;
@@ -138,7 +136,10 @@ async function maybeLogAssistantReplyDrift(session: ActiveSession, event: any): 
   if (!text) return;
   const { exceedsSentenceContract, logReplyExceedsContract, countSentences } = await import("./ai-call-bot/anti-drift");
   if (exceedsSentenceContract(text, 2)) {
-    logReplyExceedsContract(session.callSid, text, countSentences(text), text.length);
+    logReplyExceedsContract(session.callSid, text, countSentences(text), text.length, {
+      sessionId: session.aiCallBotSessionId ?? undefined,
+      clientId: session.aiCallBotClientId ?? undefined,
+    });
   }
 }
 
@@ -387,6 +388,7 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
                 lastTranscriptPush: 0,
                 humanTakeoverAt: null,
                 aiCallBotSessionId: null,
+                aiCallBotClientId: null,
               };
               activeSessions.set(callSid, currentSession);
             }
@@ -401,6 +403,7 @@ export function setupRealtimeCoaching(httpServer: HTTPServer) {
                 const row = await findAiCallBotSessionForTwilioStatus(sess.callSid, parentCallSid || null);
                 if (row) {
                   sess.aiCallBotSessionId = row.id;
+                  sess.aiCallBotClientId = row.clientId;
                   sendLeadTrackPromptContractUpdate(sess);
                 }
               } catch (e: any) {
@@ -469,9 +472,13 @@ function endSession(callSid: string) {
   const fullTranscript = session.transcript.join("\n");
   const duration = Math.round((Date.now() - session.startedAt) / 1000);
 
-  if (session.aiCallBotSessionId != null && duration >= LONG_CALL_DRIFT_THRESHOLD_SEC) {
+  const longTh = getLongCallThresholdSec();
+  if (session.aiCallBotSessionId != null && session.aiCallBotClientId && duration >= longTh) {
     void import("./ai-call-bot/anti-drift").then(({ logRepeatedLongCall }) => {
-      logRepeatedLongCall(callSid, duration, LONG_CALL_DRIFT_THRESHOLD_SEC);
+      logRepeatedLongCall(callSid, duration, longTh, {
+        sessionId: session.aiCallBotSessionId!,
+        clientId: session.aiCallBotClientId!,
+      });
     });
   }
 
@@ -574,7 +581,7 @@ export function registerCoachingSession(
   companyName: string,
   contactName: string,
   talkingPoints: string[],
-  opts?: { aiCallBotSessionId?: number }
+  opts?: { aiCallBotSessionId?: number; aiCallBotClientId?: string | null }
 ) {
   let session = activeSessions.get(callSid);
   if (!session) {
@@ -593,6 +600,7 @@ export function registerCoachingSession(
       lastTranscriptPush: 0,
       humanTakeoverAt: null,
       aiCallBotSessionId: opts?.aiCallBotSessionId ?? null,
+      aiCallBotClientId: opts?.aiCallBotClientId ?? null,
     };
     activeSessions.set(callSid, session);
   } else {
@@ -601,6 +609,9 @@ export function registerCoachingSession(
     session.talkingPoints = talkingPoints;
     if (opts?.aiCallBotSessionId != null) {
       session.aiCallBotSessionId = opts.aiCallBotSessionId;
+    }
+    if (opts?.aiCallBotClientId != null && opts.aiCallBotClientId !== undefined) {
+      session.aiCallBotClientId = opts.aiCallBotClientId;
     }
   }
   log(`Coaching session registered: ${callSid} — ${companyName} (${talkingPoints.length} talking points)`);
@@ -644,6 +655,12 @@ export function subscribeToCoaching(callSid: string, res: any): boolean {
 
 export function getActiveSession(callSid: string): ActiveSession | undefined {
   return activeSessions.get(callSid);
+}
+
+/** Wall-clock start for live supervisor duration (coaching media session). */
+export function getCoachingStartedAtMs(callSid: string): number | null {
+  const s = activeSessions.get(callSid);
+  return s ? s.startedAt : null;
 }
 
 export function getActiveSessions(): { callSid: string; companyName: string; startedAt: number; transcriptLength: number; alertCount: number }[] {

@@ -15,6 +15,7 @@ import {
   finalizeTerminal,
   attachCallSid,
   updateSignalFields,
+  appendSupervisorAttentionReason,
 } from "./ai-call-bot/transfer-controller";
 import {
   transferAllowed,
@@ -186,7 +187,8 @@ export function registerAiCallBotRoutes(app: Express, authMw: any) {
         referralWithoutImmediateHandoff: parsed.referralWithoutImmediateHandoff,
       };
 
-      const allowed = transferAllowed(snapshot);
+      const rulesAllowTransfer = transferAllowed(snapshot);
+      const transferAllowedResult = row.supervisorPauseAutoTransfer ? false : rulesAllowTransfer;
       const blocked = transferBlocked(snapshot);
       const infoCapture = shouldSwitchToInformationCapture(snapshot);
       const exitClean = shouldExitCleanly(snapshot);
@@ -197,22 +199,28 @@ export function registerAiCallBotRoutes(app: Express, authMw: any) {
         opennessStatus: snapshot.opennessStatus,
         hesitationDetected: snapshot.hesitation,
         hesitationReason: snapshot.hesitation ? "snapshot" : undefined,
-        transferStatus: allowed ? "allowed" : blocked ? "blocked" : "pending",
+        transferStatus: transferAllowedResult ? "allowed" : blocked ? "blocked" : "pending",
       });
 
-      const twiml = allowed ? buildPostAgreementTransferTwiml() : null;
+      const twiml = transferAllowedResult ? buildPostAgreementTransferTwiml() : null;
+
+      if (transferAllowedResult && !twiml) {
+        await appendSupervisorAttentionReason(id, cid, "missing_transfer_target_transfer_eligible");
+      }
 
       if (infoCapture) {
         recordFallbackTriggered("evaluate_transfer_switchToInformationCapture");
       }
 
       res.json({
-        transferAllowed: allowed,
+        transferAllowed: transferAllowedResult,
         transferBlocked: blocked,
         switchToInformationCapture: infoCapture,
         exitCleanly: exitClean,
         transferTwimlAvailable: !!twiml,
         transferPhraseRequired: "connecting you now",
+        supervisorPauseAutoTransfer: row.supervisorPauseAutoTransfer,
+        rulesWouldAllowTransfer: rulesAllowTransfer,
       });
     } catch (e: any) {
       if (e instanceof z.ZodError) return res.status(400).json({ error: "Invalid payload", details: e.flatten() });

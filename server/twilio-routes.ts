@@ -459,7 +459,9 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
             companyName || "",
             contactName || "",
             Array.isArray(talkingPoints) ? talkingPoints : [],
-            typeof aiCallBotSessionId !== "undefined" ? { aiCallBotSessionId } : undefined
+            typeof aiCallBotSessionId !== "undefined"
+              ? { aiCallBotSessionId, aiCallBotClientId: clientId ?? undefined }
+              : undefined
           );
         }
       }
