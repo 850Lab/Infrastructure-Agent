@@ -13,10 +13,15 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   app.use("/{*path}", (req, res, next) => {
+    const pathOnly = req.path || "";
+    const pathNoQuery = (req.originalUrl || "").split("?")[0];
     if (
-      req.path.startsWith("/api/") ||
-      req.path === "/health" ||
-      req.path === "/airtable-webhook"
+      pathOnly.startsWith("/api/") ||
+      pathNoQuery.startsWith("/api/") ||
+      pathOnly === "/health" ||
+      pathNoQuery === "/health" ||
+      pathOnly === "/airtable-webhook" ||
+      pathNoQuery === "/airtable-webhook"
     ) {
       return next();
     }

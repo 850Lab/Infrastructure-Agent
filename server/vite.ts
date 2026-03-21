@@ -32,6 +32,19 @@ export async function setupVite(server: Server, app: Express) {
   app.use(vite.middlewares);
 
   app.use("/{*path}", async (req, res, next) => {
+    const pathOnly = req.path || "";
+    const pathNoQuery = (req.originalUrl || "").split("?")[0];
+    if (
+      pathOnly.startsWith("/api/") ||
+      pathNoQuery.startsWith("/api/") ||
+      pathOnly === "/health" ||
+      pathNoQuery === "/health" ||
+      pathOnly === "/airtable-webhook" ||
+      pathNoQuery === "/airtable-webhook"
+    ) {
+      return next();
+    }
+
     const url = req.originalUrl;
 
     try {

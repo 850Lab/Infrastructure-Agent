@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { registerTwilioVoiceTwiMlWebhooks } from "./twilio-voice-webhooks";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[FATAL] Unhandled promise rejection:", reason);
@@ -29,6 +30,9 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+/** Must run before registerRoutes / Vite / static so Twilio always gets TwiML, never the SPA shell. */
+registerTwilioVoiceTwiMlWebhooks(app);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
