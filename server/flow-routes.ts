@@ -3,6 +3,7 @@ import { authMiddleware } from "./auth";
 import {
   createFlow,
   logFlowAttempt,
+  resolveLogAttemptContextFromCallSession,
   getTodayActions,
   getAllPendingActions,
   getCompanyFlows,
@@ -17,6 +18,7 @@ import {
   LINKEDIN_OUTCOMES,
   NURTURE_OUTCOMES,
   getOutcomeLabel,
+  getLoggedExplanationPayloadForCallSession,
 } from "./flow-engine";
 import { db } from "./db";
 import { companyFlows, flowAttempts, actionQueue } from "@shared/schema";
@@ -295,14 +297,8 @@ export function registerFlowRoutes(app: Express) {
       const clientId = getClientId(req);
       if (!clientId) return res.status(400).json({ error: "No client context" });
 
-      const { flowId, companyId, companyName, contactId, contactName, channel, outcome, notes, callbackAt, capturedInfo } = req.body;
-      if (!flowId || !companyId || !companyName || !channel || !outcome) {
-        return res.status(400).json({ error: "flowId, companyId, companyName, channel, and outcome are required" });
-      }
-
-      const result = await logFlowAttempt({
-        clientId,
-        flowId: parseInt(flowId),
+      const {
+        flowId,
         companyId,
         companyName,
         contactId,
@@ -310,11 +306,78 @@ export function registerFlowRoutes(app: Express) {
         channel,
         outcome,
         notes,
+        callbackAt,
+        capturedInfo,
+        callSessionId,
+      } = req.body;
+
+      const trimmedSession =
+        typeof callSessionId === "string" && callSessionId.trim().length > 0 ? callSessionId.trim() : null;
+
+      let effFlowId: unknown = flowId;
+      let effCompanyId = companyId;
+      let effCompanyName = companyName;
+      let effContactId = contactId;
+      let effContactName = contactName;
+
+      if (trimmedSession) {
+        const fromSession = await resolveLogAttemptContextFromCallSession(clientId, trimmedSession);
+        if (fromSession) {
+          effFlowId = fromSession.flowId;
+          effCompanyId = fromSession.companyId;
+          effCompanyName = fromSession.companyName;
+          if (fromSession.contactId !== undefined) effContactId = fromSession.contactId;
+          if (fromSession.contactName !== undefined) effContactName = fromSession.contactName;
+        }
+      }
+
+      const flowIdNum =
+        typeof effFlowId === "number" && Number.isFinite(effFlowId)
+          ? effFlowId
+          : parseInt(String(effFlowId ?? ""), 10);
+
+      if (!effCompanyId || !effCompanyName || !channel || !outcome) {
+        return res.status(400).json({ error: "flowId, companyId, companyName, channel, and outcome are required" });
+      }
+      if (!Number.isFinite(flowIdNum) || flowIdNum <= 0) {
+        return res.status(400).json({ error: "flowId, companyId, companyName, channel, and outcome are required" });
+      }
+
+      const result = await logFlowAttempt({
+        clientId,
+        flowId: flowIdNum,
+        companyId: effCompanyId,
+        companyName: effCompanyName,
+        contactId: effContactId,
+        contactName: effContactName,
+        channel,
+        outcome,
+        notes,
         callbackAt: callbackAt ? new Date(callbackAt) : undefined,
         capturedInfo,
+        callSessionId: trimmedSession ?? undefined,
       });
 
       res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/flows/logged-explanation-by-call-session/:callSessionId", authMiddleware, async (req, res) => {
+    try {
+      const clientId = getClientId(req);
+      if (!clientId) return res.status(400).json({ error: "No client context" });
+      const raw =
+        typeof req.params.callSessionId === "string"
+          ? req.params.callSessionId
+          : req.params.callSessionId?.[0];
+      const callSessionId = raw?.trim() || "";
+      if (!callSessionId) return res.status(400).json({ error: "Missing call session id" });
+
+      const payload = await getLoggedExplanationPayloadForCallSession(clientId, callSessionId);
+      if (!payload) return res.status(404).json({ error: "No logged attempt for this call session" });
+      res.json(payload);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

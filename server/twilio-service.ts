@@ -86,6 +86,30 @@ export async function getTwilioFromNumber(): Promise<string> {
   return creds.phoneNumber;
 }
 
+const VOICE_TOKEN_TTL_SEC = 3600;
+
+/** Access token for Twilio Voice JS SDK (browser outbound via TwiML App). */
+export async function mintVoiceAccessToken(identity: string): Promise<{ token: string; ttl: number }> {
+  const twimlAppSid = process.env.TWILIO_TWIML_APPLICATION_SID?.trim();
+  if (!twimlAppSid) {
+    throw new Error("TWILIO_TWIML_APPLICATION_SID is not set");
+  }
+  const creds = await getCredentials();
+  const AccessToken = twilio.jwt.AccessToken;
+  const VoiceGrant = AccessToken.VoiceGrant;
+  const token = new AccessToken(creds.accountSid, creds.apiKey, creds.apiKeySecret, {
+    identity,
+    ttl: VOICE_TOKEN_TTL_SEC,
+  });
+  token.addGrant(
+    new VoiceGrant({
+      outgoingApplicationSid: twimlAppSid,
+      incomingAllow: true,
+    })
+  );
+  return { token: token.toJwt(), ttl: VOICE_TOKEN_TTL_SEC };
+}
+
 export async function isTwilioConnected(): Promise<boolean> {
   try {
     await getCredentials();
@@ -356,6 +380,7 @@ export async function getCallDetails(callSid: string): Promise<any | null> {
     const call = await client.calls(callSid).fetch();
     const result: any = {
       sid: call.sid,
+      parentCallSid: (call as { parentCallSid?: string }).parentCallSid || null,
       from: call.from,
       to: call.to,
       status: call.status,

@@ -6,6 +6,7 @@ export type EventType =
   | "STEP_DONE"
   | "TRIGGER_FIRED"
   | "CALL_ANALYSIS_COMPLETE"
+  | "SMS_RECEIVED"
   | "ERROR"
   | "HEARTBEAT"
   | "RUN_STARTED"

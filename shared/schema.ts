@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, uuid, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, uuid, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -445,6 +445,64 @@ export const insertLngOperatorCardSchema = createInsertSchema(lngOperatorCards).
 export type InsertLngOperatorCard = z.infer<typeof insertLngOperatorCardSchema>;
 export type LngOperatorCard = typeof lngOperatorCards.$inferSelect;
 
+/** Browser Voice SDK seat: one row per (client, user), stable Twilio Client identity. */
+export const voiceSeats = pgTable(
+  "voice_seats",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    clientId: varchar("client_id").notNull(),
+    userId: varchar("user_id").notNull(),
+    twilioIdentity: text("twilio_identity").notNull().unique(),
+    defaultCallerIdNumber: text("default_caller_id_number"),
+    status: text("status").notNull().default("active"),
+    /** Browser Voice: call_sessions.id for this operator’s in-flight session; cleared when that session is terminal. */
+    activeCallSessionId: varchar("active_call_session_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("voice_seats_client_id_user_id_idx").on(table.clientId, table.userId)],
+);
+
+export const insertVoiceSeatSchema = createInsertSchema(voiceSeats).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVoiceSeat = z.infer<typeof insertVoiceSeatSchema>;
+export type VoiceSeat = typeof voiceSeats.$inferSelect;
+
+/** Outbound browser call session: created before Device.connect, linked to webhooks/recording. */
+export const callSessions = pgTable(
+  "call_sessions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    clientId: varchar("client_id").notNull(),
+    workspaceKey: text("workspace_key").notNull(),
+    userId: varchar("user_id").notNull(),
+    seatId: varchar("seat_id"),
+    leadE164: text("lead_e164").notNull(),
+    fromNumber: text("from_number"),
+    parentCallSid: text("parent_call_sid"),
+    /** Outbound browser Dial: PSTN/child leg CallSid (set from status webhook). */
+    childCallSid: text("child_call_sid"),
+    leadCallSid: text("lead_call_sid"),
+    status: text("status").notNull().default("created"),
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    endedAt: timestamp("ended_at"),
+    /** Why the session became terminal (Twilio-mapped outcome or browser abort); first write wins. */
+    endedReason: text("ended_reason"),
+    /** Browser Device.connect / signaling succeeded for this session (distinct from callee answer → answered_at). */
+    connectedAt: timestamp("connected_at"),
+    /** First time the dialed leg was promoted to in-progress (browser session); used for session-native duration. */
+    answeredAt: timestamp("answered_at"),
+    /** Browser SDK call object disconnected (leg down); distinct from PSTN/call terminal ended_at. */
+    disconnectedAt: timestamp("disconnected_at"),
+  },
+  (t) => [index("call_sessions_child_call_sid_idx").on(t.childCallSid)],
+);
+
+export const insertCallSessionSchema = createInsertSchema(callSessions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCallSession = z.infer<typeof insertCallSessionSchema>;
+export type CallSession = typeof callSessions.$inferSelect;
+
 export const twilioRecordings = pgTable("twilio_recordings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   callSid: text("call_sid").notNull(),
@@ -472,10 +530,15 @@ export const twilioRecordings = pgTable("twilio_recordings", {
   /** When true, exclude from production reporting / cohort analytics. */
   isSandboxCall: boolean("is_sandbox_call").notNull().default(false),
   callIntelligenceJson: text("call_intelligence_json"),
+  /** Browser Voice session id (call_sessions.id), optional for legacy bridge calls. */
+  callSessionId: varchar("call_session_id"),
+  workspaceKey: text("workspace_key"),
   status: text("status").default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   processedAt: timestamp("processed_at"),
-});
+},
+  (t) => [index("twilio_recordings_call_session_id_idx").on(t.callSessionId)],
+);
 
 export const insertTwilioRecordingSchema = createInsertSchema(twilioRecordings).omit({ id: true, createdAt: true, processedAt: true });
 export type InsertTwilioRecording = z.infer<typeof insertTwilioRecordingSchema>;
@@ -554,6 +617,8 @@ export const flowAttempts = pgTable("flow_attempts", {
   notes: text("notes"),
   callbackAt: timestamp("callback_at"),
   capturedInfo: text("captured_info"),
+  /** Browser Voice dial session (call_sessions.id), optional. */
+  callSessionId: varchar("call_session_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   createdBy: text("created_by"),
 });

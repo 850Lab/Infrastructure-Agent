@@ -10,15 +10,46 @@ import {
   getRecordingsForCall,
   listAllRecordings,
   getCallDetails,
+  mintVoiceAccessToken,
+  normalizePhone,
+  getTwilioFromNumber,
 } from "./twilio-service";
 import { transcribeAudio, analyzeContainmentDeterministic, analyzeContainment, extractFollowupDate, analyzeLeadQuality, analyzeCallIntelligence } from "./openai";
 import { detectNoAuthority, detectNoAuthorityFromAnalysis } from "./authority-detection";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { twilioRecordings, clients, companyFlows, actionQueue, inboundMessages, outreachPipeline } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import {
+  twilioRecordings,
+  clients,
+  companyFlows,
+  actionQueue,
+  inboundMessages,
+  outreachPipeline,
+  users,
+  callSessions,
+} from "@shared/schema";
+import { eq, and, or, desc, sql, isNull } from "drizzle-orm";
 import { registerCoachingSession, subscribeToCoaching, getActiveSessions } from "./realtime-coaching";
-import { validateToken } from "./auth";
+import { validateToken, getTokenEntry } from "./auth";
+import {
+  activeCallMeta,
+  broadcastCallStatus,
+  callStatusSSEClients,
+  callStatusSSEClientsByCallSessionId,
+} from "./twilio-call-state";
+import {
+  assignActiveCallSessionToSeat,
+  clearVoiceSeatActiveCallSessionForEndedSession,
+  clearVoiceSeatActiveCallSessionPointer,
+  ensureVoiceSeat,
+  getVoiceSeatBrowserCallRecovery,
+  promoteBrowserCallSessionToInProgressFromTwilioLeg,
+  getTwilioIdentityFromCallSessionMetadata,
+  isCallSessionTerminalForSeatGuard,
+  isBrowserCallSessionAbortableDbStatus,
+  markBrowserCallSessionAbortedAndClearSeat,
+  TERMINAL_CALL_SESSION_STATUSES,
+} from "./voice-seat";
 
 const log = (msg: string) => {
   const ts = new Date().toLocaleTimeString();
@@ -29,6 +60,477 @@ function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.headers.host || "";
   return `${proto}://${host}`;
+}
+
+/**
+ * Store PSTN child CallSid on the browser session row (first eligible child-leg status webhook).
+ * Does not overwrite a different child; idempotent for the same sid.
+ */
+async function persistOutboundChildCallSidFromStatusIfEligible(params: {
+  callSid: string;
+  parentSid: string | null;
+}): Promise<void> {
+  const parentFromBody = params.parentSid?.trim();
+  const callSid = String(params.callSid || "").trim();
+  if (!parentFromBody || !callSid.startsWith("CA")) return;
+  if (callSid === parentFromBody) return;
+
+  const [cand] = await db
+    .select()
+    .from(callSessions)
+    .where(and(eq(callSessions.parentCallSid, parentFromBody), isNull(callSessions.childCallSid)))
+    .limit(1);
+
+  if (!cand || !getTwilioIdentityFromCallSessionMetadata(cand.metadata)) return;
+  if (isCallSessionTerminalForSeatGuard(cand)) return;
+
+  await db
+    .update(callSessions)
+    .set({ childCallSid: callSid, updatedAt: new Date() })
+    .where(
+      and(
+        eq(callSessions.id, cand.id),
+        or(isNull(callSessions.childCallSid), eq(callSessions.childCallSid, callSid)),
+      ),
+    );
+}
+
+/** Resolve call_sessions.id for browser Voice Dial status callbacks (client or child leg). */
+async function resolveBrowserCallSessionIdForTwilioWebhook(params: {
+  callSid: string;
+  parentSid: string | null;
+}): Promise<string | null> {
+  const sid = String(params.callSid || "").trim();
+
+  const [byChild] = await db
+    .select({ id: callSessions.id })
+    .from(callSessions)
+    .where(eq(callSessions.childCallSid, sid))
+    .limit(1);
+  if (byChild?.id) return byChild.id;
+
+  const meta =
+    activeCallMeta.get(sid) ||
+    (params.parentSid ? activeCallMeta.get(String(params.parentSid).trim()) : undefined);
+  if (meta?.voiceBrowser && meta.callSessionId) {
+    return meta.callSessionId;
+  }
+  const parentConds = [eq(callSessions.parentCallSid, sid)];
+  if (params.parentSid) {
+    parentConds.push(eq(callSessions.parentCallSid, String(params.parentSid).trim()));
+  }
+  const [row] = await db
+    .select({ id: callSessions.id })
+    .from(callSessions)
+    .where(or(...parentConds))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/** Seconds since answered_at for UI (Twilio-style string); null if no anchor. */
+function browserSessionDurationFromAnswered(
+  answeredAt: Date | null,
+  endMs: number | null,
+): string | null {
+  if (!answeredAt) return null;
+  const start = answeredAt.getTime();
+  const end = endMs ?? Date.now();
+  const sec = Math.floor((end - start) / 1000);
+  return String(Math.max(0, sec));
+}
+
+/** ISO timeline fields for browser session status + session-keyed SSE (null-safe for older rows). */
+function browserSessionTimelineFromRow(sess: typeof callSessions.$inferSelect): {
+  connectedAt: string | null;
+  answeredAt: string | null;
+  disconnectedAt: string | null;
+  endedAt: string | null;
+  endedReason: string | null;
+} {
+  return {
+    connectedAt: sess.connectedAt ? sess.connectedAt.toISOString() : null,
+    answeredAt: sess.answeredAt ? sess.answeredAt.toISOString() : null,
+    disconnectedAt: sess.disconnectedAt ? sess.disconnectedAt.toISOString() : null,
+    endedAt: sess.endedAt ? sess.endedAt.toISOString() : null,
+    endedReason: sess.endedReason?.trim() || null,
+  };
+}
+
+/** Map call_sessions row to UI live status (Focus Mode / session poll). */
+function mapCallSessionRowToBrowserLiveStatus(sess: typeof callSessions.$inferSelect): {
+  status: string;
+  duration: string | null;
+  connectedAt: string | null;
+  answeredAt: string | null;
+  disconnectedAt: string | null;
+  endedAt: string | null;
+  endedReason: string | null;
+} {
+  const timeline = browserSessionTimelineFromRow(sess);
+  const st = sess.status;
+  if (st === "aborted") return { status: "canceled", duration: null, ...timeline };
+  if (st === "prepared") return { status: "dialing", duration: null, ...timeline };
+  if (st === "dialing") return { status: "dialing", duration: null, ...timeline };
+  if (st === "in-progress") {
+    return {
+      status: "in-progress",
+      duration: browserSessionDurationFromAnswered(sess.answeredAt, null),
+      ...timeline,
+    };
+  }
+  if (TERMINAL_CALL_SESSION_STATUSES.has(st) || sess.endedAt) {
+    const duration =
+      sess.answeredAt && sess.endedAt
+        ? browserSessionDurationFromAnswered(sess.answeredAt, sess.endedAt.getTime())
+        : null;
+    return { status: st, duration, ...timeline };
+  }
+  return { status: st, duration: null, ...timeline };
+}
+
+/**
+ * Same meanings as session-keyed call_status SSE artifact fields.
+ * Uses the latest twilio_recordings row for this session (by createdAt desc), matching recording-by-call-session.
+ */
+function browserSessionArtifactFlagsFromRecording(
+  rec: typeof twilioRecordings.$inferSelect | null | undefined,
+): {
+  recordingArtifactsReady: boolean;
+  hasRecording: boolean;
+  hasTranscript: boolean;
+  hasAnalysis: boolean;
+} {
+  if (!rec) {
+    return {
+      recordingArtifactsReady: false,
+      hasRecording: false,
+      hasTranscript: false,
+      hasAnalysis: false,
+    };
+  }
+  const tx = rec.transcription?.trim() ?? "";
+  const ax = rec.analysis?.trim() ?? "";
+  const analyzed = rec.status === "analyzed" && rec.processedAt != null;
+  return {
+    recordingArtifactsReady: analyzed,
+    hasRecording: true,
+    hasTranscript: tx.length > 0,
+    hasAnalysis: ax.length > 0,
+  };
+}
+
+/** Lightweight latest-recording snapshot for session status (no transcript/analysis bodies). */
+function browserSessionLatestRecordingSummarySnapshot(
+  rec: typeof twilioRecordings.$inferSelect | null | undefined,
+): {
+  latestRecordingSid: string | null;
+  latestRecordingStatus: string | null;
+  processedAt: string | null;
+  summaryAvailable: boolean;
+} {
+  if (!rec) {
+    return {
+      latestRecordingSid: null,
+      latestRecordingStatus: null,
+      processedAt: null,
+      summaryAvailable: false,
+    };
+  }
+  let summaryAvailable = false;
+  if (rec.status === "analyzed" && rec.processedAt != null && rec.callIntelligenceJson?.trim()) {
+    try {
+      const ci = JSON.parse(rec.callIntelligenceJson) as { summary?: unknown };
+      if (typeof ci.summary === "string" && ci.summary.trim().length > 0) {
+        summaryAvailable = true;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return {
+    latestRecordingSid: rec.recordingSid,
+    latestRecordingStatus: rec.status,
+    processedAt: rec.processedAt ? rec.processedAt.toISOString() : null,
+    summaryAvailable,
+  };
+}
+
+/**
+ * Derived: session is terminal (Twilio-style), not operator-aborted, and latest linked recording has
+ * analyzed artifacts plus a non-empty call-intelligence summary (same gates as recordingArtifactsReady + summaryAvailable).
+ * Aborted sessions are never post-call ready.
+ */
+function browserSessionPostCallReady(params: {
+  session: typeof callSessions.$inferSelect;
+  latestRec: typeof twilioRecordings.$inferSelect | null | undefined;
+}): boolean {
+  if (params.session.status === "aborted") return false;
+  const terminal =
+    TERMINAL_CALL_SESSION_STATUSES.has(params.session.status) || params.session.endedAt != null;
+  if (!terminal) return false;
+  const artifacts = browserSessionArtifactFlagsFromRecording(params.latestRec ?? null);
+  const snap = browserSessionLatestRecordingSummarySnapshot(params.latestRec ?? null);
+  return artifacts.recordingArtifactsReady && snap.summaryAvailable;
+}
+
+/** Same call_status payload as the Twilio webhook path; drives session-keyed + parent CallSid SSE maps. */
+async function broadcastCallStatusFromCallSessionRow(
+  session: typeof callSessions.$inferSelect,
+  artifactOpts?: {
+    recordingArtifactsReady?: boolean;
+    hasRecording?: boolean;
+    hasTranscript?: boolean;
+    hasAnalysis?: boolean;
+    /** When set, avoids extra DB read (e.g. processRecording already loaded this row). */
+    latestRecordingRow?: typeof twilioRecordings.$inferSelect | null;
+  },
+) {
+  const live = mapCallSessionRowToBrowserLiveStatus(session);
+  const sseCallSid = session.parentCallSid?.trim() || "";
+  let latestRec: typeof twilioRecordings.$inferSelect | null | undefined = artifactOpts?.latestRecordingRow;
+  if (latestRec === undefined) {
+    const [r] = await db
+      .select()
+      .from(twilioRecordings)
+      .where(eq(twilioRecordings.callSessionId, session.id))
+      .orderBy(desc(twilioRecordings.createdAt))
+      .limit(1);
+    latestRec = r ?? null;
+  }
+  const recordingSummarySnapshot = browserSessionLatestRecordingSummarySnapshot(latestRec ?? null);
+  const postCallReady = browserSessionPostCallReady({ session, latestRec });
+  broadcastCallStatus(sseCallSid, live.status, live.duration ?? undefined, {
+    callSessionId: session.id,
+    sessionTimeline: browserSessionTimelineFromRow(session),
+    recordingArtifactsReady: artifactOpts?.recordingArtifactsReady,
+    hasRecording: artifactOpts?.hasRecording,
+    hasTranscript: artifactOpts?.hasTranscript,
+    hasAnalysis: artifactOpts?.hasAnalysis,
+    recordingSummarySnapshot,
+    postCallReady,
+  });
+}
+
+/** Resolve session then promote to in-progress when the dialed leg is live (see voice-seat helper). */
+async function promoteBrowserCallSessionToInProgressFromTwilioStatus(params: {
+  callSid: string;
+  parentSid: string | null;
+  mappedStatus: string;
+}): Promise<void> {
+  const sessionId = await resolveBrowserCallSessionIdForTwilioWebhook({
+    callSid: params.callSid,
+    parentSid: params.parentSid,
+  });
+  if (!sessionId) return;
+  await promoteBrowserCallSessionToInProgressFromTwilioLeg(
+    sessionId,
+    params.callSid,
+    params.parentSid,
+    params.mappedStatus,
+  );
+}
+
+/**
+ * Mark browser call_sessions terminal (idempotent ended_at). Runs before activeCallMeta delete.
+ * Resolves session via voiceBrowser meta or parent_call_sid matching Twilio CallSid / ParentCallSid.
+ */
+async function finalizeCallSessionFromTwilioStatus(params: {
+  callSid: string;
+  parentSid: string | null;
+  mappedStatus: string;
+}): Promise<void> {
+  if (!TERMINAL_CALL_SESSION_STATUSES.has(params.mappedStatus)) return;
+
+  const sessionId = await resolveBrowserCallSessionIdForTwilioWebhook({
+    callSid: params.callSid,
+    parentSid: params.parentSid,
+  });
+  if (!sessionId) return;
+
+  await db
+    .update(callSessions)
+    .set({
+      status: params.mappedStatus,
+      updatedAt: new Date(),
+      endedAt: sql`COALESCE(call_sessions.ended_at, NOW())`,
+      endedReason: sql`COALESCE(call_sessions.ended_reason, ${params.mappedStatus})`,
+    })
+    .where(eq(callSessions.id, sessionId));
+
+  await clearVoiceSeatActiveCallSessionForEndedSession(sessionId);
+}
+
+/** Resolve company/client for pipeline when twilio_recordings.call_session_id is set (browser path). */
+async function enrichContextFromCallSession(
+  rec: typeof twilioRecordings.$inferSelect | undefined | null
+): Promise<{ companyName: string | null; clientId: string | null }> {
+  let companyName = rec?.companyName ?? null;
+  let cid = rec?.clientId ?? null;
+  if (!rec?.callSessionId) return { companyName, clientId: cid };
+  const [s] = await db.select().from(callSessions).where(eq(callSessions.id, rec.callSessionId)).limit(1);
+  if (!s) return { companyName, clientId: cid };
+  if (!cid) cid = s.clientId;
+  if (!companyName && s.metadata) {
+    try {
+      const m = JSON.parse(s.metadata) as Record<string, unknown>;
+      if (typeof m.companyName === "string") companyName = m.companyName;
+    } catch {
+      /* ignore */
+    }
+  }
+  return { companyName, clientId: cid };
+}
+
+/** Browser session id when recording webhook CallSid is the persisted PSTN child leg. */
+async function resolveBrowserCallSessionIdFromRecordingCallSid(callSid: string): Promise<string | null> {
+  const sid = String(callSid || "").trim();
+  if (!sid.startsWith("CA")) return null;
+  const [session] = await db
+    .select()
+    .from(callSessions)
+    .where(eq(callSessions.childCallSid, sid))
+    .limit(1);
+  if (!session?.id || !getTwilioIdentityFromCallSessionMetadata(session.metadata)) return null;
+  return session.id;
+}
+
+type RecordingWebhookLookup = {
+  row: typeof twilioRecordings.$inferSelect | null;
+  /** Set call_session_id on this row when found via parent-leg pending row (idempotent). */
+  browserCallSessionIdToLink: string | null;
+};
+
+/**
+ * Find twilio_recordings row for recording webhook.
+ * Order: child_call_sid session → row by call_session_id → row by parent call_sid; then CallSid/parent/REST fallbacks.
+ */
+async function findRecordingRowForWebhook(
+  CallSid: string,
+  bodyParentCallSid?: string | null,
+): Promise<RecordingWebhookLookup> {
+  const browserSessionId = await resolveBrowserCallSessionIdFromRecordingCallSid(CallSid);
+  if (browserSessionId) {
+    const [bySessionId] = await db
+      .select()
+      .from(twilioRecordings)
+      .where(eq(twilioRecordings.callSessionId, browserSessionId))
+      .limit(1);
+    if (bySessionId) {
+      return { row: bySessionId, browserCallSessionIdToLink: null };
+    }
+    const [sess] = await db
+      .select({ parentCallSid: callSessions.parentCallSid })
+      .from(callSessions)
+      .where(eq(callSessions.id, browserSessionId))
+      .limit(1);
+    const parentLeg = sess?.parentCallSid?.trim();
+    if (parentLeg) {
+      const [byParent] = await db
+        .select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.callSid, parentLeg))
+        .limit(1);
+      if (byParent) {
+        const existing = byParent.callSessionId?.trim();
+        if (existing && existing !== browserSessionId) {
+          return { row: byParent, browserCallSessionIdToLink: null };
+        }
+        return {
+          row: byParent,
+          browserCallSessionIdToLink: existing ? null : browserSessionId,
+        };
+      }
+    }
+  }
+
+  const [direct] = await db.select().from(twilioRecordings).where(eq(twilioRecordings.callSid, CallSid)).limit(1);
+  if (direct) return { row: direct, browserCallSessionIdToLink: null };
+
+  const parentFromBody =
+    bodyParentCallSid && String(bodyParentCallSid).startsWith("CA") ? String(bodyParentCallSid) : null;
+  if (parentFromBody) {
+    const [byParent] = await db
+      .select()
+      .from(twilioRecordings)
+      .where(eq(twilioRecordings.callSid, parentFromBody))
+      .limit(1);
+    if (byParent) return { row: byParent, browserCallSessionIdToLink: null };
+  }
+
+  const details = await getCallDetails(CallSid);
+  const p = details?.parentCallSid && String(details.parentCallSid).startsWith("CA") ? String(details.parentCallSid) : null;
+  if (p && p !== CallSid) {
+    const [byFetchedParent] = await db
+      .select()
+      .from(twilioRecordings)
+      .where(eq(twilioRecordings.callSid, p))
+      .limit(1);
+    if (byFetchedParent) return { row: byFetchedParent, browserCallSessionIdToLink: null };
+  }
+
+  return { row: null, browserCallSessionIdToLink: null };
+}
+
+async function buildRecordingReadPayload(
+  recording: typeof twilioRecordings.$inferSelect,
+  clientId: string | null | undefined
+) {
+  if (clientId && recording.clientId && recording.clientId !== clientId) {
+    return { error: "forbidden" as const };
+  }
+
+  let updatedFlowAction: string | null = null;
+  let updatedFlowNotes: string | null = null;
+  let updatedFlowDueAt: string | null = null;
+
+  const ctx = await enrichContextFromCallSession(recording);
+  const effCompany = recording.companyName || ctx.companyName;
+  const effClientId = recording.clientId || ctx.clientId;
+
+  if (recording.processedAt && effCompany && effClientId) {
+    const [flow] = await db
+      .select()
+      .from(companyFlows)
+      .where(
+        and(eq(companyFlows.clientId, effClientId), eq(companyFlows.companyName, effCompany)),
+      )
+      .orderBy(desc(companyFlows.updatedAt))
+      .limit(1);
+    if (flow) {
+      updatedFlowAction = flow.nextAction;
+      updatedFlowNotes = flow.notes;
+      updatedFlowDueAt = flow.nextDueAt ? flow.nextDueAt.toISOString() : null;
+    }
+  }
+
+  return {
+    payload: {
+      id: recording.id,
+      callSid: recording.callSid,
+      callSessionId: recording.callSessionId,
+      recordingSid: recording.recordingSid,
+      duration: recording.duration,
+      transcription: recording.transcription,
+      analysis: recording.analysis,
+      problemDetected: recording.problemDetected,
+      noAuthority: recording.noAuthority,
+      authorityReason: recording.authorityReason,
+      suggestedRole: recording.suggestedRole,
+      followupDate: recording.followupDate,
+      companyName: recording.companyName,
+      contactName: recording.contactName,
+      status: recording.status,
+      createdAt: recording.createdAt,
+      processedAt: recording.processedAt,
+      leadQualityScore: recording.leadQualityScore,
+      leadQualityLabel: recording.leadQualityLabel,
+      leadQualitySignals: recording.leadQualitySignals ? JSON.parse(recording.leadQualitySignals) : null,
+      callIntelligence: recording.callIntelligenceJson ? JSON.parse(recording.callIntelligenceJson) : null,
+      updatedFlowAction,
+      updatedFlowNotes,
+      updatedFlowDueAt,
+    },
+  };
 }
 
 async function processRecording(callSid: string, recordingSid: string, clientId?: string) {
@@ -44,8 +546,25 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       return;
     }
 
-    const [recRow] = await db.select().from(twilioRecordings).where(eq(twilioRecordings.recordingSid, recordingSid)).limit(1);
-    const companyName = recRow?.companyName || null;
+    let [recRow] = await db.select().from(twilioRecordings).where(eq(twilioRecordings.recordingSid, recordingSid)).limit(1);
+    if (recRow && !recRow.callSessionId?.trim()) {
+      const sessionId = await resolveBrowserCallSessionIdFromRecordingCallSid(recRow.callSid);
+      if (sessionId) {
+        await db
+          .update(twilioRecordings)
+          .set({ callSessionId: sessionId })
+          .where(and(eq(twilioRecordings.id, recRow.id), isNull(twilioRecordings.callSessionId)));
+        const [again] = await db
+          .select()
+          .from(twilioRecordings)
+          .where(eq(twilioRecordings.id, recRow.id))
+          .limit(1);
+        if (again) recRow = again;
+      }
+    }
+    const sessionCtx0 = await enrichContextFromCallSession(recRow);
+    const companyName = sessionCtx0.companyName;
+    const clientIdForPublish = clientId ?? sessionCtx0.clientId ?? undefined;
     if (!recRow?.toNumber || !recRow?.fromNumber) {
       const callDetails = await getCallDetails(callSid);
       if (callDetails) {
@@ -124,14 +643,14 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       leadQualityLabel: leadQuality.label,
       leadQualitySignals: leadQuality.signals,
       ts: Date.now(),
-    }, clientId || undefined);
+    }, clientIdForPublish);
 
     try {
       const recData = await db.select()
         .from(twilioRecordings)
         .where(eq(twilioRecordings.recordingSid, recordingSid))
         .limit(1);
-      const companyName = recData[0]?.companyName;
+      const companyName = recData[0]?.companyName ?? sessionCtx0.companyName;
 
       if (companyName && process.env.AIRTABLE_API_KEY && process.env.AIRTABLE_BASE_ID) {
         const escapedName = companyName.replace(/'/g, "\\'");
@@ -185,7 +704,8 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
         .where(eq(twilioRecordings.recordingSid, recordingSid))
         .limit(1);
       const rec = recData2[0];
-      if (rec?.companyName && rec?.clientId) {
+      const flowCtx = await enrichContextFromCallSession(rec);
+      if (flowCtx.companyName && flowCtx.clientId) {
         const aiNotes: string[] = [];
         const flowUpdates: Record<string, any> = { updatedAt: new Date() };
 
@@ -212,8 +732,8 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
         const [activeFlow] = await db.select()
           .from(companyFlows)
           .where(and(
-            eq(companyFlows.clientId, rec.clientId),
-            eq(companyFlows.companyName, rec.companyName),
+            eq(companyFlows.clientId, flowCtx.clientId),
+            eq(companyFlows.companyName, flowCtx.companyName),
             eq(companyFlows.status, "active"),
           ))
           .orderBy(desc(companyFlows.updatedAt))
@@ -247,7 +767,7 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
           } else if (callIntel.intent === "callback_requested") {
             flowUpdates.lastOutcome = "followup_scheduled";
             if (followUpDate) {
-              flowUpdates.callbackAt = new Date(followUpDate);
+              flowUpdates.nextDueAt = new Date(followUpDate);
               flowUpdates.nextAction = `Callback requested — follow up ${followUpDate}`;
             }
             aiNotes.push(`Call intent: callback requested`);
@@ -265,7 +785,7 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
               flowUpdates.lastOutcome = "not_qualified_by_transcript";
               flowUpdates.priority = Math.min(activeFlow.priority, 20);
               aiNotes.push(`Transcript override: outcome "${currentOutcome}" downgraded — lead scored ${callIntel.quality_score}/10`);
-              log(`TRANSCRIPT OVERRIDE: ${rec.companyName} was "${currentOutcome}" but transcript scored ${callIntel.quality_score}/10 — downgrading`, "quality-check");
+              log(`TRANSCRIPT OVERRIDE: ${rec.companyName} was "${currentOutcome}" but transcript scored ${callIntel.quality_score}/10 — downgrading [quality-check]`);
             }
           } else if (callIntel.quality_score <= 5 && activeFlow.lastOutcome === "live_answer") {
             aiNotes.push(`Transcript caution: live answer scored only ${callIntel.quality_score}/10 — may not be a real opportunity`);
@@ -294,6 +814,33 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
       log(`Post-analysis flow update failed (non-blocking): ${flowErr.message}`);
     }
 
+    try {
+      const [recForSse] = await db
+        .select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.recordingSid, recordingSid))
+        .limit(1);
+      const linkSid = recForSse?.callSessionId?.trim();
+      if (linkSid) {
+        const [sessRow] = await db
+          .select()
+          .from(callSessions)
+          .where(eq(callSessions.id, linkSid))
+          .limit(1);
+        if (sessRow) {
+          await broadcastCallStatusFromCallSessionRow(sessRow, {
+            recordingArtifactsReady: true,
+            hasRecording: true,
+            hasTranscript: transcription.length > 0,
+            hasAnalysis: analysis.length > 0,
+            latestRecordingRow: recForSse ?? null,
+          });
+        }
+      }
+    } catch (sseArtifactErr: any) {
+      log(`Session artifact call_status broadcast failed (non-blocking): ${sseArtifactErr.message}`);
+    }
+
     log(`Recording ${recordingSid} fully analyzed — transcription: ${transcription.length} chars, authority: ${authorityDetected ? "NO AUTHORITY" : "ok"}, problem: ${deterministicResult.problem_detected || "none"}`);
   } catch (err: any) {
     log(`Recording processing error for ${recordingSid}: ${err.message}`);
@@ -305,39 +852,387 @@ async function processRecording(callSid: string, recordingSid: string, clientId?
   }
 }
 
-const activeCallMeta = new Map<string, {
-  flowId: number | null;
-  companyId: string | null;
-  contactId: string | null;
-  flowType: string | null;
-  taskId: number | null;
-  clientId: string | null;
-}>();
-
-const callStatusSSEClients = new Map<string, Set<Response>>();
-
-function broadcastCallStatus(callSid: string, status: string, duration?: string) {
-  const clients = callStatusSSEClients.get(callSid);
-  if (!clients || clients.size === 0) return;
-  const payload = `event: call_status\ndata: ${JSON.stringify({ callSid, status, duration: duration || null, ts: Date.now() })}\n\n`;
-  for (const res of clients) {
-    try { res.write(payload); } catch { clients.delete(res); }
-  }
-  if (["completed", "failed", "busy", "no-answer", "canceled"].includes(status)) {
-    for (const res of clients) {
-      try { res.end(); } catch {}
-    }
-    callStatusSSEClients.delete(callSid);
-  }
-}
-
 export function registerTwilioRoutes(app: Express, authMiddleware: any) {
   app.get("/api/twilio/status", authMiddleware, async (_req: Request, res: Response) => {
     try {
       const connected = await isTwilioConnected();
-      res.json({ connected, recordingEnabled: true });
+      const browserVoiceReady =
+        connected && !!process.env.TWILIO_TWIML_APPLICATION_SID?.trim();
+      res.json({ connected, recordingEnabled: true, browserVoiceReady });
     } catch (err: any) {
       res.json({ connected: false, error: err.message });
+    }
+  });
+
+  app.post("/api/twilio/voice/token", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const email = (req as any).user?.email as string | undefined;
+      if (!clientId || !email) {
+        return res.status(400).json({ error: "User must be scoped to a client to use browser voice" });
+      }
+      const [userRow] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      if (!userRow) {
+        return res.status(401).json({ error: "User record not found" });
+      }
+      const { recovery, twilioIdentity } = await getVoiceSeatBrowserCallRecovery(clientId, userRow.id);
+      const { token, ttl } = await mintVoiceAccessToken(twilioIdentity);
+      res.json({
+        token,
+        identity: twilioIdentity,
+        ttl,
+        activeCallSessionId: recovery.activeCallSessionId,
+        browserCallRecovery: recovery,
+      });
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg.includes("TWILIO_TWIML_APPLICATION_SID")) {
+        return res.status(503).json({ error: msg });
+      }
+      log(`voice/token error: ${msg}`);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  app.post("/api/twilio/voice/prepare-outbound", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const email = (req as any).user?.email as string | undefined;
+      if (!clientId || !email) {
+        return res.status(400).json({ error: "User must be scoped to a client" });
+      }
+      const {
+        to,
+        workspaceKey,
+        companyName,
+        contactName,
+        flowId,
+        companyId,
+        contactId,
+        flowType,
+        taskId,
+      } = req.body || {};
+      if (!to || typeof to !== "string") {
+        return res.status(400).json({ error: "Phone number 'to' is required" });
+      }
+      if (!workspaceKey || typeof workspaceKey !== "string") {
+        return res.status(400).json({ error: "workspaceKey is required" });
+      }
+      const normalizedTo = normalizePhone(to);
+      if (!normalizedTo) {
+        return res.status(400).json({ error: "Invalid phone number" });
+      }
+      const [userRow] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      if (!userRow) {
+        return res.status(401).json({ error: "User record not found" });
+      }
+      const seat = await ensureVoiceSeat(clientId, userRow.id);
+
+      const activeId =
+        typeof seat.activeCallSessionId === "string" ? seat.activeCallSessionId.trim() : "";
+      if (activeId) {
+        const [linked] = await db
+          .select()
+          .from(callSessions)
+          .where(and(eq(callSessions.id, activeId), eq(callSessions.clientId, clientId)))
+          .limit(1);
+        if (!linked) {
+          await clearVoiceSeatActiveCallSessionPointer(seat.id);
+        } else if (isCallSessionTerminalForSeatGuard(linked)) {
+          await clearVoiceSeatActiveCallSessionForEndedSession(activeId);
+        } else {
+          return res.status(409).json({
+            error: "VOICE_SEAT_ACTIVE_BROWSER_CALL",
+            callSessionId: activeId,
+          });
+        }
+      }
+
+      let fromNumber: string;
+      const seatDefault = seat.defaultCallerIdNumber?.trim();
+      if (seatDefault) {
+        const n = normalizePhone(seatDefault);
+        if (n) fromNumber = n;
+        else fromNumber = (await getTwilioFromNumber()).trim();
+      } else {
+        const sys = await getTwilioFromNumber();
+        if (!sys?.trim()) {
+          return res.status(400).json({ error: "No Twilio caller ID configured for this account" });
+        }
+        const n = normalizePhone(sys);
+        fromNumber = n || sys.trim();
+      }
+      if (!fromNumber) {
+        return res.status(400).json({ error: "Could not resolve caller ID" });
+      }
+
+      const metadata = JSON.stringify({
+        companyName: companyName ?? null,
+        contactName: contactName ?? null,
+        flowId: flowId ?? null,
+        companyId: companyId ?? null,
+        contactId: contactId ?? null,
+        flowType: flowType ?? null,
+        taskId: taskId ?? null,
+        twilioIdentity: seat.twilioIdentity,
+      });
+
+      const [session] = await db
+        .insert(callSessions)
+        .values({
+          clientId,
+          workspaceKey: workspaceKey.trim(),
+          userId: userRow.id,
+          seatId: seat.id,
+          leadE164: normalizedTo,
+          fromNumber,
+          status: "prepared",
+          metadata,
+        })
+        .returning();
+
+      if (!session) {
+        return res.status(500).json({ error: "Failed to create call session" });
+      }
+
+      await assignActiveCallSessionToSeat(seat.id, session.id);
+
+      res.json({
+        sessionId: session.id,
+        identity: seat.twilioIdentity,
+        fromNumber,
+        normalizedTo,
+      });
+    } catch (err: any) {
+      log(`voice/prepare-outbound error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/twilio/voice/abort-browser-call", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const email = (req as any).user?.email as string | undefined;
+      const callSessionId =
+        typeof req.body?.callSessionId === "string" ? req.body.callSessionId.trim() : "";
+      if (!clientId || !email) {
+        return res.status(400).json({ error: "User must be scoped to a client" });
+      }
+      if (!callSessionId) {
+        return res.status(400).json({ error: "callSessionId is required" });
+      }
+      const [userRow] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      if (!userRow) {
+        return res.status(401).json({ error: "User record not found" });
+      }
+      const seat = await ensureVoiceSeat(clientId, userRow.id);
+
+      const [session] = await db
+        .select()
+        .from(callSessions)
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+          ),
+        )
+        .limit(1);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      if (session.seatId && session.seatId !== seat.id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (isCallSessionTerminalForSeatGuard(session)) {
+        await clearVoiceSeatActiveCallSessionForEndedSession(callSessionId);
+        const [freshTerminal] = await db
+          .select()
+          .from(callSessions)
+          .where(eq(callSessions.id, callSessionId))
+          .limit(1);
+        if (freshTerminal) await broadcastCallStatusFromCallSessionRow(freshTerminal);
+        return res.json({ ok: true, alreadyTerminal: true });
+      }
+
+      if (session.status === "in-progress") {
+        return res.status(409).json({ error: "CALL_ALREADY_LIVE" });
+      }
+
+      if (!isBrowserCallSessionAbortableDbStatus(session.status)) {
+        return res.status(409).json({ error: "SESSION_NOT_ABORTABLE" });
+      }
+
+      // Race: callee answered before status webhook promoted DB to in-progress
+      if (session.status === "dialing") {
+        const parent = session.parentCallSid?.trim();
+        if (parent) {
+          const tw = await getCallStatus(parent);
+          if (tw?.status === "in-progress") {
+            return res.status(409).json({ error: "CALL_ALREADY_LIVE" });
+          }
+        }
+      }
+
+      await markBrowserCallSessionAbortedAndClearSeat(callSessionId);
+      const [freshAborted] = await db
+        .select()
+        .from(callSessions)
+        .where(eq(callSessions.id, callSessionId))
+        .limit(1);
+      if (freshAborted) await broadcastCallStatusFromCallSessionRow(freshAborted);
+      res.json({ ok: true });
+    } catch (err: any) {
+      log(`voice/abort-browser-call error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /** One-shot marker: browser SDK connect succeeded (parent leg up). Does not touch status / answered_at / ended_at. */
+  app.post("/api/twilio/voice/mark-browser-call-connected", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const email = (req as any).user?.email as string | undefined;
+      const callSessionId =
+        typeof req.body?.callSessionId === "string" ? req.body.callSessionId.trim() : "";
+      if (!clientId || !email) {
+        return res.status(400).json({ error: "User must be scoped to a client" });
+      }
+      if (!callSessionId) {
+        return res.status(400).json({ error: "callSessionId is required" });
+      }
+      const [userRow] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      if (!userRow) {
+        return res.status(401).json({ error: "User record not found" });
+      }
+      const seat = await ensureVoiceSeat(clientId, userRow.id);
+
+      const [session] = await db
+        .select()
+        .from(callSessions)
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+          ),
+        )
+        .limit(1);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      if (session.seatId && session.seatId !== seat.id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await db
+        .update(callSessions)
+        .set({
+          updatedAt: new Date(),
+          connectedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+            isNull(callSessions.connectedAt),
+          ),
+        );
+
+      const [freshConnected] = await db
+        .select()
+        .from(callSessions)
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+          ),
+        )
+        .limit(1);
+      if (freshConnected) await broadcastCallStatusFromCallSessionRow(freshConnected);
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      log(`voice/mark-browser-call-connected error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /** One-shot marker: browser SDK Call disconnected; does not touch status / connected_at / answered_at / ended_at. */
+  app.post("/api/twilio/voice/mark-browser-call-disconnected", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const email = (req as any).user?.email as string | undefined;
+      const callSessionId =
+        typeof req.body?.callSessionId === "string" ? req.body.callSessionId.trim() : "";
+      if (!clientId || !email) {
+        return res.status(400).json({ error: "User must be scoped to a client" });
+      }
+      if (!callSessionId) {
+        return res.status(400).json({ error: "callSessionId is required" });
+      }
+      const [userRow] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      if (!userRow) {
+        return res.status(401).json({ error: "User record not found" });
+      }
+      const seat = await ensureVoiceSeat(clientId, userRow.id);
+
+      const [session] = await db
+        .select()
+        .from(callSessions)
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+          ),
+        )
+        .limit(1);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      if (session.seatId && session.seatId !== seat.id) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await db
+        .update(callSessions)
+        .set({
+          updatedAt: new Date(),
+          disconnectedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+            isNull(callSessions.disconnectedAt),
+          ),
+        );
+
+      const [freshDisconnected] = await db
+        .select()
+        .from(callSessions)
+        .where(
+          and(
+            eq(callSessions.id, callSessionId),
+            eq(callSessions.clientId, clientId),
+            eq(callSessions.userId, userRow.id),
+          ),
+        )
+        .limit(1);
+      if (freshDisconnected) await broadcastCallStatusFromCallSessionRow(freshDisconnected);
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      log(`voice/mark-browser-call-disconnected error: ${err.message}`);
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -506,7 +1401,10 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.get("/api/twilio/call-session/:sid", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { sid } = req.params;
+      const sid = typeof req.params.sid === "string" ? req.params.sid : req.params.sid?.[0];
+      if (!sid) {
+        return res.status(400).json({ error: "Missing call sid" });
+      }
       const status = await getCallStatus(sid);
       const meta = activeCallMeta.get(sid) || null;
       res.json({
@@ -552,11 +1450,66 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       const mapped = statusMap[CallStatus] || CallStatus;
       log(`Status webhook: SID=${CallSid}, Status=${CallStatus} -> ${mapped}, Duration=${CallDuration || "n/a"}`);
 
-      broadcastCallStatus(CallSid, mapped, CallDuration);
+      const parentSid =
+        ParentCallSid && String(ParentCallSid).startsWith("CA") ? String(ParentCallSid) : null;
+      /** Browser Voice SDK SSE listens on the parent (client) leg; Dial callbacks often use the child CallSid. */
+      const sseCallSid = parentSid || CallSid;
+      const browserSessionIdForBroadcast = await resolveBrowserCallSessionIdForTwilioWebhook({
+        callSid: CallSid,
+        parentSid,
+      });
+
+      await persistOutboundChildCallSidFromStatusIfEligible({
+        callSid: CallSid,
+        parentSid,
+      });
+
+      await promoteBrowserCallSessionToInProgressFromTwilioStatus({
+        callSid: CallSid,
+        parentSid,
+        mappedStatus: mapped,
+      });
 
       if (["completed", "failed", "busy", "no-answer", "canceled"].includes(mapped)) {
+        await finalizeCallSessionFromTwilioStatus({
+          callSid: CallSid,
+          parentSid,
+          mappedStatus: mapped,
+        });
         activeCallMeta.delete(CallSid);
+        if (parentSid) activeCallMeta.delete(parentSid);
       }
+
+      let sessionTimeline: ReturnType<typeof browserSessionTimelineFromRow> | null = null;
+      let recordingSummarySnapshot: ReturnType<typeof browserSessionLatestRecordingSummarySnapshot> | undefined;
+      let postCallReadyWebhook = false;
+      if (browserSessionIdForBroadcast) {
+        const [sRow] = await db
+          .select()
+          .from(callSessions)
+          .where(eq(callSessions.id, browserSessionIdForBroadcast))
+          .limit(1);
+        if (sRow) sessionTimeline = browserSessionTimelineFromRow(sRow);
+        const [latestRecWebhook] = await db
+          .select()
+          .from(twilioRecordings)
+          .where(eq(twilioRecordings.callSessionId, browserSessionIdForBroadcast))
+          .orderBy(desc(twilioRecordings.createdAt))
+          .limit(1);
+        recordingSummarySnapshot = browserSessionLatestRecordingSummarySnapshot(latestRecWebhook ?? null);
+        if (sRow) {
+          postCallReadyWebhook = browserSessionPostCallReady({
+            session: sRow,
+            latestRec: latestRecWebhook ?? null,
+          });
+        }
+      }
+      broadcastCallStatus(sseCallSid, mapped, CallDuration, {
+        callSessionId: browserSessionIdForBroadcast,
+        sessionTimeline,
+        recordingSummarySnapshot,
+        postCallReady: postCallReadyWebhook,
+      });
 
       res.status(200).send("<Response></Response>");
     } catch (err: any) {
@@ -571,7 +1524,10 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { sid } = req.params;
+    const sid = typeof req.params.sid === "string" ? req.params.sid : req.params.sid?.[0];
+    if (!sid) {
+      return res.status(400).json({ error: "Missing call sid" });
+    }
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -600,9 +1556,118 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     });
   });
 
+  app.get("/api/twilio/browser-call-session-status/:callSessionId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const callSessionId =
+        typeof req.params.callSessionId === "string"
+          ? req.params.callSessionId
+          : req.params.callSessionId?.[0];
+      if (!callSessionId) {
+        return res.status(400).json({ error: "Missing call session id" });
+      }
+      const [session] = await db.select().from(callSessions).where(eq(callSessions.id, callSessionId)).limit(1);
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      if (clientId && session.clientId !== clientId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const live = mapCallSessionRowToBrowserLiveStatus(session);
+      const [latestRec] = await db
+        .select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.callSessionId, callSessionId))
+        .orderBy(desc(twilioRecordings.createdAt))
+        .limit(1);
+      const artifacts = browserSessionArtifactFlagsFromRecording(latestRec ?? null);
+      const recSnap = browserSessionLatestRecordingSummarySnapshot(latestRec ?? null);
+      const postCallReady = browserSessionPostCallReady({ session, latestRec });
+      res.json({
+        status: live.status,
+        duration: live.duration,
+        connectedAt: live.connectedAt,
+        answeredAt: live.answeredAt,
+        disconnectedAt: live.disconnectedAt,
+        endedAt: live.endedAt,
+        endedReason: live.endedReason,
+        recordingArtifactsReady: artifacts.recordingArtifactsReady,
+        hasRecording: artifacts.hasRecording,
+        hasTranscript: artifacts.hasTranscript,
+        hasAnalysis: artifacts.hasAnalysis,
+        latestRecordingSid: recSnap.latestRecordingSid,
+        latestRecordingStatus: recSnap.latestRecordingStatus,
+        processedAt: recSnap.processedAt,
+        summaryAvailable: recSnap.summaryAvailable,
+        postCallReady,
+        callSessionId: session.id,
+        parentCallSid: session.parentCallSid,
+        childCallSid: session.childCallSid,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/twilio/browser-call-status-stream/:callSessionId", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!token || !validateToken(token)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const entry = getTokenEntry(token);
+    const clientId = entry?.clientId ?? null;
+
+    const callSessionId =
+      typeof req.params.callSessionId === "string"
+        ? req.params.callSessionId
+        : req.params.callSessionId?.[0];
+    if (!callSessionId) {
+      return res.status(400).json({ error: "Missing call session id" });
+    }
+
+    const [session] = await db.select().from(callSessions).where(eq(callSessions.id, callSessionId)).limit(1);
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+    if (clientId && session.clientId !== clientId) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.write(`event: connected\ndata: ${JSON.stringify({ callSessionId })}\n\n`);
+
+    if (!callStatusSSEClientsByCallSessionId.has(callSessionId)) {
+      callStatusSSEClientsByCallSessionId.set(callSessionId, new Set());
+    }
+    callStatusSSEClientsByCallSessionId.get(callSessionId)!.add(res);
+
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(`:heartbeat\n\n`);
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 15000);
+
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      const clients = callStatusSSEClientsByCallSessionId.get(callSessionId);
+      if (clients) {
+        clients.delete(res);
+        if (clients.size === 0) callStatusSSEClientsByCallSessionId.delete(callSessionId);
+      }
+    });
+  });
+
   app.get("/api/twilio/recording-by-company/:companyName", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const companyName = req.params.companyName;
+      const companyName =
+        typeof req.params.companyName === "string" ? req.params.companyName : req.params.companyName?.[0];
       if (!companyName) return res.json([]);
 
       const recordings = await db.select()
@@ -661,12 +1726,26 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         return res.status(200).send("<Response></Response>");
       }
 
-      const existing = await db.select()
-        .from(twilioRecordings)
-        .where(eq(twilioRecordings.callSid, CallSid))
-        .limit(1);
+      const parentCallSidBody =
+        req.body.ParentCallSid && String(req.body.ParentCallSid).startsWith("CA")
+          ? String(req.body.ParentCallSid)
+          : null;
+      const { row: existingRow, browserCallSessionIdToLink } = await findRecordingRowForWebhook(
+        CallSid,
+        parentCallSidBody,
+      );
 
       let clientId: string | undefined;
+
+      let callSessionIdForRow: string | null =
+        existingRow?.callSessionId?.trim() || browserCallSessionIdToLink || null;
+      if (
+        existingRow?.callSessionId?.trim() &&
+        browserCallSessionIdToLink &&
+        existingRow.callSessionId !== browserCallSessionIdToLink
+      ) {
+        callSessionIdForRow = existingRow.callSessionId;
+      }
 
       const recordingPayload = {
         recordingSid: RecordingSid,
@@ -674,14 +1753,17 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         status: "recording_ready" as const,
         ...(From && { fromNumber: String(From) }),
         ...(To && { toNumber: String(To) }),
+        ...(callSessionIdForRow ? { callSessionId: callSessionIdForRow } : {}),
       };
 
-      if (existing.length > 0) {
-        clientId = existing[0].clientId || undefined;
+      if (existingRow) {
+        clientId = existingRow.clientId || undefined;
         await db.update(twilioRecordings)
           .set(recordingPayload)
-          .where(eq(twilioRecordings.callSid, CallSid));
+          .where(eq(twilioRecordings.id, existingRow.id));
       } else {
+        const insertSessionId =
+          callSessionIdForRow || (await resolveBrowserCallSessionIdFromRecordingCallSid(CallSid));
         await db.insert(twilioRecordings).values({
           callSid: CallSid,
           recordingSid: RecordingSid,
@@ -689,12 +1771,26 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           status: "recording_ready",
           fromNumber: From ? String(From) : null,
           toNumber: To ? String(To) : null,
+          ...(insertSessionId ? { callSessionId: insertSessionId } : {}),
         });
       }
 
       res.status(200).send("<Response></Response>");
 
       activeCallMeta.delete(CallSid);
+      if (parentCallSidBody) {
+        activeCallMeta.delete(parentCallSidBody);
+      }
+      if (callSessionIdForRow) {
+        const [sess] = await db
+          .select({ parentCallSid: callSessions.parentCallSid })
+          .from(callSessions)
+          .where(eq(callSessions.id, callSessionIdForRow))
+          .limit(1);
+        if (sess?.parentCallSid) {
+          activeCallMeta.delete(sess.parentCallSid);
+        }
+      }
 
       setImmediate(() => {
         processRecording(CallSid, RecordingSid, clientId).catch((err) => {
@@ -745,7 +1841,8 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.get("/api/twilio/recordings/:id", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const rawId = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+      const id = rawId ? parseInt(rawId, 10) : NaN;
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid recording ID" });
       }
@@ -765,9 +1862,45 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     }
   });
 
+  app.get("/api/twilio/recording-by-call-session/:callSessionId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const callSessionId =
+        typeof req.params.callSessionId === "string"
+          ? req.params.callSessionId
+          : req.params.callSessionId?.[0];
+      if (!callSessionId) return res.json(null);
+      const clientId = (req as any).user?.clientId;
+
+      const [session] = await db.select().from(callSessions).where(eq(callSessions.id, callSessionId)).limit(1);
+      if (!session) return res.json(null);
+      if (clientId && session.clientId !== clientId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const [recording] = await db
+        .select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.callSessionId, callSessionId))
+        .orderBy(desc(twilioRecordings.createdAt))
+        .limit(1);
+
+      if (!recording) return res.json(null);
+
+      const built = await buildRecordingReadPayload(recording, clientId);
+      if ("error" in built && built.error === "forbidden") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      res.json("payload" in built ? built.payload : null);
+    } catch (err: any) {
+      log(`Recording by callSessionId error: ${err.message}`);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/twilio/recording-by-callsid/:callSid", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { callSid } = req.params;
+      const callSid =
+        typeof req.params.callSid === "string" ? req.params.callSid : req.params.callSid?.[0];
       if (!callSid) return res.json(null);
       const clientId = (req as any).user?.clientId;
 
@@ -778,55 +1911,12 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         .limit(1);
 
       if (!recording) return res.json(null);
-      if (clientId && recording.clientId && recording.clientId !== clientId) {
+
+      const built = await buildRecordingReadPayload(recording, clientId);
+      if ("error" in built && built.error === "forbidden") {
         return res.status(403).json({ error: "Forbidden" });
       }
-
-      let updatedFlowAction: string | null = null;
-      let updatedFlowNotes: string | null = null;
-      let updatedFlowDueAt: string | null = null;
-
-      if (recording.processedAt && recording.companyName && recording.clientId) {
-        const [flow] = await db.select()
-          .from(companyFlows)
-          .where(and(
-            eq(companyFlows.clientId, recording.clientId),
-            eq(companyFlows.companyName, recording.companyName),
-          ))
-          .orderBy(desc(companyFlows.updatedAt))
-          .limit(1);
-        if (flow) {
-          updatedFlowAction = flow.nextAction;
-          updatedFlowNotes = flow.notes;
-          updatedFlowDueAt = flow.callbackAt ? flow.callbackAt.toISOString() : null;
-        }
-      }
-
-      res.json({
-        id: recording.id,
-        callSid: recording.callSid,
-        recordingSid: recording.recordingSid,
-        duration: recording.duration,
-        transcription: recording.transcription,
-        analysis: recording.analysis,
-        problemDetected: recording.problemDetected,
-        noAuthority: recording.noAuthority,
-        authorityReason: recording.authorityReason,
-        suggestedRole: recording.suggestedRole,
-        followupDate: recording.followupDate,
-        companyName: recording.companyName,
-        contactName: recording.contactName,
-        status: recording.status,
-        createdAt: recording.createdAt,
-        processedAt: recording.processedAt,
-        leadQualityScore: recording.leadQualityScore,
-        leadQualityLabel: recording.leadQualityLabel,
-        leadQualitySignals: recording.leadQualitySignals ? JSON.parse(recording.leadQualitySignals) : null,
-        callIntelligence: recording.callIntelligenceJson ? JSON.parse(recording.callIntelligenceJson) : null,
-        updatedFlowAction,
-        updatedFlowNotes,
-        updatedFlowDueAt,
-      });
+      res.json("payload" in built ? built.payload : null);
     } catch (err: any) {
       log(`Recording by callSid error: ${err.message}`);
       res.status(500).json({ error: err.message });
@@ -835,7 +1925,10 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.get("/api/twilio/call/:sid", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { sid } = req.params;
+      const sid = typeof req.params.sid === "string" ? req.params.sid : req.params.sid?.[0];
+      if (!sid) {
+        return res.status(400).json({ error: "Missing sid" });
+      }
       const status = await getCallStatus(sid);
       if (!status) {
         return res.status(404).json({ error: "Call not found" });
@@ -999,7 +2092,8 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
   app.patch("/api/twilio/inbound-messages/:id/read", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const rawId = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+      const id = rawId ? parseInt(rawId, 10) : NaN;
       await db.update(inboundMessages).set({ status: "read" }).where(eq(inboundMessages.id, id));
       res.json({ ok: true });
     } catch (err: any) {
@@ -1012,7 +2106,11 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     if (!token || !validateToken(token)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const { callSid } = req.params;
+    const callSid =
+      typeof req.params.callSid === "string" ? req.params.callSid : req.params.callSid?.[0];
+    if (!callSid) {
+      return res.status(400).json({ error: "Missing callSid" });
+    }
     const subscribed = subscribeToCoaching(callSid, res);
     if (!subscribed) {
       res.status(404).json({ error: "No active coaching session for this call" });
@@ -1177,7 +2275,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
           if (!companyName && transcription.length > 30) {
             const firstWords = transcription.substring(0, 300).toLowerCase();
-            for (const [digits, name] of phoneToCompany.entries()) {
+            for (const [digits, name] of Array.from(phoneToCompany.entries())) {
               if (firstWords.includes(name.toLowerCase().split(/[\s,]+/)[0].toLowerCase()) && name.length > 4) {
                 companyName = name;
                 log(`[sync] Transcript-matched to "${name}" by keyword`);
@@ -1208,7 +2306,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           const followupExtraction = extractFollowupDate(transcription);
           const extractedFollowupDate = followupExtraction.detected && followupExtraction.isoDate ? followupExtraction.isoDate : null;
           const callIntel = await analyzeCallIntelligence(transcription, companyName || undefined);
-          const leadQuality = await analyzeLeadQuality(transcription, companyName);
+          const leadQuality = await analyzeLeadQuality(transcription, companyName ?? undefined);
           const followUpDate = callIntel.follow_up_date || extractedFollowupDate;
 
           await db.update(twilioRecordings)
