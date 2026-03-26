@@ -2,8 +2,19 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "@/lib/auth";
+import { useAuth, getStoredToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Device, type Call } from "@twilio/voice-sdk";
+import {
+  postVoiceToken,
+  postPrepareOutbound,
+  postAbortBrowserCall,
+  postMarkBrowserCallConnected,
+  postMarkBrowserCallDisconnected,
+  browserCallSessionStatusPath,
+  browserCallStatusStreamUrl,
+  type BrowserCallRecoveryPayload,
+} from "@/voice/browserVoiceApi";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, ArrowRight, Phone, PhoneCall, Mail, Linkedin,
@@ -16,6 +27,66 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+
+/** Opt-in browser calling (Twilio Voice SDK). Legacy POST /api/twilio/call remains when this is false. */
+const BROWSER_VOICE_ENABLED = import.meta.env.VITE_USE_BROWSER_VOICE === "true";
+const VOICE_WORKSPACE_KEY = import.meta.env.VITE_VOICE_WORKSPACE_KEY || "focus_mode";
+
+/** Survives refresh so Call Summary can reload authoritative explanation by call_session_id. */
+const FOCUS_BROWSER_SUMMARY_SESSION_STORAGE_KEY = "focusMode_browserSummaryCallSessionId";
+
+function persistBrowserSummaryCallSessionId(callSessionId: string) {
+  try {
+    sessionStorage.setItem(FOCUS_BROWSER_SUMMARY_SESSION_STORAGE_KEY, callSessionId.trim());
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+function clearPersistedBrowserSummaryCallSessionId() {
+  try {
+    sessionStorage.removeItem(FOCUS_BROWSER_SUMMARY_SESSION_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+type LoggedExplanationApiPayload = {
+  explanation: {
+    outcomeLabel: string;
+    systemAction: string;
+    whyChosen: string;
+    stateChanges: string[];
+    flowLabel: string;
+  };
+  nextAction: string;
+  nextDueAt: string | null;
+  companyName: string;
+  companyId: string;
+  callSid: string | null;
+  callSessionId: string;
+  callDurationSec: number | null;
+};
+
+function explanationScreenDataFromLoggedPayload(
+  payload: LoggedExplanationApiPayload,
+  callDurationFallback: number | null,
+) {
+  return {
+    outcomeLabel: payload.explanation.outcomeLabel,
+    systemAction: payload.explanation.systemAction,
+    whyChosen: payload.explanation.whyChosen,
+    stateChanges: payload.explanation.stateChanges || [],
+    flowLabel: payload.explanation.flowLabel,
+    nextAction: payload.nextAction,
+    nextDueAt: payload.nextDueAt || "",
+    companyName: payload.companyName,
+    companyId: payload.companyId,
+    callSid: payload.callSid,
+    callSessionId: payload.callSessionId,
+    callDurationSec: payload.callDurationSec ?? callDurationFallback,
+  };
+}
 
 const EMERALD = "#10B981";
 const TEXT = "#0F172A";
@@ -34,6 +105,133 @@ const FLOW_CONFIG: Record<string, { label: string; color: string; icon: any; bgL
   linkedin: { label: "LinkedIn", color: "#0A66C2", icon: Linkedin, bgLight: "rgba(10,102,194,0.08)" },
   nurture: { label: "Long-Term Nurture", color: PURPLE, icon: Calendar, bgLight: "rgba(139,92,246,0.08)" },
 };
+
+/** Aligns with server `CallIntelligenceResult` (openai.ts) for post-call summary cards. */
+const CALL_INTEL_INTENT_LABELS: Record<string, string> = {
+  interested: "Interested",
+  not_interested: "Not interested",
+  neutral: "Neutral / unclear",
+  callback_requested: "Callback requested",
+  wrong_contact: "Wrong contact",
+};
+
+const CALL_INTEL_NEXT_ACTION_LABELS: Record<string, string> = {
+  call_again: "Call again at a better time",
+  send_email: "Send an email follow-up",
+  park: "Park or deprioritize this lead",
+  research_more: "Research and find the right contact",
+  warm_lead: "Warm lead — pursue the next step",
+};
+
+const CALL_INTEL_DM_STATUS_LABELS: Record<string, string> = {
+  reached: "Decision-maker reached",
+  gatekeeper: "Gatekeeper only",
+  unknown: "Decision-maker unclear",
+  wrong_person: "Wrong person",
+};
+
+async function fetchTwilioRecordingSummaryPayload(opts: {
+  callSessionId: string | null;
+  callSid: string | null;
+  headers: Record<string, string>;
+}): Promise<Record<string, unknown> | null> {
+  if (BROWSER_VOICE_ENABLED && opts.callSessionId) {
+    const res = await fetch(
+      `/api/twilio/recording-by-call-session/${encodeURIComponent(opts.callSessionId)}`,
+      { headers: opts.headers, credentials: "include" },
+    );
+    if (res.status === 403) throw new Error("Forbidden");
+    if (res.ok) {
+      const json = (await res.json()) as Record<string, unknown> | null;
+      if (json && json.id != null) return json;
+    }
+  }
+  if (opts.callSid) {
+    const res = await fetch(
+      `/api/twilio/recording-by-callsid/${encodeURIComponent(opts.callSid)}`,
+      { headers: opts.headers, credentials: "include" },
+    );
+    if (res.status === 403) throw new Error("Forbidden");
+    if (res.ok) return (await res.json()) as Record<string, unknown> | null;
+  }
+  return null;
+}
+
+/**
+ * Maps the same recording read payload as ExplanationScreen's query to explanation card fields.
+ * `postCallReady` is only true when call intelligence summary exists server-side; this mirrors that gate.
+ */
+function buildPostCallExplanationFromRecording(
+  rec: Record<string, unknown>,
+  base: {
+    flowLabel: string;
+    companyName: string;
+    companyId: string;
+    callSid: string | null;
+    callSessionId: string;
+    callDurationSec: number | null;
+    fallbackNextAction: string;
+    fallbackNextDueAt: string;
+  },
+): {
+  outcomeLabel: string;
+  systemAction: string;
+  whyChosen: string;
+  stateChanges: string[];
+  flowLabel: string;
+  nextAction: string;
+  nextDueAt: string;
+  companyName: string;
+  companyId: string;
+  callSid: string | null;
+  callSessionId: string;
+  callDurationSec: number | null;
+} | null {
+  if (!rec.processedAt) return null;
+  const ci = rec.callIntelligence as Record<string, unknown> | null | undefined;
+  const summary = typeof ci?.summary === "string" ? ci.summary.trim() : "";
+  if (!summary) return null;
+
+  const intentKey = typeof ci?.intent === "string" ? ci.intent : "";
+  const outcomeLabel = CALL_INTEL_INTENT_LABELS[intentKey] || "Call analyzed";
+
+  const nba = typeof ci?.next_best_action === "string" ? ci.next_best_action : "";
+  const systemAction =
+    (nba && CALL_INTEL_NEXT_ACTION_LABELS[nba]) ||
+    "Review the recording and AI analysis below. Log your outcome when you return to this action.";
+
+  const dm = typeof ci?.decision_maker_status === "string" ? ci.decision_maker_status : "";
+  const stateChanges: string[] = [];
+  if (dm) {
+    stateChanges.push(`Contact: ${CALL_INTEL_DM_STATUS_LABELS[dm] || dm.replace(/_/g, " ")}`);
+  }
+  const signals = Array.isArray(ci?.buying_signals) ? ci.buying_signals : [];
+  for (const s of signals.slice(0, 3)) {
+    if (typeof s === "string" && s.trim()) stateChanges.push(`Signal: ${s.trim()}`);
+  }
+
+  const ufa = rec.updatedFlowAction;
+  const ufd = rec.updatedFlowDueAt;
+  const nextAction =
+    typeof ufa === "string" && ufa.trim() ? ufa.trim() : base.fallbackNextAction;
+  const nextDueAt =
+    typeof ufd === "string" && ufd.trim() ? ufd.trim() : base.fallbackNextDueAt;
+
+  return {
+    outcomeLabel,
+    systemAction,
+    whyChosen: summary,
+    stateChanges,
+    flowLabel: base.flowLabel,
+    nextAction,
+    nextDueAt,
+    companyName: base.companyName,
+    companyId: base.companyId,
+    callSid: base.callSid,
+    callSessionId: base.callSessionId,
+    callDurationSec: base.callDurationSec,
+  };
+}
 
 const NOT_A_FIT_REASONS = [
   { value: "residential", label: "Residential" },
@@ -333,6 +531,7 @@ interface ExplanationProps {
     companyName: string;
     companyId: string;
     callSid: string | null;
+    callSessionId: string | null;
     callDurationSec: number | null;
   };
   onContinue: () => void;
@@ -344,9 +543,24 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [showDecisionDetail, setShowDecisionDetail] = useState(false);
 
+  const canPollRecording = !!(
+    (BROWSER_VOICE_ENABLED && data.callSessionId) ||
+    data.callSid
+  );
+
   const { data: recording } = useQuery<any>({
-    queryKey: [`/api/twilio/recording-by-callsid/${data.callSid}`],
-    enabled: !!data.callSid,
+    queryKey: ["twilioRecordingSummary", data.callSessionId, data.callSid, BROWSER_VOICE_ENABLED],
+    enabled: canPollRecording,
+    queryFn: async () => {
+      const headers: Record<string, string> = {};
+      const t = getStoredToken();
+      if (t) headers.Authorization = `Bearer ${t}`;
+      return fetchTwilioRecordingSummaryPayload({
+        callSessionId: data.callSessionId,
+        callSid: data.callSid,
+        headers,
+      });
+    },
     refetchInterval: (query) => {
       const d = query.state.data;
       if (!d) return 5000;
@@ -366,7 +580,7 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
       ? `${Math.floor(recording.duration / 60)}:${String(recording.duration % 60).padStart(2, "0")}`
       : null;
 
-  const hasRecording = !!data.callSid;
+  const hasRecording = !!(data.callSid || (BROWSER_VOICE_ENABLED && data.callSessionId));
   const isProcessing = hasRecording && recording && !recording.processedAt && recording.status !== "error" && recording.status !== "download_failed";
   const hasFailed = hasRecording && recording && (recording.status === "error" || recording.status === "download_failed");
   const hasTranscript = recording?.transcription && recording.transcription.length > 0;
@@ -694,9 +908,11 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
 }
 
 
+type BrowserVoiceRegState = "idle" | "token" | "registering" | "ready" | "error";
+
 export default function FocusModePage() {
   const { toast } = useToast();
-  const { getToken } = useAuth();
+  const { getToken, isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionLog, setSessionLog] = useState<SessionLog[]>([]);
@@ -710,16 +926,79 @@ export default function FocusModePage() {
   const [callStartTime, setCallStartTime] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState<number | null>(null);
   const [twilioReady, setTwilioReady] = useState<boolean | null>(null);
+  const [browserVoiceRegState, setBrowserVoiceRegState] = useState<BrowserVoiceRegState>("idle");
+  const [browserVoiceError, setBrowserVoiceError] = useState<string | null>(null);
+  const [browserConnectError, setBrowserConnectError] = useState<string | null>(null);
+  const [browserCallPending, setBrowserCallPending] = useState(false);
   const [sseConnected, setSSEConnected] = useState(false);
   const callPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const callSSERef = useRef<EventSource | null>(null);
+  const browserDeviceRef = useRef<Device | null>(null);
+  const browserVoiceConnRef = useRef<Call | null>(null);
+  /** Active browser Voice prepare-outbound session id for log-attempt linkage. */
+  const callSessionIdRef = useRef<string | null>(null);
+  /** Consumed once when browser Device becomes ready — restores call UI from POST /api/twilio/voice/token recovery. */
+  const pendingBrowserRecoveryRef = useRef<BrowserCallRecoveryPayload | null>(null);
 
   useEffect(() => {
     apiRequest("GET", "/api/twilio/status")
       .then(r => r.json())
-      .then(d => setTwilioReady(d.connected === true))
+      .then((d: { connected?: boolean; browserVoiceReady?: boolean }) => {
+        setTwilioReady(d.connected === true);
+      })
       .catch(() => setTwilioReady(false));
   }, []);
+
+  useEffect(() => {
+    if (!BROWSER_VOICE_ENABLED || !isAuthenticated || !getToken()) {
+      setBrowserVoiceRegState("idle");
+      setBrowserVoiceError(null);
+      browserDeviceRef.current?.destroy();
+      browserDeviceRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setBrowserVoiceRegState("token");
+      setBrowserVoiceError(null);
+      try {
+        const tokenRes = await postVoiceToken();
+        pendingBrowserRecoveryRef.current = tokenRes.browserCallRecovery ?? null;
+        const twilioToken = tokenRes.token;
+        if (cancelled) return;
+        setBrowserVoiceRegState("registering");
+        const dev = new Device(twilioToken, {
+          logLevel: 1,
+          closeProtection: true,
+        });
+        browserDeviceRef.current = dev;
+        dev.on("error", (err: { message?: string }) => {
+          setBrowserVoiceRegState("error");
+          setBrowserVoiceError(err?.message || "Device error");
+        });
+        dev.on("registered", () => {
+          if (!cancelled) setBrowserVoiceRegState("ready");
+        });
+        dev.on("unregistered", () => {
+          if (!cancelled) setBrowserVoiceRegState("error");
+        });
+        await dev.register();
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setBrowserVoiceRegState("error");
+          setBrowserVoiceError(e instanceof Error ? e.message : String(e));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      browserDeviceRef.current?.destroy();
+      browserDeviceRef.current = null;
+    };
+  }, [BROWSER_VOICE_ENABLED, isAuthenticated, getToken]);
 
   useEffect(() => {
     return () => {
@@ -755,6 +1034,14 @@ export default function FocusModePage() {
 
   const submitLockRef = useRef(false);
   const pollFailCountRef = useRef(0);
+  /** One automatic transition to Call Summary per browser session (postCallReady). */
+  const postCallReadyAppliedForSessionRef = useRef<string | null>(null);
+  /** Browser sessions where log-attempt already returned an authoritative explanation — blocks late postCallReady async from overwriting. */
+  const logAuthoritativeExplanationForCallSessionsRef = useRef<Set<string>>(new Set());
+  /** Operator dismissed Call Summary before a pending browser seed finished — blocks that async from re-opening. */
+  const browserExplanationSeedSuppressedForCallSessionsRef = useRef<Set<string>>(new Set());
+  /** callSessionId when ExplanationScreen was seeded from browser postCallReady (pre-log); cleared after authoritative log or dismiss. */
+  const browserPostCallPreLogExplanationSessionRef = useRef<string | null>(null);
 
   const handleCallStatusUpdate = useCallback((status: string, duration?: string | null) => {
     if (status === "ringing" || status === "queued" || status === "dialing") {
@@ -771,6 +1058,162 @@ export default function FocusModePage() {
       if (callSSERef.current) { callSSERef.current.close(); callSSERef.current = null; }
     }
   }, []);
+
+  /**
+   * Backend postCallReady: stop live tracking, refresh recording, open existing Call Summary (ExplanationScreen).
+   * Prefetches the same recording payload as ExplanationScreen; when call intelligence summary exists, fills
+   * the explanation cards from that server payload; otherwise keeps neutral copy (same as before).
+   */
+  const applyBrowserPostCallReadyTransition = useCallback(
+    (
+      trackedSessionId: string,
+      data: { status?: string; duration?: string | null; callSessionId?: string | null },
+    ) => {
+      if (!BROWSER_VOICE_ENABLED || !currentAction) return;
+      if (callSessionIdRef.current !== trackedSessionId) return;
+      if (data.callSessionId && data.callSessionId !== trackedSessionId) return;
+      if (postCallReadyAppliedForSessionRef.current === trackedSessionId) return;
+
+      postCallReadyAppliedForSessionRef.current = trackedSessionId;
+
+      if (callPollRef.current) {
+        clearInterval(callPollRef.current);
+        callPollRef.current = null;
+      }
+      if (callSSERef.current) {
+        callSSERef.current.close();
+        callSSERef.current = null;
+      }
+      setSSEConnected(false);
+
+      if (typeof data.status === "string") {
+        handleCallStatusUpdate(data.status, data.duration);
+      } else {
+        setCallState("completed");
+      }
+
+      const action = currentAction;
+      const sid = callSid;
+      const dur = callDuration;
+
+      void (async () => {
+        void queryClient.invalidateQueries({ queryKey: ["twilioRecordingSummary", trackedSessionId] });
+
+        const headers: Record<string, string> = {};
+        const t = getToken();
+        if (t) headers.Authorization = `Bearer ${t}`;
+
+        const tid = trackedSessionId.trim();
+
+        try {
+          const authRes = await fetch(
+            `/api/flows/logged-explanation-by-call-session/${encodeURIComponent(tid)}`,
+            { headers, credentials: "include" },
+          );
+          if (authRes.ok) {
+            const payload = (await authRes.json()) as LoggedExplanationApiPayload;
+            if (payload?.explanation) {
+              if (callSessionIdRef.current !== tid) return;
+              logAuthoritativeExplanationForCallSessionsRef.current.add(tid);
+              browserPostCallPreLogExplanationSessionRef.current = null;
+              browserExplanationSeedSuppressedForCallSessionsRef.current.delete(tid);
+              persistBrowserSummaryCallSessionId(tid);
+              const ed = explanationScreenDataFromLoggedPayload(payload, dur);
+              setExplanationData(ed);
+              try {
+                await queryClient.fetchQuery({
+                  queryKey: ["twilioRecordingSummary", tid, ed.callSid, BROWSER_VOICE_ENABLED],
+                  queryFn: () =>
+                    fetchTwilioRecordingSummaryPayload({
+                      callSessionId: tid,
+                      callSid: ed.callSid,
+                      headers,
+                    }),
+                  staleTime: 0,
+                });
+              } catch {
+                /* recording panel still works via ExplanationScreen query */
+              }
+              return;
+            }
+          }
+        } catch {
+          /* fall through to pre-log recording path */
+        }
+
+        if (callSessionIdRef.current !== tid) return;
+
+        if (logAuthoritativeExplanationForCallSessionsRef.current.has(tid)) return;
+        if (browserExplanationSeedSuppressedForCallSessionsRef.current.has(tid)) return;
+
+        let recordingPayload: Record<string, unknown> | null = null;
+        try {
+          recordingPayload = await queryClient.fetchQuery({
+            queryKey: ["twilioRecordingSummary", trackedSessionId, sid, BROWSER_VOICE_ENABLED],
+            queryFn: () =>
+              fetchTwilioRecordingSummaryPayload({
+                callSessionId: trackedSessionId,
+                callSid: sid,
+                headers,
+              }),
+            staleTime: 0,
+          });
+        } catch {
+          recordingPayload = null;
+        }
+
+        if (logAuthoritativeExplanationForCallSessionsRef.current.has(tid)) return;
+        if (browserExplanationSeedSuppressedForCallSessionsRef.current.has(tid)) return;
+
+        if (callSessionIdRef.current !== tid) return;
+
+        const flowLabel = action.flowType.replace(/_/g, " ") || "Call";
+        const fallbackNextAction =
+          action.recommendationText || action.taskType || "Follow up as needed";
+        const fallbackNextDueAt = action.dueAt || "";
+
+        const neutral = {
+          outcomeLabel: "Call summary ready",
+          systemAction:
+            "Review the recording and transcript below. Log your outcome when you return to this action.",
+          whyChosen: "Post-call analysis is complete.",
+          stateChanges: [] as string[],
+          flowLabel,
+          nextAction: fallbackNextAction,
+          nextDueAt: fallbackNextDueAt,
+          companyName: action.companyName,
+          companyId: action.companyId,
+          callSid: sid,
+          callSessionId: trackedSessionId,
+          callDurationSec: dur,
+        };
+
+        persistBrowserSummaryCallSessionId(tid);
+
+        if (recordingPayload) {
+          const fromRecording = buildPostCallExplanationFromRecording(recordingPayload, {
+            flowLabel,
+            companyName: action.companyName,
+            companyId: action.companyId,
+            callSid: sid,
+            callSessionId: trackedSessionId,
+            callDurationSec: dur,
+            fallbackNextAction,
+            fallbackNextDueAt,
+          });
+          if (fromRecording) {
+            browserPostCallPreLogExplanationSessionRef.current = tid;
+            setExplanationData(fromRecording);
+            return;
+          }
+        }
+
+        browserPostCallPreLogExplanationSessionRef.current = tid;
+        setExplanationData(neutral);
+      })();
+    },
+    [currentAction, callSid, callDuration, handleCallStatusUpdate, getToken],
+  );
 
   const startCallPoll = useCallback((sid: string) => {
     if (callPollRef.current) clearInterval(callPollRef.current);
@@ -802,6 +1245,80 @@ export default function FocusModePage() {
     }, 5000);
   }, [getToken, handleCallStatusUpdate]);
 
+  const startCallPollByBrowserSession = useCallback(
+    (callSessionId: string, fallbackCallSid: string | null) => {
+      if (callPollRef.current) clearInterval(callPollRef.current);
+      pollFailCountRef.current = 0;
+      const token = getToken();
+      callPollRef.current = setInterval(async () => {
+        try {
+          let res = await fetch(browserCallSessionStatusPath(callSessionId), {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok && fallbackCallSid) {
+            res = await fetch(`/api/twilio/call-session/${fallbackCallSid}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+          }
+          if (!res.ok) {
+            pollFailCountRef.current++;
+            if (pollFailCountRef.current >= 10) {
+              setCallState("completed");
+              if (callPollRef.current) {
+                clearInterval(callPollRef.current);
+                callPollRef.current = null;
+              }
+            }
+            return;
+          }
+          pollFailCountRef.current = 0;
+          if (callSessionIdRef.current !== callSessionId) {
+            if (callPollRef.current) {
+              clearInterval(callPollRef.current);
+              callPollRef.current = null;
+            }
+            return;
+          }
+          const data = (await res.json()) as {
+            status: string;
+            duration?: string | null;
+            recordingArtifactsReady?: boolean;
+            summaryAvailable?: boolean;
+            postCallReady?: boolean;
+            latestRecordingSid?: string | null;
+            latestRecordingStatus?: string | null;
+            processedAt?: string | null;
+          };
+          if (callSessionIdRef.current !== callSessionId) {
+            if (callPollRef.current) {
+              clearInterval(callPollRef.current);
+              callPollRef.current = null;
+            }
+            return;
+          }
+          if (data.postCallReady === true) {
+            applyBrowserPostCallReadyTransition(callSessionId, data);
+          } else {
+            handleCallStatusUpdate(data.status, data.duration);
+            if (data.recordingArtifactsReady === true || data.summaryAvailable === true) {
+              void queryClient.invalidateQueries({ queryKey: ["twilioRecordingSummary", callSessionId] });
+            }
+          }
+        } catch {
+          pollFailCountRef.current++;
+          if (pollFailCountRef.current >= 10) {
+            setCallState("completed");
+            if (callPollRef.current) {
+              clearInterval(callPollRef.current);
+              callPollRef.current = null;
+            }
+          }
+        }
+      }, 5000);
+    },
+    [getToken, handleCallStatusUpdate, applyBrowserPostCallReadyTransition],
+  );
+
   const startCallStatusSSE = useCallback((sid: string) => {
     if (callSSERef.current) { callSSERef.current.close(); callSSERef.current = null; }
     const token = getToken();
@@ -830,6 +1347,170 @@ export default function FocusModePage() {
       startCallPoll(sid);
     };
   }, [getToken, handleCallStatusUpdate, startCallPoll]);
+
+  const startCallStatusSSEByBrowserSession = useCallback(
+    (callSessionId: string, fallbackCallSid: string | null) => {
+      if (callSSERef.current) {
+        callSSERef.current.close();
+        callSSERef.current = null;
+      }
+      const token = getToken();
+      if (!token) return;
+
+      const es = new EventSource(browserCallStatusStreamUrl(callSessionId, token));
+      callSSERef.current = es;
+
+      es.addEventListener("connected", () => {
+        setSSEConnected(true);
+      });
+
+      es.addEventListener("call_status", (e: MessageEvent) => {
+        try {
+          if (callSessionIdRef.current !== callSessionId) return;
+          const data = JSON.parse(e.data) as {
+            status?: string;
+            duration?: string | null;
+            recordingArtifactsReady?: boolean;
+            summaryAvailable?: boolean;
+            postCallReady?: boolean;
+          };
+          if (callSessionIdRef.current !== callSessionId) return;
+          if (callPollRef.current) {
+            clearInterval(callPollRef.current);
+            callPollRef.current = null;
+          }
+          if (data.postCallReady === true) {
+            applyBrowserPostCallReadyTransition(callSessionId, data);
+          } else {
+            if (typeof data.status === "string") {
+              handleCallStatusUpdate(data.status, data.duration);
+            }
+            if (data.recordingArtifactsReady === true || data.summaryAvailable === true) {
+              void queryClient.invalidateQueries({ queryKey: ["twilioRecordingSummary", callSessionId] });
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+
+      es.onerror = () => {
+        setSSEConnected(false);
+        es.close();
+        callSSERef.current = null;
+        startCallPollByBrowserSession(callSessionId, fallbackCallSid);
+      };
+    },
+    [getToken, handleCallStatusUpdate, startCallPollByBrowserSession, applyBrowserPostCallReadyTransition],
+  );
+
+  useEffect(() => {
+    if (!BROWSER_VOICE_ENABLED || browserVoiceRegState !== "ready") return;
+    const rec = pendingBrowserRecoveryRef.current;
+    pendingBrowserRecoveryRef.current = null;
+    if (!rec?.isLive || !rec.activeCallSessionId) return;
+
+    callSessionIdRef.current = rec.activeCallSessionId;
+    const sess = rec.session;
+    const parentSid = sess?.parentCallSid?.trim() || null;
+    if (parentSid) setCallSid(parentSid);
+    if (sess?.status === "in-progress") {
+      setCallState("in-progress");
+      setCallStartTime(Date.now());
+    } else {
+      setCallState("dialing");
+    }
+    setCallDuration(null);
+    setSSEConnected(false);
+    const recoveredSessionId = rec.activeCallSessionId;
+    startCallStatusSSEByBrowserSession(recoveredSessionId, parentSid);
+    setTimeout(() => {
+      if (callSessionIdRef.current !== recoveredSessionId) return;
+      if (!callSSERef.current || callSSERef.current.readyState !== EventSource.OPEN) {
+        startCallPollByBrowserSession(recoveredSessionId, parentSid);
+      }
+    }, 3000);
+  }, [
+    BROWSER_VOICE_ENABLED,
+    browserVoiceRegState,
+    startCallStatusSSEByBrowserSession,
+    startCallPollByBrowserSession,
+  ]);
+
+  /** After refresh/re-entry: reopen Call Summary with authoritative explanation when session id was persisted. */
+  useEffect(() => {
+    if (!BROWSER_VOICE_ENABLED || !isAuthenticated || browserVoiceRegState !== "ready") return;
+    let cancelled = false;
+    const raw = (() => {
+      try {
+        return sessionStorage.getItem(FOCUS_BROWSER_SUMMARY_SESSION_STORAGE_KEY)?.trim();
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!raw) return;
+
+    void (async () => {
+      const headers: Record<string, string> = {};
+      const t = getToken();
+      if (t) headers.Authorization = `Bearer ${t}`;
+      try {
+        const stRes = await fetch(browserCallSessionStatusPath(raw), { headers, credentials: "include" });
+        if (stRes.ok) {
+          const st = (await stRes.json()) as { status?: string };
+          if (st.status === "dialing" || st.status === "in-progress" || st.status === "ringing") return;
+        }
+      } catch {
+        /* if status fails, still try logged explanation */
+      }
+      if (cancelled) return;
+
+      try {
+        const res = await fetch(
+          `/api/flows/logged-explanation-by-call-session/${encodeURIComponent(raw)}`,
+          { headers, credentials: "include" },
+        );
+        if (cancelled) return;
+        if (!res.ok) {
+          if (res.status === 404) clearPersistedBrowserSummaryCallSessionId();
+          return;
+        }
+        const payload = (await res.json()) as LoggedExplanationApiPayload;
+        if (cancelled || !payload?.explanation) return;
+
+        const tid = payload.callSessionId?.trim() || raw;
+        logAuthoritativeExplanationForCallSessionsRef.current.add(tid);
+        browserPostCallPreLogExplanationSessionRef.current = null;
+        browserExplanationSeedSuppressedForCallSessionsRef.current.delete(tid);
+        postCallReadyAppliedForSessionRef.current = tid;
+
+        const ed = explanationScreenDataFromLoggedPayload(payload, null);
+        setExplanationData(ed);
+
+        void queryClient.invalidateQueries({ queryKey: ["twilioRecordingSummary", tid] });
+        try {
+          await queryClient.fetchQuery({
+            queryKey: ["twilioRecordingSummary", tid, ed.callSid, BROWSER_VOICE_ENABLED],
+            queryFn: () =>
+              fetchTwilioRecordingSummaryPayload({
+                callSessionId: tid,
+                callSid: ed.callSid,
+                headers,
+              }),
+            staleTime: 0,
+          });
+        } catch {
+          /* ExplanationScreen may refetch */
+        }
+      } catch {
+        /* Transient network / JSON errors: keep storage so a later visit can recover. */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [BROWSER_VOICE_ENABLED, isAuthenticated, browserVoiceRegState, getToken]);
 
   const callActionIdRef = useRef<number | null>(null);
 
@@ -878,7 +1559,7 @@ export default function FocusModePage() {
     },
   });
 
-  const handleInitiateCall = () => {
+  const handleInitiateCall = async () => {
     if (!currentAction) return;
     const phone = currentAction.contactPhone || currentAction.companyPhone || currentCompany?.phone;
     if (!phone) {
@@ -891,6 +1572,122 @@ export default function FocusModePage() {
     if (currentCompany?.playbook_gatekeeper) talkingPoints.push(currentCompany.playbook_gatekeeper);
     if (currentCompany?.playbook_strategy_notes) talkingPoints.push(currentCompany.playbook_strategy_notes);
 
+    if (BROWSER_VOICE_ENABLED) {
+      if (browserVoiceRegState !== "ready" || !browserDeviceRef.current) {
+        toast({
+          title: "Browser phone not ready",
+          description: browserVoiceError || "Complete microphone permission and wait for device registration.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (callPollRef.current) {
+        clearInterval(callPollRef.current);
+        callPollRef.current = null;
+      }
+      if (callSSERef.current) {
+        callSSERef.current.close();
+        callSSERef.current = null;
+      }
+      callSessionIdRef.current = null;
+      callActionIdRef.current = currentAction.id;
+      clearPersistedBrowserSummaryCallSessionId();
+      setBrowserCallPending(true);
+      setBrowserConnectError(null);
+      let preparedSessionId: string | null = null;
+      try {
+        const prep = await postPrepareOutbound({
+          to: phone,
+          workspaceKey: VOICE_WORKSPACE_KEY,
+          companyName: currentAction.companyName,
+          contactName: currentAction.contactName || undefined,
+          flowId: currentAction.flowId || undefined,
+          companyId: currentAction.companyId,
+          contactId: currentAction.contactId || undefined,
+          flowType: currentAction.flowType,
+          taskId: currentAction.id,
+        });
+        preparedSessionId = prep.sessionId;
+        postCallReadyAppliedForSessionRef.current = null;
+        callSessionIdRef.current = prep.sessionId;
+        const dev = browserDeviceRef.current;
+        const connection = await dev.connect({
+          params: {
+            sessionId: prep.sessionId,
+            To: prep.normalizedTo,
+          },
+        });
+        browserVoiceConnRef.current = connection;
+        const sid = connection.parameters?.CallSid || null;
+        if (callActionIdRef.current !== currentAction.id) {
+          void postAbortBrowserCall(prep.sessionId).catch(() => {});
+          callSessionIdRef.current = null;
+          connection.disconnect();
+          return;
+        }
+        if (sid) {
+          void postMarkBrowserCallConnected(prep.sessionId).catch(() => {});
+          setCallSid(sid);
+          setCallState("dialing");
+          setCallStartTime(null);
+          setCallDuration(null);
+          setSSEConnected(false);
+          const csid = callSessionIdRef.current;
+          if (csid) {
+            startCallStatusSSEByBrowserSession(csid, sid);
+            setTimeout(() => {
+              if (callSessionIdRef.current !== csid) return;
+              if (!callSSERef.current || callSSERef.current.readyState !== EventSource.OPEN) {
+                startCallPollByBrowserSession(csid, sid);
+              }
+            }, 3000);
+          } else {
+            startCallStatusSSE(sid);
+            setTimeout(() => {
+              if (!callSSERef.current || callSSERef.current.readyState !== EventSource.OPEN) {
+                startCallPoll(sid);
+              }
+            }, 3000);
+          }
+          toast({ title: "Calling via browser", description: "Use your headset; allow microphone access if prompted." });
+        } else {
+          void postAbortBrowserCall(prep.sessionId).catch(() => {});
+          callSessionIdRef.current = null;
+          setCallState("failed");
+          setBrowserConnectError("No CallSid from Twilio");
+          toast({ title: "Call failed", description: "Twilio did not return a call id.", variant: "destructive" });
+        }
+        const disconnectSessionId = prep.sessionId;
+        connection.on("disconnect", () => {
+          if (browserVoiceConnRef.current === connection) {
+            browserVoiceConnRef.current = null;
+          }
+          void postMarkBrowserCallDisconnected(disconnectSessionId).catch(() => {});
+        });
+        connection.on("error", (err: { message?: string }) => {
+          void postAbortBrowserCall(disconnectSessionId).catch(() => {});
+          if (callSessionIdRef.current === disconnectSessionId) {
+            callSessionIdRef.current = null;
+            setBrowserConnectError(err?.message || "Call error");
+            setCallState("failed");
+          }
+        });
+      } catch (e: unknown) {
+        if (preparedSessionId) void postAbortBrowserCall(preparedSessionId).catch(() => {});
+        callSessionIdRef.current = null;
+        if (callActionIdRef.current === currentAction.id) {
+          setCallState("failed");
+          const msg = e instanceof Error ? e.message : String(e);
+          setBrowserConnectError(msg);
+          toast({ title: "Call failed", description: msg, variant: "destructive" });
+        }
+      } finally {
+        setBrowserCallPending(false);
+      }
+      return;
+    }
+
+    callSessionIdRef.current = null;
     initiateCallMutation.mutate({
       to: phone,
       companyName: currentAction.companyName,
@@ -906,6 +1703,16 @@ export default function FocusModePage() {
   };
 
   const resetCallState = () => {
+    const sessionToAbort =
+      BROWSER_VOICE_ENABLED && callState !== "in-progress" ? callSessionIdRef.current : null;
+    if (browserVoiceConnRef.current) {
+      try {
+        browserVoiceConnRef.current.disconnect();
+      } catch {
+        /* ignore */
+      }
+      browserVoiceConnRef.current = null;
+    }
     if (callPollRef.current) {
       clearInterval(callPollRef.current);
       callPollRef.current = null;
@@ -919,14 +1726,49 @@ export default function FocusModePage() {
     setCallStartTime(null);
     setCallDuration(null);
     setSSEConnected(false);
+    setBrowserConnectError(null);
+    const endingSession = callSessionIdRef.current?.trim();
+    if (endingSession) {
+      logAuthoritativeExplanationForCallSessionsRef.current.delete(endingSession);
+      browserExplanationSeedSuppressedForCallSessionsRef.current.delete(endingSession);
+      if (browserPostCallPreLogExplanationSessionRef.current === endingSession) {
+        browserPostCallPreLogExplanationSessionRef.current = null;
+      }
+      try {
+        const stored = sessionStorage.getItem(FOCUS_BROWSER_SUMMARY_SESSION_STORAGE_KEY)?.trim();
+        if (stored && stored === endingSession) clearPersistedBrowserSummaryCallSessionId();
+      } catch {
+        /* ignore */
+      }
+    }
+    postCallReadyAppliedForSessionRef.current = null;
+    callSessionIdRef.current = null;
+    if (sessionToAbort) {
+      void postAbortBrowserCall(sessionToAbort).catch(() => {});
+    }
   };
 
   const logMutation = useMutation({
-    mutationFn: async (params: { flowId: number; companyId: string; companyName: string; contactId?: string; contactName?: string; channel: string; outcome: string; notes?: string; capturedInfo?: string }) => {
+    mutationFn: async (params: {
+      flowId: number;
+      companyId: string;
+      companyName: string;
+      contactId?: string;
+      contactName?: string;
+      channel: string;
+      outcome: string;
+      notes?: string;
+      capturedInfo?: string;
+      callSessionId?: string;
+    }) => {
       const res = await apiRequest("POST", "/api/flows/log-attempt", params);
       return await res.json();
     },
     onSuccess: (data: any, vars) => {
+      const savedCallSid = callSid;
+      const savedCallSessionId = callSessionIdRef.current;
+      const savedDuration = callDuration;
+
       setSessionLog(prev => [...prev, {
         companyName: vars.companyName,
         flowType: currentAction?.flowType || "",
@@ -942,8 +1784,15 @@ export default function FocusModePage() {
       resetCallState();
 
       if (data.explanation) {
-        const savedCallSid = callSid;
-        const savedDuration = callDuration;
+        const authSid = savedCallSessionId?.trim();
+        if (authSid) {
+          logAuthoritativeExplanationForCallSessionsRef.current.add(authSid);
+          browserExplanationSeedSuppressedForCallSessionsRef.current.delete(authSid);
+          persistBrowserSummaryCallSessionId(authSid);
+        } else {
+          clearPersistedBrowserSummaryCallSessionId();
+        }
+        browserPostCallPreLogExplanationSessionRef.current = null;
         setExplanationData({
           outcomeLabel: data.explanation.outcomeLabel,
           systemAction: data.explanation.systemAction,
@@ -955,8 +1804,11 @@ export default function FocusModePage() {
           companyName: vars.companyName,
           companyId: vars.companyId,
           callSid: savedCallSid,
+          callSessionId: savedCallSessionId,
           callDurationSec: savedDuration,
         });
+      } else {
+        clearPersistedBrowserSummaryCallSessionId();
       }
 
       submitLockRef.current = false;
@@ -983,6 +1835,7 @@ export default function FocusModePage() {
     companyName: string;
     companyId: string;
     callSid: string | null;
+    callSessionId: string | null;
     callDurationSec: number | null;
   } | null>(null);
 
@@ -1009,6 +1862,7 @@ export default function FocusModePage() {
       outcome,
       notes: notes || undefined,
       capturedInfo: capturedOverride || capturedInfo || undefined,
+      ...(callSessionIdRef.current ? { callSessionId: callSessionIdRef.current } : {}),
     });
   };
 
@@ -1112,7 +1966,28 @@ export default function FocusModePage() {
   }
 
   if (explanationData) {
-    return <ExplanationScreen data={explanationData} onContinue={() => setExplanationData(null)} onViewCompany={() => { const compId = explanationData.companyId; setExplanationData(null); if (compId) navigate(`/machine/company/${compId}`); }} />;
+    const dismissExplanationScreen = () => {
+      const sid = explanationData.callSessionId?.trim();
+      if (sid && BROWSER_VOICE_ENABLED) {
+        browserExplanationSeedSuppressedForCallSessionsRef.current.add(sid);
+        if (browserPostCallPreLogExplanationSessionRef.current === sid) {
+          browserPostCallPreLogExplanationSessionRef.current = null;
+        }
+      }
+      clearPersistedBrowserSummaryCallSessionId();
+      setExplanationData(null);
+    };
+    return (
+      <ExplanationScreen
+        data={explanationData}
+        onContinue={dismissExplanationScreen}
+        onViewCompany={() => {
+          const compId = explanationData.companyId;
+          dismissExplanationScreen();
+          if (compId) navigate(`/machine/company/${compId}`);
+        }}
+      />
+    );
   }
 
   const flowConfig = FLOW_CONFIG[currentAction.flowType] || FLOW_CONFIG.gatekeeper;
@@ -1256,20 +2131,54 @@ export default function FocusModePage() {
                             Checking...
                           </button>
                         ) : twilioReady ? (
-                          <button
-                            onClick={handleInitiateCall}
-                            disabled={initiateCallMutation.isPending}
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
-                            style={{ background: EMERALD, color: "white" }}
-                            data-testid="button-call-twilio"
-                          >
-                            {initiateCallMutation.isPending ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                          BROWSER_VOICE_ENABLED ? (
+                            browserVoiceRegState === "ready" ? (
+                              <button
+                                onClick={() => void handleInitiateCall()}
+                                disabled={browserCallPending}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+                                style={{ background: EMERALD, color: "white" }}
+                                data-testid="button-call-twilio-browser"
+                              >
+                                {browserCallPending ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Phone className="w-4 h-4" />
+                                )}
+                                Call {phone} (browser)
+                              </button>
+                            ) : browserVoiceRegState === "error" ? (
+                              <div className="flex flex-col gap-1 text-xs max-w-[220px]" style={{ color: ERROR }}>
+                                <span className="font-semibold">Browser voice unavailable</span>
+                                <span>{browserVoiceError || "Check TWILIO_TWIML_APPLICATION_SID and microphone access."}</span>
+                              </div>
                             ) : (
-                              <Phone className="w-4 h-4" />
-                            )}
-                            Call {phone}
-                          </button>
+                              <button
+                                disabled
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold"
+                                style={{ background: `${MUTED}15`, color: MUTED, border: `1px solid ${BORDER}` }}
+                                data-testid="button-call-twilio-browser-wait"
+                              >
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {browserVoiceRegState === "token" ? "Voice token…" : "Registering headset…"}
+                              </button>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => void handleInitiateCall()}
+                              disabled={initiateCallMutation.isPending}
+                              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+                              style={{ background: EMERALD, color: "white" }}
+                              data-testid="button-call-twilio"
+                            >
+                              {initiateCallMutation.isPending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Phone className="w-4 h-4" />
+                              )}
+                              Call {phone}
+                            </button>
+                          )
                         ) : (
                           <a href={`tel:${phone}`} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
                             style={{ background: `${EMERALD}12`, color: EMERALD, border: `1px solid ${EMERALD}30` }}
@@ -1351,7 +2260,11 @@ export default function FocusModePage() {
                     )}
 
                     {callState === "failed" && (
-                      <div className="flex items-center gap-2 mt-2">
+                      <div className="flex flex-col gap-2 mt-2">
+                        {browserConnectError && BROWSER_VOICE_ENABLED && (
+                          <div className="text-xs" style={{ color: ERROR }}>{browserConnectError}</div>
+                        )}
+                        <div className="flex items-center gap-2">
                         <div className="text-xs" style={{ color: ERROR }}>Call failed to connect.</div>
                         <button
                           onClick={resetCallState}
@@ -1367,6 +2280,7 @@ export default function FocusModePage() {
                         >
                           Use Phone
                         </a>
+                        </div>
                       </div>
                     )}
                   </div>

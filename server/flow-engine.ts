@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { companyFlows, flowAttempts, actionQueue } from "@shared/schema";
+import { companyFlows, flowAttempts, actionQueue, callSessions, twilioRecordings } from "@shared/schema";
 import { eq, and, ne, lte, asc, desc, sql, isNull } from "drizzle-orm";
 import { syncOutcomeToAirtable, syncCallToAirtable } from "./airtable-writeback";
 import { log } from "./logger";
@@ -484,6 +484,64 @@ function computeNextAction(flowType: string, outcome: string, attemptCount: numb
   };
 }
 
+/** Identifiers stored on call_sessions.metadata by prepare-outbound; used to target the correct flow row after browser calls. */
+export type ResolvedLogAttemptContext = {
+  flowId: number;
+  companyId: string;
+  companyName: string;
+  contactId?: string;
+  contactName?: string;
+};
+
+/**
+ * Load flow/company context from a browser Voice session (scoped to client).
+ * Returns null if the row is missing, client mismatches, or metadata lacks required fields — caller should fall back to the request body.
+ */
+export async function resolveLogAttemptContextFromCallSession(
+  clientId: string,
+  callSessionId: string,
+): Promise<ResolvedLogAttemptContext | null> {
+  const id = callSessionId.trim();
+  if (!id) return null;
+
+  const [session] = await db
+    .select()
+    .from(callSessions)
+    .where(and(eq(callSessions.clientId, clientId), eq(callSessions.id, id)))
+    .limit(1);
+
+  if (!session?.metadata) return null;
+
+  let m: Record<string, unknown>;
+  try {
+    m = JSON.parse(session.metadata) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  const rawFlow = m.flowId;
+  const flowId =
+    typeof rawFlow === "number" && Number.isFinite(rawFlow)
+      ? rawFlow
+      : typeof rawFlow === "string" && rawFlow.trim() !== ""
+        ? parseInt(rawFlow, 10)
+        : NaN;
+
+  const companyId = typeof m.companyId === "string" ? m.companyId.trim() : "";
+  const companyName = typeof m.companyName === "string" ? m.companyName.trim() : "";
+
+  if (!Number.isFinite(flowId) || flowId <= 0 || !companyId || !companyName) {
+    return null;
+  }
+
+  const contactId =
+    typeof m.contactId === "string" && m.contactId.trim() !== "" ? m.contactId.trim() : undefined;
+  const contactName =
+    typeof m.contactName === "string" && m.contactName.trim() !== "" ? m.contactName.trim() : undefined;
+
+  return { flowId, companyId, companyName, contactId, contactName };
+}
+
 export async function logFlowAttempt(params: {
   clientId: string;
   flowId: number;
@@ -496,6 +554,7 @@ export async function logFlowAttempt(params: {
   notes?: string;
   callbackAt?: Date;
   capturedInfo?: string;
+  callSessionId?: string | null;
 }) {
   const flow = await db.select().from(companyFlows).where(eq(companyFlows.id, params.flowId)).limit(1);
   if (!flow.length) throw new Error(`Flow ${params.flowId} not found`);
@@ -516,6 +575,7 @@ export async function logFlowAttempt(params: {
     notes: params.notes || null,
     callbackAt: params.callbackAt || null,
     capturedInfo: params.capturedInfo || null,
+    callSessionId: params.callSessionId || null,
   }).returning();
 
   const computed = computeNextAction(
@@ -686,6 +746,104 @@ export async function logFlowAttempt(params: {
       flowType: currentFlow.flowType,
       flowLabel: FLOW_TYPE_LABELS[currentFlow.flowType] || currentFlow.flowType,
     },
+  };
+}
+
+/**
+ * Rebuild the log-attempt explanation payload from DB for a browser Voice session.
+ * The attempt row stores outcome + attemptNumber; company_flows holds current nextAction/nextDueAt.
+ * stateChanges omit the single line that compared pre-update flow status (not persisted on the attempt).
+ */
+export async function getLoggedExplanationPayloadForCallSession(
+  clientId: string,
+  callSessionId: string,
+): Promise<{
+  explanation: {
+    outcomeLabel: string;
+    systemAction: string;
+    whyChosen: string;
+    stateChanges: string[];
+    flowLabel: string;
+  };
+  nextAction: string;
+  nextDueAt: string | null;
+  companyName: string;
+  companyId: string;
+  callSid: string | null;
+  callSessionId: string;
+  callDurationSec: number | null;
+} | null> {
+  const id = callSessionId.trim();
+  if (!id) return null;
+
+  const [attempt] = await db
+    .select()
+    .from(flowAttempts)
+    .where(and(eq(flowAttempts.clientId, clientId), eq(flowAttempts.callSessionId, id)))
+    .orderBy(desc(flowAttempts.createdAt), desc(flowAttempts.id))
+    .limit(1);
+
+  if (!attempt) return null;
+
+  const [flow] = await db
+    .select()
+    .from(companyFlows)
+    .where(and(eq(companyFlows.id, attempt.flowId), eq(companyFlows.clientId, clientId)))
+    .limit(1);
+
+  if (!flow) return null;
+
+  const computed = computeNextAction(
+    flow.flowType,
+    attempt.outcome,
+    attempt.attemptNumber,
+    flow.maxAttempts,
+  );
+
+  const stateChanges: string[] = [];
+  if (computed.spawnFlows) {
+    for (const sf of computed.spawnFlows) {
+      stateChanges.push(`New ${FLOW_TYPE_LABELS[sf.flowType] || sf.flowType} flow created`);
+    }
+  }
+  if (computed.flowStatus === FLOW_STATUS.ACTIVE || computed.flowStatus === FLOW_STATUS.PAUSED) {
+    stateChanges.push("Next task queued");
+  }
+  if (attempt.capturedInfo?.trim()) stateChanges.push("Contact info captured");
+  stateChanges.push(`Attempt #${attempt.attemptNumber} recorded`);
+
+  const [sess] = await db
+    .select()
+    .from(callSessions)
+    .where(and(eq(callSessions.id, id), eq(callSessions.clientId, clientId)))
+    .limit(1);
+
+  const parentCallSid = sess?.parentCallSid?.trim() || null;
+
+  let callDurationSec: number | null = null;
+  const [rec] = await db
+    .select({ duration: twilioRecordings.duration })
+    .from(twilioRecordings)
+    .where(eq(twilioRecordings.callSessionId, id))
+    .orderBy(desc(twilioRecordings.createdAt))
+    .limit(1);
+  if (rec?.duration != null && Number.isFinite(rec.duration)) callDurationSec = rec.duration;
+
+  return {
+    explanation: {
+      outcomeLabel: getOutcomeLabel(attempt.outcome),
+      systemAction: computed.systemAction,
+      whyChosen: computed.whyChosen,
+      stateChanges,
+      flowLabel: FLOW_TYPE_LABELS[flow.flowType] || flow.flowType,
+    },
+    nextAction: flow.nextAction || "",
+    nextDueAt: flow.nextDueAt ? flow.nextDueAt.toISOString() : null,
+    companyName: attempt.companyName,
+    companyId: attempt.companyId,
+    callSid: parentCallSid,
+    callSessionId: id,
+    callDurationSec,
   };
 }
 
