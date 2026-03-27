@@ -336,6 +336,40 @@ interface ActionItem {
   bucket: string | null;
 }
 
+/** Row shape returned inside GET /api/twilio/focus-last-call-review (and legacy list endpoints). */
+interface FocusCompanyRecordingRow {
+  callSid: string;
+  recordingSid: string;
+  duration: number | null;
+  transcription: string | null;
+  analysis: string | null;
+  problemDetected: string | null;
+  noAuthority: boolean | null;
+  authorityReason: string | null;
+  suggestedRole: string | null;
+  followupDate: string | null;
+  status: string | null;
+  contactName: string | null;
+  createdAt: string;
+  processedAt?: string | null;
+}
+
+type FocusLastMatchScope = "flow_contact" | "contact" | "flow_company" | "company" | "none";
+type FocusProcessingHint = "ready" | "processing" | "pending_audio" | null;
+
+interface FocusLastCallReviewResponse {
+  recording: FocusCompanyRecordingRow | null;
+  matchedScope: FocusLastMatchScope;
+  processingHint?: FocusProcessingHint;
+}
+
+interface FocusFlowAttemptRow {
+  channel: string;
+  notes: string | null;
+  createdAt: string;
+  outcome: string;
+}
+
 interface TodayCompany {
   id: string;
   company_name: string;
@@ -910,6 +944,251 @@ function ExplanationScreen({ data, onContinue, onViewCompany }: ExplanationProps
 
 type BrowserVoiceRegState = "idle" | "token" | "registering" | "ready" | "error";
 
+function PreCallRecordingAudio({ recordingSid }: { recordingSid: string }) {
+  const { getToken } = useAuth();
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    if (!recordingSid || recordingSid.startsWith("pending-")) {
+      setBlobUrl(null);
+      setAudioError(false);
+      return;
+    }
+    setBlobUrl(null);
+    setAudioError(false);
+    void (async () => {
+      try {
+        const token = getToken();
+        const res = await fetch(
+          `/api/twilio/recording-stream/${encodeURIComponent(recordingSid)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: "include" },
+        );
+        if (cancelled || !res.ok) {
+          if (!cancelled) setAudioError(true);
+          return;
+        }
+        const blob = await res.blob();
+        if (cancelled) return;
+        const u = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(u);
+          return;
+        }
+        createdUrl = u;
+        setBlobUrl(u);
+      } catch {
+        if (!cancelled) setAudioError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [recordingSid, getToken]);
+
+  if (!recordingSid || recordingSid.startsWith("pending-")) return null;
+  if (audioError) {
+    return (
+      <p className="text-[10px] mt-1" style={{ color: MUTED }}>
+        Could not load call audio. Try again in a moment.
+      </p>
+    );
+  }
+  if (!blobUrl) {
+    return (
+      <div className="flex items-center gap-2 mt-2 text-[10px]" style={{ color: MUTED }}>
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+        Loading audio…
+      </div>
+    );
+  }
+  return (
+    <audio
+      controls
+      className="w-full mt-2 rounded"
+      style={{ height: 36, maxHeight: 40 }}
+      src={blobUrl}
+      data-testid="audio-pre-call-recording"
+    />
+  );
+}
+
+function FocusPreCallReview({
+  recording,
+  loading,
+  operatorNotes,
+  recordingMatchedScope = "none",
+  expectContactOnAction = false,
+  processingHint = null,
+}: {
+  recording: FocusCompanyRecordingRow | null;
+  loading: boolean;
+  operatorNotes: string | null;
+  recordingMatchedScope?: FocusLastMatchScope;
+  expectContactOnAction?: boolean;
+  processingHint?: FocusProcessingHint;
+}) {
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  if (loading) {
+    return (
+      <div
+        className="rounded-lg p-4 mb-2 flex items-center gap-2 text-xs"
+        style={{ background: SUBTLE, border: `1px solid ${BORDER}`, color: MUTED }}
+        data-testid="panel-pre-call-recording-loading"
+      >
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading last conversation…
+      </div>
+    );
+  }
+
+  const hasBody =
+    !!operatorNotes ||
+    !!recording?.analysis?.trim() ||
+    !!recording?.transcription?.trim() ||
+    !!recording?.problemDetected ||
+    !!recording?.recordingSid;
+
+  if (!recording && !hasBody) {
+    return (
+      <div
+        className="rounded-lg p-3 mb-2 text-xs"
+        style={{ background: SUBTLE, border: `1px solid ${BORDER}`, color: MUTED }}
+        data-testid="panel-pre-call-recording-empty"
+      >
+        No prior call recording for this company yet. Review scripts and intel below, then place your call.
+      </div>
+    );
+  }
+
+  const durationStr =
+    recording?.duration != null
+      ? `${Math.floor(recording.duration / 60)}:${String(recording.duration % 60).padStart(2, "0")}`
+      : null;
+  const when = recording?.createdAt
+    ? new Date(recording.createdAt).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden mb-3"
+      style={{ background: `${PURPLE}06`, border: `1px solid ${PURPLE}18` }}
+      data-testid="panel-pre-call-recording"
+    >
+      <div className="px-3 py-2 flex items-center gap-2" style={{ borderBottom: `1px solid ${PURPLE}12` }}>
+        <Play className="w-4 h-4 shrink-0" style={{ color: PURPLE }} />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
+            Last conversation
+          </div>
+          <div className="text-[11px] truncate" style={{ color: MUTED }}>
+            {when && <span>{when}</span>}
+            {durationStr && <span className="ml-2">{durationStr}</span>}
+            {recording?.contactName && <span className="ml-2">· {recording.contactName}</span>}
+          </div>
+          {recording &&
+            expectContactOnAction &&
+            (recordingMatchedScope === "company" || recordingMatchedScope === "flow_company") && (
+            <div className="text-[10px] mt-0.5 leading-snug" style={{ color: MUTED }}>
+              Latest call on this account may include other contacts — none matched this person yet.
+            </div>
+          )}
+        </div>
+      </div>
+      {processingHint === "processing" && recording && (
+        <div
+          className="px-3 py-1.5 text-[10px] leading-snug"
+          style={{ background: `${AMBER}10`, color: TEXT, borderBottom: `1px solid ${AMBER}22` }}
+        >
+          Transcript and AI summary are still processing. You can listen to the recording below; text will appear shortly.
+        </div>
+      )}
+      {processingHint === "pending_audio" && recording && (
+        <div
+          className="px-3 py-1.5 text-[10px] leading-snug"
+          style={{ background: `${MUTED}12`, color: TEXT, borderBottom: `1px solid ${BORDER}` }}
+        >
+          Recording file is not ready from Twilio yet. This panel will update automatically.
+        </div>
+      )}
+      <div className="px-3 py-2 space-y-2 text-xs" style={{ color: TEXT }}>
+        {recording?.recordingSid && <PreCallRecordingAudio recordingSid={recording.recordingSid} />}
+        {operatorNotes && (
+          <div>
+            <div className="text-[10px] font-bold uppercase mb-1" style={{ color: AMBER }}>
+              Your last call notes
+            </div>
+            <div className="leading-relaxed whitespace-pre-wrap">{operatorNotes}</div>
+          </div>
+        )}
+        {recording?.problemDetected && (
+          <div
+            className="flex items-start gap-1.5 px-2 py-1.5 rounded"
+            style={{ background: `${ERROR}08`, border: `1px solid ${ERROR}20` }}
+          >
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: ERROR }} />
+            <span style={{ color: ERROR }}>{recording.problemDetected}</span>
+          </div>
+        )}
+        {recording?.analysis?.trim() && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAnalysis(!showAnalysis)}
+              className="flex items-center justify-between w-full text-left font-semibold"
+              style={{ color: BLUE }}
+              data-testid="toggle-pre-call-analysis"
+            >
+              <span>AI summary</span>
+              {showAnalysis ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+            {showAnalysis && (
+              <div
+                className="mt-1 p-2 rounded-md leading-relaxed whitespace-pre-wrap"
+                style={{ background: `${BLUE}06`, color: TEXT }}
+              >
+                {recording.analysis}
+              </div>
+            )}
+          </div>
+        )}
+        {recording?.transcription?.trim() && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowTranscript(!showTranscript)}
+              className="flex items-center justify-between w-full text-left font-semibold"
+              style={{ color: MUTED }}
+              data-testid="toggle-pre-call-transcript"
+            >
+              <span>Transcript</span>
+              {showTranscript ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+            {showTranscript && (
+              <div
+                className="mt-1 p-2 rounded-md max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap"
+                style={{ background: SUBTLE, color: TEXT }}
+              >
+                {recording.transcription}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function FocusModePage() {
   const { toast } = useToast();
   const { getToken, isAuthenticated } = useAuth();
@@ -1032,6 +1311,71 @@ export default function FocusModePage() {
   const progress = totalDone + totalRemaining > 0 ? (totalDone / (totalDone + totalRemaining)) * 100 : 0;
   const isSessionComplete = totalActions === 0 && totalDone > 0;
 
+  const isCallFlowForQueries =
+    !!currentAction &&
+    (currentAction.flowType === "gatekeeper" || currentAction.flowType === "dm_call");
+
+  const { data: focusLastCallReview, isLoading: focusLastCallReviewLoading } = useQuery<FocusLastCallReviewResponse>({
+    queryKey: [
+      "focus-last-call-review",
+      currentAction?.companyName ?? "",
+      currentAction?.companyId ?? "",
+      (currentAction?.contactName ?? "").trim(),
+      currentAction?.contactId ?? "",
+      currentAction?.flowId ?? "",
+    ],
+    enabled:
+      isCallFlowForQueries &&
+      (!!currentAction?.companyName?.trim() || !!currentAction?.companyId?.trim()),
+    staleTime: 60_000,
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      if (!d?.recording) return false;
+      const h = d.processingHint ?? null;
+      if (h === "processing" || h === "pending_audio") return 8_000;
+      return false;
+    },
+    queryFn: async () => {
+      const ac = currentAction;
+      if (!ac?.companyName?.trim() && !ac?.companyId?.trim()) {
+        return { recording: null, matchedScope: "none" as const, processingHint: null };
+      }
+      const params = new URLSearchParams();
+      if (ac.companyName?.trim()) params.set("companyName", ac.companyName.trim());
+      if (ac.companyId?.trim()) params.set("companyId", ac.companyId.trim());
+      const contactParam = ac.contactName?.trim() ?? "";
+      if (contactParam) params.set("contactName", contactParam);
+      if (ac.contactId?.trim()) params.set("contactId", ac.contactId.trim());
+      if (ac.flowId != null && ac.flowId > 0) params.set("flowId", String(ac.flowId));
+      const token = getToken();
+      const res = await fetch(`/api/twilio/focus-last-call-review?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<FocusLastCallReviewResponse>;
+    },
+  });
+  const latestCompanyRecording = focusLastCallReview?.recording ?? null;
+  const focusRecordingMatchedScope = focusLastCallReview?.matchedScope ?? "none";
+  const focusLastProcessingHint: FocusProcessingHint =
+    focusLastCallReview?.processingHint ?? null;
+
+  const { data: flowAttemptsForNotes = [] } = useQuery<FocusFlowAttemptRow[]>({
+    queryKey: [`/api/flows/${currentAction?.flowId ?? 0}/attempts`],
+    enabled: isCallFlowForQueries && !!currentAction?.flowId,
+    staleTime: 60_000,
+  });
+  const lastLoggedCallNotes = useMemo(() => {
+    const row = flowAttemptsForNotes.find(
+      (a) => (a.channel === "phone" || a.channel === "call") && a.notes?.trim(),
+    );
+    return row?.notes?.trim() ?? null;
+  }, [flowAttemptsForNotes]);
+
   const submitLockRef = useRef(false);
   const pollFailCountRef = useRef(0);
   /** One automatic transition to Call Summary per browser session (postCallReady). */
@@ -1098,6 +1442,7 @@ export default function FocusModePage() {
 
       void (async () => {
         void queryClient.invalidateQueries({ queryKey: ["twilioRecordingSummary", trackedSessionId] });
+        void queryClient.invalidateQueries({ queryKey: ["focus-last-call-review"] });
 
         const headers: Record<string, string> = {};
         const t = getToken();
@@ -1212,7 +1557,7 @@ export default function FocusModePage() {
         setExplanationData(neutral);
       })();
     },
-    [currentAction, callSid, callDuration, handleCallStatusUpdate, getToken],
+    [currentAction, callSid, callDuration, handleCallStatusUpdate, getToken, queryClient],
   );
 
   const startCallPoll = useCallback((sid: string) => {
@@ -1815,6 +2160,10 @@ export default function FocusModePage() {
       queryClient.invalidateQueries({ queryKey: ["/api/flows/action-queue"] });
       queryClient.invalidateQueries({ queryKey: ["/api/flows/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/flows/kpi"] });
+      if (vars.flowId) {
+        void queryClient.invalidateQueries({ queryKey: [`/api/flows/${vars.flowId}/attempts`] });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["focus-last-call-review"] });
     },
     onError: () => {
       submitLockRef.current = false;
@@ -2117,80 +2466,101 @@ export default function FocusModePage() {
                   </div>
                 )}
 
-                {isCallFlow && phone && (
+                {isCallFlow && (
                   <div className="mb-4">
+                    <FocusPreCallReview
+                      recording={latestCompanyRecording}
+                      loading={focusLastCallReviewLoading}
+                      operatorNotes={lastLoggedCallNotes}
+                      recordingMatchedScope={focusRecordingMatchedScope}
+                      expectContactOnAction={
+                        !!(currentAction.contactName?.trim() || currentAction.contactId?.trim())
+                      }
+                      processingHint={focusLastProcessingHint}
+                    />
                     {callState === "idle" && (
-                      <div className="flex items-center gap-2">
-                        {twilioReady === null ? (
-                          <button
-                            disabled
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold"
-                            style={{ background: `${MUTED}15`, color: MUTED, border: `1px solid ${BORDER}` }}
-                          >
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Checking...
-                          </button>
-                        ) : twilioReady ? (
-                          BROWSER_VOICE_ENABLED ? (
-                            browserVoiceRegState === "ready" ? (
-                              <button
-                                onClick={() => void handleInitiateCall()}
-                                disabled={browserCallPending}
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
-                                style={{ background: EMERALD, color: "white" }}
-                                data-testid="button-call-twilio-browser"
-                              >
-                                {browserCallPending ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Phone className="w-4 h-4" />
-                                )}
-                                Call {phone} (browser)
-                              </button>
-                            ) : browserVoiceRegState === "error" ? (
-                              <div className="flex flex-col gap-1 text-xs max-w-[220px]" style={{ color: ERROR }}>
-                                <span className="font-semibold">Browser voice unavailable</span>
-                                <span>{browserVoiceError || "Check TWILIO_TWIML_APPLICATION_SID and microphone access."}</span>
-                              </div>
-                            ) : (
+                      <div className="flex flex-col gap-2">
+                        {phone ? (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {twilioReady === null ? (
                               <button
                                 disabled
                                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold"
                                 style={{ background: `${MUTED}15`, color: MUTED, border: `1px solid ${BORDER}` }}
-                                data-testid="button-call-twilio-browser-wait"
                               >
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                {browserVoiceRegState === "token" ? "Voice token…" : "Registering headset…"}
+                                Checking...
                               </button>
-                            )
-                          ) : (
-                            <button
-                              onClick={() => void handleInitiateCall()}
-                              disabled={initiateCallMutation.isPending}
-                              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
-                              style={{ background: EMERALD, color: "white" }}
-                              data-testid="button-call-twilio"
-                            >
-                              {initiateCallMutation.isPending ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : twilioReady ? (
+                              BROWSER_VOICE_ENABLED ? (
+                                browserVoiceRegState === "ready" ? (
+                                  <button
+                                    onClick={() => void handleInitiateCall()}
+                                    disabled={browserCallPending}
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+                                    style={{ background: EMERALD, color: "white" }}
+                                    data-testid="button-call-twilio-browser"
+                                  >
+                                    {browserCallPending ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Phone className="w-4 h-4" />
+                                    )}
+                                    Call {phone} (browser)
+                                  </button>
+                                ) : browserVoiceRegState === "error" ? (
+                                  <div className="flex flex-col gap-1 text-xs max-w-[220px]" style={{ color: ERROR }}>
+                                    <span className="font-semibold">Browser voice unavailable</span>
+                                    <span>{browserVoiceError || "Check TWILIO_TWIML_APPLICATION_SID and microphone access."}</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    disabled
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold"
+                                    style={{ background: `${MUTED}15`, color: MUTED, border: `1px solid ${BORDER}` }}
+                                    data-testid="button-call-twilio-browser-wait"
+                                  >
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {browserVoiceRegState === "token" ? "Voice token…" : "Registering headset…"}
+                                  </button>
+                                )
                               ) : (
+                                <button
+                                  onClick={() => void handleInitiateCall()}
+                                  disabled={initiateCallMutation.isPending}
+                                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+                                  style={{ background: EMERALD, color: "white" }}
+                                  data-testid="button-call-twilio"
+                                >
+                                  {initiateCallMutation.isPending ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Phone className="w-4 h-4" />
+                                  )}
+                                  Call {phone}
+                                </button>
+                              )
+                            ) : (
+                              <a
+                                href={`tel:${phone}`}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                                style={{ background: `${EMERALD}12`, color: EMERALD, border: `1px solid ${EMERALD}30` }}
+                                data-testid="button-call"
+                              >
                                 <Phone className="w-4 h-4" />
-                              )}
-                              Call {phone}
-                            </button>
-                          )
+                                {phone}
+                              </a>
+                            )}
+                            <CopyButton text={phone} label="Copy" id="phone" />
+                            {currentAction.contactEmail && (
+                              <CopyButton text={currentAction.contactEmail} label="Email" id="email" />
+                            )}
+                          </div>
                         ) : (
-                          <a href={`tel:${phone}`} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-                            style={{ background: `${EMERALD}12`, color: EMERALD, border: `1px solid ${EMERALD}30` }}
-                            data-testid="button-call"
-                          >
-                            <Phone className="w-4 h-4" />
-                            {phone}
-                          </a>
-                        )}
-                        <CopyButton text={phone} label="Copy" id="phone" />
-                        {currentAction.contactEmail && (
-                          <CopyButton text={currentAction.contactEmail} label="Email" id="email" />
+                          <p className="text-xs leading-relaxed" style={{ color: MUTED }} data-testid="text-no-phone">
+                            No phone number on file for this contact or company. Add a number in Today or company detail to
+                            call from Focus, or log an outcome if you reached them another way.
+                          </p>
                         )}
                       </div>
                     )}
@@ -2274,12 +2644,16 @@ export default function FocusModePage() {
                         >
                           Try Again
                         </button>
-                        <a href={`tel:${phone}`} className="text-xs px-2 py-1 rounded"
-                          style={{ color: MUTED, border: `1px solid ${BORDER}` }}
-                          data-testid="button-call-fallback"
-                        >
-                          Use Phone
-                        </a>
+                        {phone && (
+                          <a
+                            href={`tel:${phone}`}
+                            className="text-xs px-2 py-1 rounded"
+                            style={{ color: MUTED, border: `1px solid ${BORDER}` }}
+                            data-testid="button-call-fallback"
+                          >
+                            Use Phone
+                          </a>
+                        )}
                         </div>
                       </div>
                     )}

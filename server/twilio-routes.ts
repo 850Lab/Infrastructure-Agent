@@ -28,7 +28,7 @@ import {
   users,
   callSessions,
 } from "@shared/schema";
-import { eq, and, or, desc, sql, isNull } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNull, isNotNull, type SQL } from "drizzle-orm";
 import { registerCoachingSession, subscribeToCoaching, getActiveSessions } from "./realtime-coaching";
 import { validateToken, getTokenEntry } from "./auth";
 import {
@@ -1327,6 +1327,8 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
 
       if (result.sid) {
         try {
+          const fid =
+            flowId != null && flowId !== "" && Number.isFinite(Number(flowId)) ? Number(flowId) : null;
           await db.insert(twilioRecordings).values({
             callSid: result.sid,
             recordingSid: `pending-${result.sid}`,
@@ -1334,6 +1336,9 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
             toNumber: to,
             companyName: companyName || null,
             contactName: contactName || null,
+            companyId: companyId ? String(companyId) : null,
+            contactId: contactId ? String(contactId) : null,
+            flowId: fid,
             status: "call_initiated",
           });
         } catch (e: any) {
@@ -1696,6 +1701,191 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
     }
   });
 
+  /**
+   * Authenticated MP3 proxy for HTML5 audio (client should fetch with Bearer token → blob URL).
+   */
+  app.get("/api/twilio/recording-stream/:recordingSid", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const recordingSid =
+        typeof req.params.recordingSid === "string"
+          ? req.params.recordingSid.trim()
+          : String(req.params.recordingSid?.[0] || "").trim();
+      if (!recordingSid || recordingSid.startsWith("pending-")) {
+        return res.status(404).json({ error: "Recording not ready" });
+      }
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const [rec] = await db
+        .select()
+        .from(twilioRecordings)
+        .where(eq(twilioRecordings.recordingSid, recordingSid))
+        .limit(1);
+      if (!rec) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      if (clientId && rec.clientId && rec.clientId !== clientId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const audio = await downloadRecording(recordingSid);
+      if (!audio?.buffer?.length) {
+        return res.status(502).json({ error: "Could not load recording from Twilio" });
+      }
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "private, max-age=120");
+      res.send(audio.buffer);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * Focus Mode: latest recording scoped by flow + company + contact ids when present, then
+   * contact name, then company / flow fallbacks. See tier order in handler.
+   */
+  app.get("/api/twilio/focus-last-call-review", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const clientId = (req as any).user?.clientId as string | null | undefined;
+      const companyName =
+        typeof req.query.companyName === "string" ? req.query.companyName.trim() : "";
+      const companyIdQ =
+        typeof req.query.companyId === "string" ? req.query.companyId.trim() : "";
+      const contactNameRaw =
+        typeof req.query.contactName === "string" ? req.query.contactName.trim() : "";
+      const contactIdQ =
+        typeof req.query.contactId === "string" ? req.query.contactId.trim() : "";
+      const flowIdRaw = req.query.flowId;
+      const flowIdParsed =
+        flowIdRaw != null && String(flowIdRaw).trim() !== ""
+          ? Number(String(flowIdRaw).trim())
+          : NaN;
+      const flowIdOk = Number.isFinite(flowIdParsed) && flowIdParsed > 0 ? flowIdParsed : null;
+
+      if (!companyName && !companyIdQ) {
+        return res.json({
+          recording: null,
+          matchedScope: "none" as const,
+          processingHint: null as null,
+        });
+      }
+
+      const mapRow = (r: typeof twilioRecordings.$inferSelect) => ({
+        callSid: r.callSid,
+        recordingSid: r.recordingSid,
+        duration: r.duration,
+        transcription: r.transcription,
+        analysis: r.analysis,
+        problemDetected: r.problemDetected,
+        noAuthority: r.noAuthority,
+        authorityReason: r.authorityReason,
+        suggestedRole: r.suggestedRole,
+        followupDate: r.followupDate,
+        status: r.status,
+        contactName: r.contactName,
+        createdAt: r.createdAt,
+        processedAt: r.processedAt,
+      });
+
+      const processingHintFor = (r: typeof twilioRecordings.$inferSelect | null) => {
+        if (!r) return null;
+        const sid = r.recordingSid || "";
+        if (sid.startsWith("pending-")) return "pending_audio" as const;
+        if (r.status === "analyzed" && r.processedAt) return "ready" as const;
+        if (r.transcription?.trim()) return "ready" as const;
+        return "processing" as const;
+      };
+
+      function withTenant(...conds: SQL[]) {
+        if (clientId) {
+          return and(eq(twilioRecordings.clientId, clientId), ...conds);
+        }
+        return and(...conds);
+      }
+
+      const companyMatch = () => {
+        if (companyIdQ && companyName) {
+          return or(
+            eq(twilioRecordings.companyId, companyIdQ),
+            and(isNull(twilioRecordings.companyId), eq(twilioRecordings.companyName, companyName)),
+          );
+        }
+        if (companyIdQ) {
+          return eq(twilioRecordings.companyId, companyIdQ);
+        }
+        return eq(twilioRecordings.companyName, companyName);
+      };
+
+      let picked: typeof twilioRecordings.$inferSelect | null = null;
+      type FocusMatchScope = "flow_contact" | "contact" | "flow_company" | "company" | "none";
+      let matchedScope: FocusMatchScope = "none";
+
+      const tryOne = async (whereExpr: SQL, scope: FocusMatchScope) => {
+        if (picked) return;
+        const [row] = await db
+          .select()
+          .from(twilioRecordings)
+          .where(whereExpr)
+          .orderBy(desc(twilioRecordings.createdAt))
+          .limit(1);
+        if (row) {
+          picked = row;
+          matchedScope = scope;
+        }
+      };
+
+      // 1) Same flow + company id + contact id
+      if (flowIdOk && companyIdQ && contactIdQ) {
+        await tryOne(
+          withTenant(
+            eq(twilioRecordings.flowId, flowIdOk),
+            eq(twilioRecordings.companyId, companyIdQ),
+            eq(twilioRecordings.contactId, contactIdQ),
+          ),
+          "flow_contact",
+        );
+      }
+
+      // 2) Company id + contact id (any flow)
+      if (companyIdQ && contactIdQ) {
+        await tryOne(
+          withTenant(eq(twilioRecordings.companyId, companyIdQ), eq(twilioRecordings.contactId, contactIdQ)),
+          "contact",
+        );
+      }
+
+      // 3) Same flow + company (latest call on this flow for the account)
+      if (flowIdOk) {
+        await tryOne(withTenant(eq(twilioRecordings.flowId, flowIdOk), companyMatch()), "flow_company");
+      }
+
+      // 4) Contact name (legacy / missing ids)
+      if (contactNameRaw) {
+        const contactNorm = contactNameRaw.toLowerCase();
+        await tryOne(
+          withTenant(
+            companyMatch(),
+            isNotNull(twilioRecordings.contactName),
+            sql`lower(trim(${twilioRecordings.contactName})) = ${contactNorm}`,
+          ),
+          "contact",
+        );
+      }
+
+      // 5) Company-wide
+      await tryOne(withTenant(companyMatch()), "company");
+
+      if (!picked) {
+        return res.json({ recording: null, matchedScope: "none", processingHint: null });
+      }
+
+      return res.json({
+        recording: mapRow(picked),
+        matchedScope,
+        processingHint: processingHintFor(picked),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/twilio/webhook/recording", async (req: Request, res: Response) => {
     try {
       const {
@@ -1735,6 +1925,10 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         parentCallSidBody,
       );
 
+      const dialMeta =
+        activeCallMeta.get(CallSid) ||
+        (parentCallSidBody ? activeCallMeta.get(parentCallSidBody) : undefined);
+
       let clientId: string | undefined;
 
       let callSessionIdForRow: string | null =
@@ -1747,7 +1941,7 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         callSessionIdForRow = existingRow.callSessionId;
       }
 
-      const recordingPayload = {
+      const recordingPayload: Record<string, unknown> = {
         recordingSid: RecordingSid,
         duration,
         status: "recording_ready" as const,
@@ -1756,10 +1950,29 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
         ...(callSessionIdForRow ? { callSessionId: callSessionIdForRow } : {}),
       };
 
+      if (dialMeta) {
+        if (dialMeta.clientId && !existingRow?.clientId) {
+          recordingPayload.clientId = dialMeta.clientId;
+        }
+        if (dialMeta.companyId && !existingRow?.companyId) {
+          recordingPayload.companyId = dialMeta.companyId;
+        }
+        if (dialMeta.contactId && !existingRow?.contactId) {
+          recordingPayload.contactId = dialMeta.contactId;
+        }
+        if (
+          dialMeta.flowId != null &&
+          Number.isFinite(dialMeta.flowId) &&
+          !existingRow?.flowId
+        ) {
+          recordingPayload.flowId = dialMeta.flowId;
+        }
+      }
+
       if (existingRow) {
-        clientId = existingRow.clientId || undefined;
+        clientId = (existingRow.clientId || (recordingPayload.clientId as string | undefined)) || undefined;
         await db.update(twilioRecordings)
-          .set(recordingPayload)
+          .set(recordingPayload as any)
           .where(eq(twilioRecordings.id, existingRow.id));
       } else {
         const insertSessionId =
@@ -1771,6 +1984,10 @@ export function registerTwilioRoutes(app: Express, authMiddleware: any) {
           status: "recording_ready",
           fromNumber: From ? String(From) : null,
           toNumber: To ? String(To) : null,
+          clientId: (recordingPayload.clientId as string | null | undefined) ?? null,
+          companyId: (recordingPayload.companyId as string | null | undefined) ?? null,
+          contactId: (recordingPayload.contactId as string | null | undefined) ?? null,
+          flowId: (recordingPayload.flowId as number | null | undefined) ?? null,
           ...(insertSessionId ? { callSessionId: insertSessionId } : {}),
         });
       }

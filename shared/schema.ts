@@ -527,6 +527,12 @@ export const twilioRecordings = pgTable("twilio_recordings", {
   leadQualitySignals: text("lead_quality_signals"),
   companyName: text("company_name"),
   contactName: text("contact_name"),
+  /** Stable company row id when known (Focus / pipeline). */
+  companyId: varchar("company_id"),
+  /** Stable contact row id when known — preferred over contact_name matching. */
+  contactId: varchar("contact_id"),
+  /** company_flows.id when the call was placed from a flow (attempt-scoped review). */
+  flowId: integer("flow_id"),
   /** When true, exclude from production reporting / cohort analytics. */
   isSandboxCall: boolean("is_sandbox_call").notNull().default(false),
   callIntelligenceJson: text("call_intelligence_json"),
@@ -537,7 +543,10 @@ export const twilioRecordings = pgTable("twilio_recordings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   processedAt: timestamp("processed_at"),
 },
-  (t) => [index("twilio_recordings_call_session_id_idx").on(t.callSessionId)],
+  (t) => [
+    index("twilio_recordings_call_session_id_idx").on(t.callSessionId),
+    index("twilio_recordings_client_company_flow_idx").on(t.clientId, t.companyId, t.flowId),
+  ],
 );
 
 export const insertTwilioRecordingSchema = createInsertSchema(twilioRecordings).omit({ id: true, createdAt: true, processedAt: true });

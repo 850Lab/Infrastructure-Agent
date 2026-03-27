@@ -209,7 +209,10 @@ export function registerTwilioVoiceTwiMlWebhooks(app: Express): void {
         const m = JSON.parse(session.metadata || "{}") as Record<string, unknown>;
         if (typeof m.companyName === "string") companyName = m.companyName;
         if (typeof m.contactName === "string") contactName = m.contactName;
-        if (m.flowId != null && m.flowId !== "") flowId = Number(m.flowId);
+        if (m.flowId != null && m.flowId !== "") {
+          const n = Number(m.flowId);
+          if (Number.isFinite(n)) flowId = n;
+        }
         if (typeof m.companyId === "string") companyId = m.companyId;
         if (typeof m.contactId === "string") contactId = m.contactId;
         if (typeof m.flowType === "string") flowType = m.flowType;
@@ -227,6 +230,9 @@ export function registerTwilioVoiceTwiMlWebhooks(app: Express): void {
           fromNumber: callerId,
           companyName,
           contactName,
+          companyId,
+          contactId,
+          flowId: flowId != null && Number.isFinite(flowId) ? flowId : null,
           callSessionId: session.id,
           workspaceKey: session.workspaceKey,
           status: "call_initiated",
