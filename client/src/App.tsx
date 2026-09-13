@@ -35,6 +35,7 @@ import CallQueuePage from "@/pages/call-queue";
 import EmailQueuePage from "@/pages/email-queue";
 import LinkedInQueuePage from "@/pages/linkedin-queue";
 import CompanyDetailPage from "@/pages/company-detail";
+import CreditProcessingPage from "@/pages/credit-processing";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -166,6 +167,7 @@ function Router() {
         <Route path="/machine/warm-leads"><MachineRoute><WarmLeadsPage /></MachineRoute></Route>
         <Route path="/machine/lead-intelligence"><MachineRoute><LeadIntelligencePage /></MachineRoute></Route>
         <Route path="/machine/ai-call-bot-sandbox"><MachineRoute><AiCallBotSandboxPage /></MachineRoute></Route>
+        <Route path="/machine/credit-processing"><MachineRoute><CreditProcessingPage /></MachineRoute></Route>
 
         <Route path="/dashboard"><RoleRedirect /></Route>
         <Route path="/onboarding"><Redirect to="/machine/onboarding" /></Route>

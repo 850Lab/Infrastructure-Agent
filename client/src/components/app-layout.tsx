@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import {
   LogOut, Shield, Cog, Phone, Mail, Linkedin,
-  Building2, BarChart3, Target, Calendar, ChevronRight, Flame, Brain
+  Building2, BarChart3, Target, Calendar, ChevronRight, Flame, Brain, FileLock2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
@@ -45,6 +45,7 @@ const NAV_ITEMS = [
   { href: "/machine/email-queue", label: "Email Queue", icon: Mail, testId: "nav-email-queue" },
   { href: "/machine/linkedin-queue", label: "LinkedIn", icon: Linkedin, testId: "nav-linkedin" },
   { href: "/machine/lead-intelligence", label: "Intelligence", icon: Brain, testId: "nav-lead-intelligence" },
+  { href: "/machine/credit-processing", label: "Credit", icon: FileLock2, testId: "nav-credit-processing" },
   { href: "/machine/pipeline", label: "Pipeline", icon: BarChart3, testId: "nav-pipeline" },
   { href: "/machine/analytics", label: "Analytics", icon: BarChart3, testId: "nav-analytics" },
 ];
