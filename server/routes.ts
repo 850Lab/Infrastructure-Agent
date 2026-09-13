@@ -26,7 +26,8 @@ import { registerAiCallBotRoutes } from "./ai-call-bot-routes";
 import { registerAiCallBotStagingRoutes } from "./ai-call-bot/staging-routes";
 import { registerAiCallBotSupervisorRoutes } from "./ai-call-bot/supervisor-routes";
 import { registerAiCallBotSandboxRoutes } from "./ai-call-bot/sandbox-routes";
-import { authMiddleware } from "./auth";
+import { authMiddleware, requireRole } from "./auth";
+import { registerCreditProcessingRoutes } from "./credit-processing-routes";
 import { log } from "./index";
 
 async function handleWebhook(req: Request, res: Response) {
@@ -200,13 +201,14 @@ export async function registerRoutes(
   registerAiCallBotSupervisorRoutes(app, authMiddleware);
   registerAiCallBotSandboxRoutes(app, authMiddleware);
   registerAiCallBotStagingRoutes(app);
+  registerCreditProcessingRoutes(app);
 
-  app.get("/api/webhook-logs", async (_req, res) => {
+  app.get("/api/webhook-logs", authMiddleware, requireRole("platform_admin"), async (_req, res) => {
     const logs = await storage.getWebhookLogs(100);
     res.json(logs);
   });
 
-  app.get("/api/webhook-logs/:id", async (req, res) => {
+  app.get("/api/webhook-logs/:id", authMiddleware, requireRole("platform_admin"), async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
       return res.status(400).json({ error: "Invalid log ID" });
@@ -227,7 +229,7 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  app.post("/api/test-webhook", async (req, res) => {
+  app.post("/api/test-webhook", authMiddleware, requireRole("platform_admin"), async (req, res) => {
     const { recordId } = req.body;
     if (!recordId) {
       return res.status(400).json({ error: "recordId is required" });

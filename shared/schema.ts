@@ -863,3 +863,69 @@ export type AiCallBotSession = typeof aiCallBotSessions.$inferSelect;
 
 export type AiCallBotSandboxContact = typeof aiCallBotSandboxContacts.$inferSelect;
 export type AiCallBotSandboxRun = typeof aiCallBotSandboxRuns.$inferSelect;
+
+// Credit processing is deliberately isolated from the sales/outreach tables.
+// This first foundation supports synthetic cases only; no document bytes or
+// extracted identity values belong in PostgreSQL.
+export const creditCases = pgTable(
+  "credit_cases",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    clientId: varchar("client_id").notNull(),
+    label: text("label").notNull(),
+    mode: text("mode").notNull().default("synthetic"),
+    status: text("status").notNull().default("draft"),
+    createdByEmail: text("created_by_email").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("credit_cases_client_status_idx").on(table.clientId, table.status)],
+);
+
+export const creditDocuments = pgTable(
+  "credit_documents",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    clientId: varchar("client_id").notNull(),
+    caseId: varchar("case_id").notNull(),
+    documentType: text("document_type").notNull(),
+    storageKey: text("storage_key"),
+    mimeType: text("mime_type"),
+    sizeBytes: integer("size_bytes"),
+    sha256: text("sha256"),
+    status: text("status").notNull().default("pending"),
+    containsSensitiveData: boolean("contains_sensitive_data").notNull().default(true),
+    retentionUntil: timestamp("retention_until"),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("credit_documents_case_type_idx").on(table.caseId, table.documentType),
+    index("credit_documents_client_case_idx").on(table.clientId, table.caseId),
+  ],
+);
+
+export const creditAuditEvents = pgTable(
+  "credit_audit_events",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    clientId: varchar("client_id").notNull(),
+    caseId: varchar("case_id").notNull(),
+    documentId: varchar("document_id"),
+    actorEmail: text("actor_email").notNull(),
+    action: text("action").notNull(),
+    safeDetails: text("safe_details"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("credit_audit_events_case_idx").on(table.clientId, table.caseId, table.createdAt)],
+);
+
+export const insertCreditCaseSchema = createInsertSchema(creditCases).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertCreditCase = z.infer<typeof insertCreditCaseSchema>;
+export type CreditCase = typeof creditCases.$inferSelect;
+export type CreditDocument = typeof creditDocuments.$inferSelect;
+export type CreditAuditEvent = typeof creditAuditEvents.$inferSelect;
