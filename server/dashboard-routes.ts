@@ -22,7 +22,8 @@ import { storage } from "./storage";
 import { getTimeWeight, getSignalAge, getDecayConstant } from "./time-weight";
 import { analyzeLeadQuality, extractContactInfo } from "./openai";
 import { scoreAndUpdateFlow, scoreAllFlowsForClient, scoreCompany } from "./lead-intelligence";
-import { inferredContacts } from "@shared/schema";\nimport { loginRateLimit } from "./security-middleware";
+import { inferredContacts } from "@shared/schema";
+import { loginRateLimit } from "./security-middleware";
 
 export { authMiddleware } from "./auth";
 
