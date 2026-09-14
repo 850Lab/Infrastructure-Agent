@@ -23,6 +23,11 @@ interface CreditStatus {
   mode: "synthetic_only";
   realUploadsEnabled: boolean;
   storageConnected: boolean;
+  storageUploadsEnabled: boolean;
+  uploadFoundationReady: boolean;
+  uploadLinkLifetimeSeconds: number;
+  maximumCreditReportBytes: number;
+  maximumIdentityDocumentBytes: number;
   aiDocumentProcessingEnabled: boolean;
 }
 
@@ -78,9 +83,9 @@ export default function CreditProcessingPage() {
                   detail={status?.foundationReady ? "Installed" : "Unavailable"}
                 />
                 <StatusCard
-                  title="Secure storage"
+                  title="Storage connection"
                   ready={Boolean(status?.storageConnected)}
-                  detail={status?.storageConnected ? "Connected" : "Not connected"}
+                  detail={status?.storageConnected ? "Configured" : "Awaiting Cloudflare"}
                 />
                 <StatusCard
                   title="Document AI"
