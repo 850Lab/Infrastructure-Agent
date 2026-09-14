@@ -11,6 +11,7 @@ disabled by default and permits synthetic case metadata only.
 - AI document processing: **not connected**
 - Database migration: **not applied automatically**
 - Deployment: **not performed**
+- Client intake preview: **available at `/credit/intake-demo` with every upload locked**
 
 Set `CREDIT_PROCESSING_ENABLED=true` only after applying the schema migration
 in a non-production environment. That flag still does not enable document

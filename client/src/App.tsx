@@ -36,6 +36,7 @@ import EmailQueuePage from "@/pages/email-queue";
 import LinkedInQueuePage from "@/pages/linkedin-queue";
 import CompanyDetailPage from "@/pages/company-detail";
 import CreditProcessingPage from "@/pages/credit-processing";
+import CreditIntakeDemoPage from "@/pages/credit-intake-demo";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminProvision from "@/pages/admin/provision";
@@ -97,8 +98,9 @@ function OnboardingGate({ children }: { children: ReactNode }) {
 
     if (role === "platform_admin") return;
 
-    const skipPaths = ["/login", "/site", "/privacy", "/terms", "/sms-consent", "/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
-    const onProtectedPage = !skipPaths.includes(location);
+    const publicPaths = ["/login", "/site", "/privacy", "/terms", "/sms-consent", "/credit/intake-demo"];
+    const onboardingPaths = ["/machine/onboarding", "/machine/briefing", "/machine/cinematic"];
+    const onProtectedPage = !publicPaths.some(path => location.startsWith(path)) && !onboardingPaths.includes(location);
 
     if (me.needsOnboarding && onProtectedPage) {
       navigate("/machine/onboarding");
@@ -135,6 +137,7 @@ function Router() {
         <Route path="/terms" component={TermsPage} />
         <Route path="/sms-consent" component={SmsConsentPage} />
         <Route path="/login" component={LoginPage} />
+        <Route path="/credit/intake-demo" component={CreditIntakeDemoPage} />
 
         <Route path="/admin/dashboard"><AdminRoute><AdminDashboard /></AdminRoute></Route>
         <Route path="/admin/clients"><AdminRoute><AdminClients /></AdminRoute></Route>
