@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "850-operator-policy.v1",
+  "paidExecutionEnabled": false,
+  "defaultAuthority": "deny",
+  "classes": {
+    "read_inspect": {
+      "mode": "automatic",
+      "examples": ["read repository", "inspect logs", "read test output", "query non-sensitive runtime state"]
+    },
+    "isolated_code_change": {
+      "mode": "automatic",
+      "constraints": ["operator branch only", "no secret disclosure"]
+    },
+    "test_and_build": {
+      "mode": "automatic"
+    },
+    "branch_and_commit": {
+      "mode": "automatic",
+      "constraints": ["non-protected branch only"]
+    },
+    "pull_request": {
+      "mode": "automatic"
+    },
+    "staging_deploy": {
+      "mode": "automatic_if_configured"
+    },
+    "production_deploy": {
+      "mode": "approval_required"
+    },
+    "production_config_change": {
+      "mode": "approval_required"
+    },
+    "destructive_data_change": {
+      "mode": "approval_required"
+    },
+    "billing_or_purchase": {
+      "mode": "approval_required",
+      "constraints": ["paidExecutionEnabled must be true"]
+    },
+    "identity_or_mfa": {
+      "mode": "owner_only"
+    },
+    "legal_attestation": {
+      "mode": "owner_only"
+    },
+    "secret_disclosure": {
+      "mode": "deny"
+    }
+  },
+  "completionPolicy": {
+    "allowCodeWrittenAsDone": false,
+    "requireApplicableGates": [
+      "build",
+      "unit_tests",
+      "integration_tests",
+      "e2e",
+      "deployment",
+      "browser_verification",
+      "authoritative_state",
+      "refinery_sync"
+    ]
+  }
+}
